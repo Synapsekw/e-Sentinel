@@ -49,3 +49,46 @@ test('drones never leave UAE bbox', () => {
     assert.ok(d.pos[0]>51 && d.pos[0]<56.7 && d.pos[1]>22.4 && d.pos[1]<26.4, d.id);
   }
 });
+
+// ---- Task 10: commandRTB / commandHold ----
+
+test('commandRTB from on-task ends in docked eventually', () => {
+  const e = mk();
+  const m = e.createMission({ type:'security', dockId:'AUH-001',
+    waypoints: globalThis.SimRouter.perimeter([54.35,24.47], 3000, 8),
+    params:{ altM:80, speedMs:10 } });
+  const d = [...e.drones.values()].find(x=>x.missionId===m.id);
+  for (let i=0;i<600 && d.state !== 'on-task'; i++) e.tick(1);
+  assert.strictEqual(d.state, 'on-task');
+
+  assert.ok(e.commandRTB(d.id));
+  assert.strictEqual(d.state, 'rtb');
+
+  for (let i=0;i<3600 && d.state !== 'docked'; i++) e.tick(1);
+  assert.strictEqual(d.state, 'docked');
+});
+
+test('commandHold freezes progress while battery drains, resume continues', () => {
+  const e = mk();
+  const m = e.createMission({ type:'security', dockId:'DXB-001',
+    waypoints: globalThis.SimRouter.perimeter([55.263,25.185], 3000, 8),
+    params:{ altM:80, speedMs:10 } });
+  const d = [...e.drones.values()].find(x=>x.missionId===m.id);
+  for (let i=0;i<600 && d.state !== 'on-task'; i++) e.tick(1);
+  assert.strictEqual(d.state, 'on-task');
+  for (let i=0;i<5;i++) e.tick(1);
+
+  assert.ok(e.commandHold(d.id, true));
+  assert.strictEqual(d.state, 'hold');
+  const progressAtHold = m.progress;
+  const battAtHold = d.battery;
+
+  for (let i=0;i<20;i++) e.tick(1);
+  assert.strictEqual(m.progress, progressAtHold, 'progress must stay frozen while held');
+  assert.ok(d.battery < battAtHold, 'battery must keep draining while held');
+
+  assert.ok(e.commandHold(d.id, false));
+  assert.strictEqual(d.state, 'on-task');
+  for (let i=0;i<20;i++) e.tick(1);
+  assert.ok(m.progress > progressAtHold, 'progress should advance again after resume');
+});

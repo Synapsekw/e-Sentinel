@@ -160,8 +160,67 @@ button{font-family:inherit;cursor:pointer}
 .rp-actions .primary:hover:not(:disabled){background:#d40f0f}
 .rp-actions .primary:disabled{opacity:.4;cursor:not-allowed;background:var(--panel2);color:var(--dim)}
 .rp-actions .ghost{background:none;border:1px solid var(--line);color:var(--txt)}
-.rp-actions .ghost:hover{border-color:var(--red);color:#fff}
+.rp-actions .ghost:hover:not(:disabled){border-color:var(--red);color:#fff}
+.rp-actions .ghost:disabled{opacity:.4;cursor:not-allowed;color:var(--dim)}
+.rp-actions .ghost.on{border-color:var(--red);color:#fff;background:rgba(255,90,90,.1)}
 .rp-empty{padding:14px;font-size:12.5px;color:var(--txt);line-height:1.7}
+
+/* ---------- drone telemetry panel (Task 10) ---------- */
+.rp-mission{
+  margin-top:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;
+  color:var(--txt);text-transform:uppercase;
+}
+
+.tele-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:14px}
+.tele-cell{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 9px}
+.tele-cell .tk{display:block;font-family:var(--mono);font-size:8px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase}
+.tele-cell .tv{display:block;font-family:var(--mono);font-size:12px;color:#fff;font-weight:700;letter-spacing:.02em;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tele-cell[data-tele="link"] .tv{font-size:9.5px;font-weight:400;color:var(--txt)}
+.tele-cell[data-batt-level="ok"] .tv{color:var(--ok)}
+.tele-cell[data-batt-level="amber"] .tv{color:var(--amber)}
+.tele-cell[data-batt-level="red"] .tv{color:var(--red)}
+
+/* FPV placeholder frame — deliberately restrained: thin hairlines only,
+   no neon glow. A 16:9 dark viewport with a reticle box + OSD-style
+   corner readouts, matching the reference video chrome without the gamer
+   theatrics. */
+.fpv-frame{
+  position:relative;margin-top:14px;aspect-ratio:16/9;border-radius:9px;overflow:hidden;
+  background:linear-gradient(165deg,#0e1013,#07080a);border:1px solid var(--line);
+}
+.fpv-reticle{
+  position:absolute;top:50%;left:50%;width:58px;height:58px;
+  transform:translate(-50%,-50%);border:1px solid rgba(255,90,90,.35);border-radius:2px;
+}
+.fpv-reticle .cross{position:absolute;background:rgba(255,90,90,.3)}
+.fpv-reticle .cross.h{top:50%;left:-13px;right:-13px;height:1px;transform:translateY(-50%)}
+.fpv-reticle .cross.v{left:50%;top:-13px;bottom:-13px;width:1px;transform:translateX(-50%)}
+.fpv-rec{
+  position:absolute;top:8px;left:9px;display:flex;align-items:center;gap:5px;
+  font-family:var(--mono);font-size:8px;letter-spacing:.14em;color:var(--red);
+}
+.fpv-rec i{width:5px;height:5px;border-radius:50%;background:var(--red);animation:blink 1.2s infinite}
+.fpv-eo{
+  position:absolute;top:8px;right:9px;font-family:var(--mono);font-size:8px;
+  letter-spacing:.12em;color:rgba(255,255,255,.5);
+}
+.fpv-hdg{
+  position:absolute;left:9px;bottom:22px;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.05em;color:rgba(255,255,255,.72);
+}
+.fpv-alt{
+  position:absolute;left:9px;bottom:11px;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.05em;color:rgba(255,255,255,.72);
+}
+.fpv-clock{
+  position:absolute;right:9px;bottom:11px;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.05em;color:rgba(255,255,255,.72);
+}
+.fpv-foot{
+  position:absolute;left:0;right:0;bottom:0;text-align:center;padding:3px 0;
+  font-family:var(--mono);font-size:7px;letter-spacing:.18em;
+  color:rgba(255,255,255,.32);background:rgba(0,0,0,.3);
+}
 
 /* ---------- ticker ---------- */
 #ticker{

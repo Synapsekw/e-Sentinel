@@ -263,8 +263,12 @@ function create(opts){
     const mission = drone.missionId ? engine.missions.get(drone.missionId) : null;
 
     // forced RTB guard: never let a flight continue past the reserve floor
+    // (applies to a manually-held drone too — a paused drone that bleeds out
+    // its reserve still gets pulled home).
     if (drone.battery <= RTB_BATTERY_PCT &&
-        (drone.state === 'takeoff' || drone.state === 'transit' || drone.state === 'on-task')){
+        (drone.state === 'takeoff' || drone.state === 'transit' ||
+         drone.state === 'on-task' || drone.state === 'hold')){
+      drone._preHoldState = null;
       beginRtb(drone, dock, mission, true);
       return;
     }
@@ -335,6 +339,11 @@ function create(opts){
         }
         break;
       }
+      case 'hold': {
+        // Manual pause (Task 10): battery already drained above, leg/mission
+        // progress intentionally untouched until commandHold(id, false).
+        break;
+      }
     }
   }
 
@@ -390,6 +399,45 @@ function create(opts){
 
     emit('info', drone.id, drone.id + ' LAUNCHED — ' + config.label + ' FROM ' + String(dock.name).toUpperCase());
     return mission;
+  };
+
+  // ---- manual operator commands (Task 10) ----
+
+  // Sends an in-flight drone home immediately. Valid while it's actually
+  // flying a leg (transit/on-task) or manually held — not during takeoff/
+  // landing/rtb/docked, which are already resolving on their own.
+  engine.commandRTB = function(id){
+    const drone = engine.drones.get(id);
+    if (!drone) return false;
+    if (drone.state !== 'transit' && drone.state !== 'on-task' && drone.state !== 'hold') return false;
+    const dock = engine.docks.get(drone.dockId);
+    if (!dock) return false;
+    const mission = drone.missionId ? engine.missions.get(drone.missionId) : null;
+    drone._preHoldState = null;
+    beginRtb(drone, dock, mission, false);
+    emit('info', drone.id, 'MANUAL RTB COMMAND · ' + drone.id);
+    return true;
+  };
+
+  // on=true freezes the drone in place (state 'hold', remembering what it
+  // was doing) — leg advance/mission progress are skipped in updateDrone's
+  // switch while battery keeps draining above. on=false resumes whatever
+  // state it was holding from.
+  engine.commandHold = function(id, on){
+    const drone = engine.drones.get(id);
+    if (!drone) return false;
+    if (on){
+      if (drone.state !== 'transit' && drone.state !== 'on-task') return false;
+      drone._preHoldState = drone.state;
+      drone.state = 'hold';
+      emit('info', drone.id, 'MANUAL HOLD COMMAND · ' + drone.id);
+      return true;
+    }
+    if (drone.state !== 'hold') return false;
+    drone.state = drone._preHoldState || 'transit';
+    drone._preHoldState = null;
+    emit('info', drone.id, 'MANUAL RESUME COMMAND · ' + drone.id);
+    return true;
   };
 
   // ---- scheduler ----
