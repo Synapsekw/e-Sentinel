@@ -62,6 +62,7 @@ button{font-family:inherit;cursor:pointer}
 .t-brand{display:flex;align-items:center;gap:12px}
 .t-logo{height:23px;width:auto;display:block}
 .t-brand .ttl{font-weight:800;font-size:12px;letter-spacing:.06em;color:#fff;white-space:nowrap}
+.t-brand .lbl{white-space:nowrap}
 #topbar .sp{flex:1}
 #clock{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;color:var(--txt);white-space:nowrap}
 #clock span{color:var(--dim);font-size:9px;letter-spacing:.18em}
@@ -164,7 +165,7 @@ button{font-family:inherit;cursor:pointer}
   letter-spacing:.12em;font-weight:700;text-transform:uppercase;
 }
 .rp-actions .primary{background:var(--redd);border:none;color:#fff}
-.rp-actions .primary:hover:not(:disabled){background:#d40f0f}
+.rp-actions .primary:hover:not(:disabled){background:color-mix(in srgb, var(--redd), white 12%)}
 .rp-actions .primary:disabled{opacity:.4;cursor:not-allowed;background:var(--panel2);color:var(--dim)}
 .rp-actions .ghost{background:none;border:1px solid var(--line);color:var(--txt)}
 .rp-actions .ghost:hover:not(:disabled){border-color:var(--red);color:#fff}

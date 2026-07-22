@@ -89,7 +89,7 @@ function renderEmptyPanel(){
       '<div class="lbl">National activity</div>' +
       '<p style="margin-top:10px">104 dock stations online across all 7 emirates. ' +
       'Select a dock from the list or the map to view its identity, drone status and dispatch options.</p>' +
-      '<p style="margin-top:10px">Autonomous flight operations begin once the simulation engine lands in a later task.</p>' +
+      '<p style="margin-top:10px">Autonomous flight operations are running. Watch the ticker below or select a drone in flight to follow it.</p>' +
     '</div>'
   );
 }
@@ -722,6 +722,14 @@ EC2.ui = {
       // A dock whose drone is airborne selects the drone (telemetry panel);
       // otherwise (docked/charging/fault) selecting the dock itself as before.
       row.addEventListener('click', () => {
+        // A wizard or manual-control session mid-flight owns the map/panel;
+        // switching the selection out from under it would strand or lose
+        // that in-progress state. Block the row and surface why briefly.
+        if (EC2.control && (EC2.control.mode === 'wizard' || EC2.control.mode === 'manual')){
+          row.title = 'EXIT CURRENT MODE FIRST';
+          setTimeout(() => { row.title = ''; }, 2000);
+          return;
+        }
         const drone = window.__engine && window.__engine.drones.get('D-' + d.id);
         if (drone && drone.state !== 'docked'){
           EC2.select({ type: 'drone', id: drone.id });

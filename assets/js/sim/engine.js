@@ -200,6 +200,23 @@ function create(opts){
       mission.analytics = {};
     }
     emit('info', drone.id, 'MISSION ' + mission.id + ' COMPLETE');
+    pruneFinishedMissions();
+  }
+
+  // Bounds engine.missions growth over a long session: once more than 60
+  // finished (non-active) missions have accumulated, evict the oldest ones.
+  // Active missions are never touched. panels.js keeps its own independent
+  // sessionMissions list (with its own cap) for the MEDIA library, so this
+  // only affects the engine's live working set.
+  const MISSIONS_KEEP = 60;
+  function pruneFinishedMissions(){
+    const finished = [];
+    for (const m of engine.missions.values()){
+      if (m.state !== 'active') finished.push(m.id);
+    }
+    const excess = finished.length - MISSIONS_KEEP;
+    if (excess <= 0) return;
+    for (let i = 0; i < excess; i++) engine.missions.delete(finished[i]);
   }
 
   function beginRtb(drone, dock, mission, forced){
@@ -224,8 +241,12 @@ function create(opts){
     }
   }
 
+  // Denser milestone grid (every 10%) than the original 25/50/75 — keeps the
+  // ticker feeling alive at 16x now that detection chatter (below) is
+  // throttled for readability, without inflating detection-specific spam.
+  const MILESTONE_PCTS = [10, 20, 30, 40, 50, 60, 70, 80, 90];
   function checkMilestones(mission, drone){
-    for (const pct of [25, 50, 75]){
+    for (const pct of MILESTONE_PCTS){
       if (!mission._milestones[pct] && mission.progress * 100 >= pct){
         mission._milestones[pct] = true;
         emit('info', drone.id, 'MISSION ' + mission.id + ' ' + pct + '% COMPLETE');
@@ -325,7 +346,7 @@ function create(opts){
         advanceLeg(drone, dt);
         mission.progress = drone._legProgress;
         checkMilestones(mission, drone);
-        if (engine.rand() < dt * 0.02) emitDetection(mission, drone);
+        if (engine.rand() < dt * 0.0067) emitDetection(mission, drone);
         if (drone._legProgress >= 1) beginRtb(drone, dock, mission, false);
         break;
       }
