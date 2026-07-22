@@ -229,6 +229,17 @@ button{font-family:inherit;cursor:pointer}
   color:rgba(255,255,255,.32);background:rgba(0,0,0,.3);
 }
 
+/* ---------- manual control (Task 11) ---------- */
+.manual-banner{
+  position:fixed;top:66px;left:50%;transform:translateX(-50%);z-index:850;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--amber);background:rgba(10,11,14,.88);border:1px solid rgba(251,191,36,.4);
+  border-radius:99px;padding:8px 18px;white-space:nowrap;pointer-events:none;
+}
+.manual-banner[hidden]{display:none}
+.rp-alt-row{align-items:center}
+.rp-alt-row[hidden]{display:none}
+
 /* ---------- ticker ---------- */
 #ticker{
   position:fixed;left:318px;right:340px;bottom:0;height:34px;z-index:800;

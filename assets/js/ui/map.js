@@ -32,7 +32,8 @@ EC2.siteFeatures = function(){
 // fully attached them.
 const OPERATIONAL_LAYER_IDS = [
   'docks-dots', 'docks-rings', 'drones-layer', 'missions-active-line',
-  'sites-dots', 'sites-labels', 'uae-places', 'uae-roads'
+  'sites-dots', 'sites-labels', 'uae-places', 'uae-roads',
+  'manual-wpts-dots', 'manual-wpts-labels'
 ];
 
 // Shared by sites-dots (fill) and sites-labels (text) so the label always
@@ -187,6 +188,7 @@ EC2.initMap = function(){
       'sites':      { type: 'geojson', data: EC2.siteFeatures() },
       'drones':     { type: 'geojson', data: emptyFC() },
       'missions-active': { type: 'geojson', data: emptyFC() },
+      'manual-wpts': { type: 'geojson', data: emptyFC() },
       'world':      { type: 'geojson', data: GEO_WORLD }
     }),
     layers: [
@@ -283,14 +285,37 @@ EC2.initMap = function(){
           'icon-rotation-alignment': 'map',
           'icon-allow-overlap': true,
           'icon-ignore-placement': true
-        } }
+        } },
+      // Manual control (Task 11) queued waypoints — numbered amber diamonds,
+      // driven by control.js whenever the operator's queue changes.
+      { id: 'manual-wpts-dots', type: 'circle', source: 'manual-wpts',
+        paint: {
+          'circle-radius': 7,
+          'circle-color': 'rgba(251,191,36,.18)',
+          'circle-stroke-color': '#fbbf24',
+          'circle-stroke-width': 1.5
+        } },
+      { id: 'manual-wpts-labels', type: 'symbol', source: 'manual-wpts',
+        layout: {
+          'text-field': ['to-string', ['get', 'n']],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 10,
+          'text-allow-overlap': true,
+          'text-ignore-placement': true
+        },
+        paint: { 'text-color': '#fbbf24' } }
     ]
   };
 
   EC2.map = new maplibregl.Map({
     container: 'map', style,
     center: UAE_CENTER, zoom: 1.4, attributionControl: false,
-    canvasContextAttributes: { antialias: true }
+    canvasContextAttributes: { antialias: true },
+    // Shift+drag box-zoom is off by design: manual control (Task 11) uses
+    // shift+click on the map to queue a waypoint, and MapLibre's default
+    // box-zoom handler would otherwise swallow that gesture before it ever
+    // becomes a normal 'click' event.
+    boxZoom: false
   });
   EC2.mapReady = new Promise(res => EC2.map.on('load', () => {
     if (!EC2.map.hasImage('drone-triangle')) EC2.map.addImage('drone-triangle', droneIconImage());

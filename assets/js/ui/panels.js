@@ -16,7 +16,8 @@ let droneTeleTimer = null;
 
 const DRONE_STATE_LABELS = {
   takeoff: 'TAKEOFF', transit: 'TRANSIT', 'on-task': 'ON TASK',
-  rtb: 'RETURN TO DOCK', landing: 'LANDING', hold: 'HELD', docked: 'DOCKED'
+  rtb: 'RETURN TO DOCK', landing: 'LANDING', hold: 'HELD', docked: 'DOCKED',
+  manual: 'MANUAL CONTROL'
 };
 
 function $(id){ return document.getElementById(id); }
@@ -175,6 +176,8 @@ function renderDronePanel(drone){
   const rtbDisabled = !['transit', 'on-task', 'hold'].includes(drone.state);
   const isHeld = drone.state === 'hold';
   const holdDisabled = !isHeld && !['transit', 'on-task'].includes(drone.state);
+  const isManual = drone.state === 'manual';
+  const controlDisabled = !isManual && !['transit', 'on-task', 'hold'].includes(drone.state);
 
   return (
     '<div class="rp-id">' + drone.id + '</div>' +
@@ -194,7 +197,11 @@ function renderDronePanel(drone){
 
     '<div class="rp-actions">' +
       '<button class="ghost' + (following ? ' on' : '') + '" id="rp-follow">' + (following ? 'FOLLOWING' : 'FOLLOW') + '</button>' +
-      '<button class="ghost" id="rp-control" disabled title="AVAILABLE AFTER MANUAL CONTROL TASK">TAKE CONTROL</button>' +
+      '<button class="ghost' + (isManual ? ' on' : '') + '" id="rp-control"' + (controlDisabled ? ' disabled' : '') + '>' + (isManual ? 'RELEASE' : 'TAKE CONTROL') + '</button>' +
+    '</div>' +
+    '<div class="rp-actions rp-alt-row" id="rp-alt-row"' + (isManual ? '' : ' hidden') + '>' +
+      '<button class="ghost" id="rp-alt-dn">ALT -10M</button>' +
+      '<button class="ghost" id="rp-alt-up">ALT +10M</button>' +
     '</div>' +
     '<div class="rp-actions">' +
       '<button class="primary" id="rp-rtb"' + (rtbDisabled ? ' disabled' : '') + '>RETURN TO DOCK</button>' +
@@ -255,6 +262,25 @@ function updateDroneTelemetry(droneId){
     followBtn.classList.toggle('on', following);
     followBtn.textContent = following ? 'FOLLOWING' : 'FOLLOW';
   }
+
+  const isManual = drone.state === 'manual';
+  const controlBtn = $('rp-control');
+  if (controlBtn){
+    const controlDisabled = !isManual && !['transit', 'on-task', 'hold'].includes(drone.state);
+    controlBtn.textContent = isManual ? 'RELEASE' : 'TAKE CONTROL';
+    controlBtn.disabled = controlDisabled;
+    controlBtn.classList.toggle('on', isManual);
+  }
+  const altRow = $('rp-alt-row');
+  if (altRow) altRow.hidden = !isManual;
+
+  // A drone forced out of manual (battery floor) or released elsewhere while
+  // this panel is still open must drop the control.js overlay too — this
+  // 2 Hz poll is the panel's own half of that guarantee (control.js also
+  // watches the engine event feed for the same transition).
+  if (!isManual && EC2.control && EC2.control.mode === 'manual' && EC2.control.activeId === droneId){
+    EC2.control.exitManual();
+  }
 }
 
 function wireRightPanelActions(mode, data){
@@ -289,6 +315,24 @@ function wireRightPanelActions(mode, data){
       const d = window.__engine.drones.get(droneId);
       if (!d) return;
       window.__engine.commandHold(droneId, d.state !== 'hold');
+    });
+
+    const controlBtn = $('rp-control');
+    if (controlBtn) controlBtn.addEventListener('click', () => {
+      if (!window.__engine || !EC2.control) return;
+      const d = window.__engine.drones.get(droneId);
+      if (!d) return;
+      if (d.state === 'manual') EC2.control.exitManual();
+      else EC2.control.enterManual(droneId);
+    });
+
+    const altDn = $('rp-alt-dn');
+    if (altDn) altDn.addEventListener('click', () => {
+      if (window.__engine) window.__engine.nudgeAlt(droneId, -10);
+    });
+    const altUp = $('rp-alt-up');
+    if (altUp) altUp.addEventListener('click', () => {
+      if (window.__engine) window.__engine.nudgeAlt(droneId, 10);
     });
   }
 }
@@ -455,6 +499,14 @@ function startFollowDriver(){
 EC2.followDroneId = null;
 
 EC2.select = function(sel){
+  // Manual control (Task 11) owns map clicks exclusively while engaged;
+  // selecting anything else — a dock, a site, or a different drone — must
+  // hand the map back to normal selection/click behavior cleanly first.
+  if (EC2.control && EC2.control.mode === 'manual' &&
+      !(sel.type === 'drone' && sel.id === EC2.control.activeId)){
+    EC2.control.exitManual();
+  }
+
   if (sel.type === 'dock'){
     const dock = dockIndex.get(sel.id);
     if (!dock) return;
@@ -559,6 +611,7 @@ function wireScene(){
     setVisible(scene === 'console');
     // FOLLOW makes no sense once we've left the console map (globe scene).
     if (scene !== 'console'){
+      if (EC2.control && EC2.control.mode === 'manual') EC2.control.exitManual();
       EC2.followDroneId = null;
       EC2.state.selection = null;
       EC2.ui.setRightPanel('empty'); // also clears droneTeleTimer
@@ -566,34 +619,44 @@ function wireScene(){
   });
 }
 
+// Manual control (Task 11) captures the map exclusively while engaged —
+// these selection handlers must stand down so a click on a dock/drone/site
+// feature becomes a click-to-go/queue instead of a selection change.
+function inCaptureMode(){
+  return !!(EC2.control && EC2.control.mode !== 'normal');
+}
+
 function wireMapDockInteractions(){
   if (!EC2.map) return;
   EC2.map.on('click', 'docks-dots', (e) => {
+    if (inCaptureMode()) return;
     const f = e.features && e.features[0];
     if (!f) return;
     EC2.select({ type: 'dock', id: f.properties.id });
   });
-  EC2.map.on('mouseenter', 'docks-dots', () => { EC2.map.getCanvas().style.cursor = 'pointer'; });
-  EC2.map.on('mouseleave', 'docks-dots', () => { EC2.map.getCanvas().style.cursor = ''; });
+  EC2.map.on('mouseenter', 'docks-dots', () => { if (!inCaptureMode()) EC2.map.getCanvas().style.cursor = 'pointer'; });
+  EC2.map.on('mouseleave', 'docks-dots', () => { if (!inCaptureMode()) EC2.map.getCanvas().style.cursor = ''; });
 
   // Airborne drone triangles (Task 10) — click selects the drone itself;
   // camera stays put here, FOLLOW (if toggled on) drives the camera instead.
   EC2.map.on('click', 'drones-layer', (e) => {
+    if (inCaptureMode()) return;
     const f = e.features && e.features[0];
     if (!f) return;
     EC2.select({ type: 'drone', id: f.properties.id });
   });
-  EC2.map.on('mouseenter', 'drones-layer', () => { EC2.map.getCanvas().style.cursor = 'pointer'; });
-  EC2.map.on('mouseleave', 'drones-layer', () => { EC2.map.getCanvas().style.cursor = ''; });
+  EC2.map.on('mouseenter', 'drones-layer', () => { if (!inCaptureMode()) EC2.map.getCanvas().style.cursor = 'pointer'; });
+  EC2.map.on('mouseleave', 'drones-layer', () => { if (!inCaptureMode()) EC2.map.getCanvas().style.cursor = ''; });
 
   // Live tower sites (Task 10.5) — static, click selects the site card.
   EC2.map.on('click', 'sites-dots', (e) => {
+    if (inCaptureMode()) return;
     const f = e.features && e.features[0];
     if (!f) return;
     EC2.select({ type: 'site', id: f.properties.id });
   });
-  EC2.map.on('mouseenter', 'sites-dots', () => { EC2.map.getCanvas().style.cursor = 'pointer'; });
-  EC2.map.on('mouseleave', 'sites-dots', () => { EC2.map.getCanvas().style.cursor = ''; });
+  EC2.map.on('mouseenter', 'sites-dots', () => { if (!inCaptureMode()) EC2.map.getCanvas().style.cursor = 'pointer'; });
+  EC2.map.on('mouseleave', 'sites-dots', () => { if (!inCaptureMode()) EC2.map.getCanvas().style.cursor = ''; });
 }
 
 EC2.initPanels = function(){

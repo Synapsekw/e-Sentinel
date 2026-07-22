@@ -266,12 +266,22 @@ function create(opts){
 
     // forced RTB guard: never let a flight continue past the reserve floor
     // (applies to a manually-held drone too — a paused drone that bleeds out
-    // its reserve still gets pulled home).
+    // its reserve still gets pulled home). A manually-flown drone (Task 11)
+    // gets pulled home too, releasing the operator's control first.
     if (drone.battery <= RTB_BATTERY_PCT &&
         (drone.state === 'takeoff' || drone.state === 'transit' ||
-         drone.state === 'on-task' || drone.state === 'hold')){
+         drone.state === 'on-task' || drone.state === 'hold' || drone.state === 'manual')){
+      const wasManual = drone.state === 'manual';
       drone._preHoldState = null;
-      beginRtb(drone, dock, mission, true);
+      if (wasManual){
+        drone._manualQueue = [];
+        drone._preManualState = null;
+        drone._manualSpeed = 0;
+        emit('warn', drone.id, 'BATTERY FLOOR · MANUAL RELEASED · RTB');
+        beginRtb(drone, dock, mission, false);
+      } else {
+        beginRtb(drone, dock, mission, true);
+      }
       return;
     }
 
@@ -346,6 +356,36 @@ function create(opts){
       case 'hold': {
         // Manual pause (Task 10): battery already drained above, leg/mission
         // progress intentionally untouched until commandHold(id, false).
+        break;
+      }
+      case 'manual': {
+        // Operator-flown (Task 11): fly toward the head of the waypoint
+        // queue at a capped speed; pop on arrival; hover (speed 0, gentle
+        // heading wobble) once the queue drains. Mission leg/progress are
+        // left exactly as they were when manual was engaged, so a release
+        // back into the mission resumes from that frozen point.
+        const queue = drone._manualQueue || (drone._manualQueue = []);
+        if (queue.length){
+          const target = queue[0];
+          const dist = R.distM(drone.pos, target);
+          if (dist <= 30){
+            queue.shift();
+            drone.speedMs = queue.length ? (drone._manualSpeed || 12) : 0;
+          } else {
+            const spd = drone._manualSpeed || 12;
+            drone.speedMs = spd;
+            drone.heading = R.bearing(drone.pos, target);
+            const stepM = spd * dt;
+            const frac = Math.min(1, stepM / dist);
+            drone.pos = clampPos([
+              drone.pos[0] + (target[0] - drone.pos[0]) * frac,
+              drone.pos[1] + (target[1] - drone.pos[1]) * frac
+            ]);
+          }
+        } else {
+          drone.speedMs = 0;
+          drone.heading = ((drone.heading + (engine.rand() - 0.5) * 8) % 360 + 360) % 360;
+        }
         break;
       }
     }
@@ -441,6 +481,71 @@ function create(opts){
     drone.state = drone._preHoldState;
     drone._preHoldState = null;
     emit('info', drone.id, 'MANUAL RESUME COMMAND · ' + drone.id);
+    return true;
+  };
+
+  // ---- manual flight control (Task 11) ----
+
+  // on=true hands the drone to the operator from transit/on-task/hold —
+  // remembers the mission state it was pulled from, clears any wind-hold,
+  // and starts it hovering (empty queue) in place. on=false hands it back:
+  // if the mission is still active it resumes exactly where its leg/progress
+  // was frozen (a visible "rejoin the route" snap is expected and fine for
+  // this sim); otherwise it heads home like any other released flight.
+  engine.setManual = function(id, on){
+    const drone = engine.drones.get(id);
+    if (!drone) return false;
+    const dock = engine.docks.get(drone.dockId);
+    if (!dock) return false;
+    const mission = drone.missionId ? engine.missions.get(drone.missionId) : null;
+
+    if (on){
+      if (drone.state !== 'transit' && drone.state !== 'on-task' && drone.state !== 'hold') return false;
+      drone._preManualState = drone.state === 'hold' ? drone._preHoldState : drone.state;
+      drone._preHoldState = null;
+      drone._holdUntil = 0;
+      drone._manualQueue = [];
+      drone._manualSpeed = Math.min(18, (mission && mission.params && mission.params.speedMs) || drone.speedMs || 12);
+      drone.state = 'manual';
+      drone.speedMs = 0;
+      emit('info', drone.id, 'MANUAL CONTROL ENGAGED · OPERATOR');
+      return true;
+    }
+
+    if (drone.state !== 'manual') return false;
+    drone._manualQueue = [];
+    if (mission && mission.state === 'active'){
+      drone.state = drone._preManualState || 'on-task';
+    } else {
+      beginRtb(drone, dock, mission, false);
+    }
+    drone._preManualState = null;
+    emit('info', drone.id, 'MANUAL CONTROL RELEASED · OPERATOR');
+    return true;
+  };
+
+  // Replaces the queue with a single destination (click-to-go).
+  engine.manualGoto = function(id, lonlat){
+    const drone = engine.drones.get(id);
+    if (!drone || drone.state !== 'manual' || !isFiniteXY(lonlat)) return false;
+    drone._manualQueue = [clampPos(lonlat)];
+    return true;
+  };
+
+  // Appends a destination to the queue (shift+click-to-queue).
+  engine.manualQueue = function(id, lonlat){
+    const drone = engine.drones.get(id);
+    if (!drone || drone.state !== 'manual' || !isFiniteXY(lonlat)) return false;
+    if (!drone._manualQueue) drone._manualQueue = [];
+    drone._manualQueue.push(clampPos(lonlat));
+    return true;
+  };
+
+  // Altitude nudge, clamped to the 30-120m operating band regardless of state.
+  engine.nudgeAlt = function(id, delta){
+    const drone = engine.drones.get(id);
+    if (!drone || !Number.isFinite(delta)) return false;
+    drone.alt = Math.min(120, Math.max(30, drone.alt + delta));
     return true;
   };
 

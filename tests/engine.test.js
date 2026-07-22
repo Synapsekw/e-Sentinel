@@ -92,3 +92,94 @@ test('commandHold freezes progress while battery drains, resume continues', () =
   for (let i=0;i<20;i++) e.tick(1);
   assert.ok(m.progress > progressAtHold, 'progress should advance again after resume');
 });
+
+// ---- Task 11: setManual / manualGoto / manualQueue / nudgeAlt ----
+
+test('setManual engages from on-task, flies to a click-to-go target, then hovers on arrival', () => {
+  const e = mk();
+  const m = e.createMission({ type:'security', dockId:'AUH-001',
+    waypoints: globalThis.SimRouter.perimeter([54.35,24.47], 3000, 8),
+    params:{ altM:80, speedMs:10 } });
+  const d = [...e.drones.values()].find(x=>x.missionId===m.id);
+  for (let i=0;i<600 && d.state !== 'on-task'; i++) e.tick(1);
+  assert.strictEqual(d.state, 'on-task');
+
+  assert.ok(e.setManual(d.id, true));
+  assert.strictEqual(d.state, 'manual');
+  assert.strictEqual(d.speedMs, 0, 'should start hovering with an empty queue');
+
+  const target = [d.pos[0] + 0.01, d.pos[1] + 0.01];
+  assert.ok(e.manualGoto(d.id, target));
+
+  let sawMovement = false;
+  let arrived = false;
+  for (let i=0;i<600 && !arrived; i++){
+    e.tick(1);
+    if (d.speedMs > 0) sawMovement = true;
+    if (d.speedMs === 0 && d._manualQueue.length === 0) arrived = true;
+  }
+  assert.ok(sawMovement, 'drone should move toward the target while the queue is non-empty');
+  assert.ok(arrived, 'drone should arrive and pop the queue');
+  assert.strictEqual(d.speedMs, 0);
+  assert.ok(globalThis.SimRouter.distM(d.pos, target) < 50, 'drone should be near the target on arrival');
+});
+
+test('battery floor during manual control releases control and forces RTB', () => {
+  const e = mk();
+  const m = e.createMission({ type:'security', dockId:'DXB-001',
+    waypoints: globalThis.SimRouter.perimeter([55.263,25.185], 3000, 8),
+    params:{ altM:80, speedMs:10 } });
+  const d = [...e.drones.values()].find(x=>x.missionId===m.id);
+  for (let i=0;i<600 && d.state !== 'on-task'; i++) e.tick(1);
+  assert.strictEqual(d.state, 'on-task');
+
+  assert.ok(e.setManual(d.id, true));
+  assert.ok(e.manualQueue(d.id, [d.pos[0]+0.05, d.pos[1]+0.05]));
+  d.battery = 26;
+
+  let releasedEvent = false;
+  e.onEvent(ev => { if (ev.message.includes('MANUAL RELEASED')) releasedEvent = true; });
+
+  for (let i=0;i<300 && d.state === 'manual'; i++) e.tick(1);
+  assert.ok(releasedEvent, 'a MANUAL RELEASED event should fire at the battery floor');
+  assert.ok(['rtb','landing','docked'].includes(d.state));
+  assert.strictEqual(d._manualQueue.length, 0, 'queue must be cleared on forced release');
+
+  for (let i=0;i<3600 && d.state !== 'docked'; i++) e.tick(1);
+  assert.strictEqual(d.state, 'docked');
+});
+
+test('releasing manual control returns the drone to its prior state while the mission is active', () => {
+  const e = mk();
+  const m = e.createMission({ type:'security', dockId:'AUH-002',
+    waypoints: globalThis.SimRouter.perimeter([54.435,24.542], 3000, 8),
+    params:{ altM:80, speedMs:10 } });
+  const d = [...e.drones.values()].find(x=>x.missionId===m.id);
+  for (let i=0;i<600 && d.state !== 'on-task'; i++) e.tick(1);
+  assert.strictEqual(d.state, 'on-task');
+
+  assert.ok(e.setManual(d.id, true));
+  assert.strictEqual(d.state, 'manual');
+
+  assert.ok(e.setManual(d.id, false));
+  assert.strictEqual(d.state, 'on-task', 'should resume the prior mission state');
+  assert.strictEqual(m.state, 'active');
+
+  for (let i=0;i<20;i++) e.tick(1);
+  assert.strictEqual(d.state, 'on-task', 'mission should keep progressing normally after release');
+});
+
+test('nudgeAlt clamps altitude to the 30-120m band', () => {
+  const e = mk();
+  const m = e.createMission({ type:'security', dockId:'SHJ-001',
+    waypoints: globalThis.SimRouter.perimeter([55.39,25.35], 3000, 8),
+    params:{ altM:80, speedMs:10 } });
+  const d = [...e.drones.values()].find(x=>x.missionId===m.id);
+  for (let i=0;i<600 && d.state !== 'on-task'; i++) e.tick(1);
+  e.setManual(d.id, true);
+
+  e.nudgeAlt(d.id, -1000);
+  assert.strictEqual(d.alt, 30);
+  e.nudgeAlt(d.id, 1000);
+  assert.strictEqual(d.alt, 120);
+});

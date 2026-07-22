@@ -7,6 +7,7 @@ window.EC2 = {
       EC2.mapReady.then(() => {
         EC2.initGlobe && EC2.initGlobe();
         EC2.initPanels && EC2.initPanels();
+        EC2.initControl && EC2.initControl();
         // Start the sim engine the first time the console scene is entered
         // (i.e. after the first dive-in from the globe), then leave it running.
         EC2.onSceneChange(scene => {
