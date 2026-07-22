@@ -181,8 +181,14 @@ function create(opts){
   for (const dock of allDocksList) dock._allDocks = allDocksList;
 
   // ---- events ----
-  function emit(level, source, message){
+  // code (optional) is a structured, stable identifier for events that UI
+  // code needs to match on (e.g. control.js distinguishing a forced manual
+  // release from any other event that happens to mention "RELEASED" in its
+  // copy) — decoupling that matching from ticker wording so the message
+  // string can be edited freely without silently breaking the UI seam.
+  function emit(level, source, message, code){
     const ev = { time: engine.now, level: level, source: source, message: message };
+    if (code) ev.code = code;
     engine.events.push(ev);
     if (engine.events.length > EVENTS_CAP) engine.events.shift();
     for (const cb of engine._subscribers){
@@ -307,7 +313,7 @@ function create(opts){
         drone._manualQueue = [];
         drone._preManualState = null;
         drone._manualSpeed = 0;
-        emit('warn', drone.id, 'BATTERY FLOOR · MANUAL RELEASED · RTB');
+        emit('warn', drone.id, 'BATTERY FLOOR · MANUAL RELEASED · RTB', 'MANUAL_RELEASED');
         beginRtb(drone, dock, mission, false);
       } else {
         beginRtb(drone, dock, mission, true);
@@ -550,7 +556,7 @@ function create(opts){
       beginRtb(drone, dock, mission, false);
     }
     drone._preManualState = null;
-    emit('info', drone.id, 'MANUAL CONTROL RELEASED · OPERATOR');
+    emit('info', drone.id, 'MANUAL CONTROL RELEASED · OPERATOR', 'MANUAL_RELEASED');
     return true;
   };
 

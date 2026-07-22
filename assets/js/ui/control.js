@@ -649,7 +649,12 @@ function wireEngineWatch(){
     if (!window.__engine) return false;
     window.__engine.onEvent((ev) => {
       if (control.mode !== 'manual' || ev.source !== control.activeId) return;
-      if (/RELEASED/.test(ev.message)) cleanupUI();
+      // Structured code (Task 14 fix), not a /RELEASED/ regex on the ticker
+      // copy — decouples this UI-cleanup seam from event message wording so
+      // the copy can change freely without silently breaking manual-control
+      // teardown. engine.js sets code:'MANUAL_RELEASED' on both the forced
+      // battery-floor release and the operator's own RELEASE path.
+      if (ev.code === 'MANUAL_RELEASED') cleanupUI();
     });
     return true;
   };

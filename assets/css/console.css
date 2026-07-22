@@ -336,3 +336,19 @@ button{font-family:inherit;cursor:pointer}
 .tick-ev.alert{color:var(--red)}
 .tick-ev.clickable{cursor:pointer}
 .tick-ev.clickable:hover .msg{color:#fff;text-decoration:underline}
+
+/* ---------- map attribution control (Task 14 fix) ----------
+   MapLibre's default compact control is a bright white pill — restyled here
+   to sit quietly bottom-right against the dark theme instead. #ticker only
+   spans left:318px to right:340px (the dock-list/right-panel columns are
+   excluded) so this never overlaps it. */
+.maplibregl-ctrl-bottom-right{z-index:750}
+.maplibregl-ctrl-attrib{
+  background:rgba(10,11,14,.7) !important;
+  color:var(--dim) !important;
+  font-family:var(--mono);font-size:9px;letter-spacing:.02em;
+  border-radius:6px;padding:2px 6px;
+}
+.maplibregl-ctrl-attrib a{color:var(--dim) !important}
+.maplibregl-ctrl-attrib a:hover{color:#fff !important}
+.maplibregl-ctrl-attrib-button{filter:invert(1) brightness(1.6) opacity(.7)}

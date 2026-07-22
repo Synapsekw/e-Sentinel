@@ -34,6 +34,25 @@ const DRONE_STATE_LABELS = {
 
 function $(id){ return document.getElementById(id); }
 
+// XSS hardening (Task 14 fix): ticker items interpolate ev.source/ev.message
+// straight into innerHTML (pushEvent below) — engine event text is
+// currently sim-generated, but dock/mission ids ultimately trace back to
+// data files and this is the one seam where that content reaches innerHTML,
+// so it's escaped defensively rather than trusted. Ticker copy has never
+// used inline markup for emphasis, but escaping unconditionally would still
+// be correct if it ever does: entities are escaped first, then the single
+// safe <b>/</b> subset is restored from its escaped form so bold segments
+// keep rendering — nothing else round-trips back into a tag.
+function escapeHtml(s){
+  const str = String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  return str.replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>');
+}
+
 function buildDockIndex(){
   dockIndex = new Map();
   DATA_DOCKS.forEach(d => dockIndex.set(d.id, d));
@@ -753,8 +772,8 @@ EC2.ui = {
     el.className = 'tick-ev' + level + (ev.onClick ? ' clickable' : '');
     el.innerHTML =
       '<span class="tt">' + time + '</span>' +
-      '<span class="src">' + ev.source + '</span>' +
-      '<span class="msg">' + ev.message + '</span>';
+      '<span class="src">' + escapeHtml(ev.source) + '</span>' +
+      '<span class="msg">' + escapeHtml(ev.message) + '</span>';
     if (typeof ev.onClick === 'function') el.addEventListener('click', ev.onClick);
     stream.insertBefore(el, stream.firstChild);
     while (stream.children.length > 30) stream.removeChild(stream.lastChild);

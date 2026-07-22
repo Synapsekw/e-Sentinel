@@ -8,6 +8,31 @@ const RASTERS = {
   terrain: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}']
 };
 
+// CARTO basemaps require the OSM+CARTO credit; Esri's World_Imagery/
+// World_Topo_Map services require the Esri/Maxar/Earthstar credit. Each
+// raster source's own 'attribution' string feeds the AttributionControl
+// added in initMap() below (Task 14 fix: re-enable tile attribution).
+const RASTER_ATTRIBUTION = {
+  dark:    '&copy; OpenStreetMap contributors &copy; CARTO',
+  light:   '&copy; OpenStreetMap contributors &copy; CARTO',
+  sat:     'Powered by Esri &middot; Source: Esri, Maxar, Earthstar Geographics',
+  terrain: 'Powered by Esri &middot; Source: Esri, Maxar, Earthstar Geographics'
+};
+
+// Local glyph vendoring (Task 14 fix): MapLibre's demotiles.maplibre.org
+// glyph host is unreachable on a cold offline/file:// boot, so uae-places /
+// sites-labels / manual-wpts-labels / wizard-preview-labels text never
+// renders. assets/fonts/{fontstack}/{range}.pbf is vendored locally (0-255 +
+// 256-511 cover the uppercase-ASCII ids/names this app actually labels);
+// this builds a runtime-absolute URL from the page's own location so it
+// resolves correctly under both file:// and http(s)://, unlike a bare
+// relative path (MapLibre resolves glyph URLs against its own internal
+// base, not the page) or a hardcoded origin. {fontstack}/{range} must stay
+// literal (not URL-encoded) since MapLibre substitutes them itself.
+function localGlyphsUrl(){
+  return location.href.replace(/[^\/]*(\?.*)?$/, '') + 'assets/fonts/{fontstack}/{range}.pbf';
+}
+
 EC2.dockFeatures = function(){
   return { type:'FeatureCollection', features: DATA_DOCKS.map(d => ({
     type:'Feature',
@@ -173,13 +198,13 @@ EC2.initMap = function(){
     rasterSources['raster-'+k] = {
       type: 'raster', tileSize: 256,
       tiles: RASTERS[k],
-      attribution: '© OpenStreetMap © CARTO'
+      attribution: RASTER_ATTRIBUTION[k]
     };
   }
 
   const style = {
     version: 8,
-    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    glyphs: localGlyphsUrl(),
     projection: { type: 'globe' },
     sources: Object.assign({}, rasterSources, {
       'uae':        { type: 'geojson', data: GEO_UAE.borders },
@@ -350,6 +375,12 @@ EC2.initMap = function(){
     // becomes a normal 'click' event.
     boxZoom: false
   });
+  // Tile attribution (Task 14 fix): attributionControl:false above just
+  // suppresses MapLibre's default (unstyled, bright) control so a themed
+  // compact one can be added instead — CARTO/Esri both require attribution
+  // per their terms, and .maplibregl-ctrl-attrib is restyled in console.css
+  // to sit quietly bottom-right instead of a bright white box.
+  EC2.map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
   EC2.mapReady = new Promise(res => EC2.map.on('load', () => {
     if (!EC2.map.hasImage('drone-triangle')) EC2.map.addImage('drone-triangle', droneIconImage());
     EC2.mapLoaded = true;
