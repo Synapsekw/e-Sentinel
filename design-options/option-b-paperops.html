@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Option B · PAPER OPS — Editorial Light</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Nunito+Sans:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F4F0; --card:#FCFBF9; --ink:#1B1916; --gray:#6E6A62; --faint:#A8A399;
+  --line:#E4E1D9; --line2:#D2CEC4; --red:#BC0000; --hot:#E33030; --ok:#1F8A5D; --amber:#B97B0F;
+  --disp:'Poppins',sans-serif; --sans:'Nunito Sans',system-ui,sans-serif; --mono:'IBM Plex Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:13.5px}
+.app{display:flex;flex-direction:column;height:100vh;padding:0 26px}
+/* masthead */
+header{display:flex;align-items:baseline;gap:26px;padding:18px 2px 14px;border-bottom:2px solid var(--ink)}
+.eamp{font-family:var(--disp);font-weight:800;font-size:26px;letter-spacing:-.02em}
+.eamp i{color:var(--red);font-style:normal}
+h1{font-family:var(--disp);font-weight:700;font-size:16px;letter-spacing:.16em}
+.kick{font-size:10px;font-weight:900;letter-spacing:.3em;color:var(--red)}
+.hsp{flex:1}
+.mdate{font-size:11px;font-weight:800;letter-spacing:.18em;color:var(--gray)}
+.mclock{font-family:var(--mono);font-size:16px;font-weight:500}
+.mclock small{font-size:10px;color:var(--faint);margin-left:4px}
+.live{display:inline-flex;align-items:center;gap:7px;font-size:10px;font-weight:900;letter-spacing:.2em;color:var(--ok)}
+.live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok);animation:bl 1.6s infinite}
+@keyframes bl{50%{opacity:.2}}
+/* strip of key figures */
+.figures{display:flex;gap:0;padding:12px 0 12px;border-bottom:1px solid var(--line2)}
+.fig{padding:0 34px 0 0;margin-right:34px;border-right:1px solid var(--line)}
+.fig:last-of-type{border:none}
+.fig .n{font-family:var(--disp);font-weight:700;font-size:30px;line-height:1;letter-spacing:-.01em}
+.fig .n em{font-style:normal;color:var(--red)}
+.fig .c{font-size:9.5px;font-weight:900;letter-spacing:.22em;color:var(--faint);margin-top:5px}
+.layers{margin-left:auto;display:flex;align-items:center;gap:8px}
+.layers .lb{font-size:9.5px;font-weight:900;letter-spacing:.2em;color:var(--faint);margin-right:4px}
+.lay{font-size:10px;font-weight:800;letter-spacing:.14em;padding:7px 14px;border-radius:20px;border:1px solid var(--line2);color:var(--gray);cursor:pointer;transition:all .18s}
+.lay:hover{border-color:var(--ink);color:var(--ink)}
+.lay.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+/* body: map + rail */
+.cols{flex:1;display:grid;grid-template-columns:1fr 358px;gap:22px;padding:18px 0;min-height:0}
+.mapfr{position:relative;background:var(--card);border:1px solid var(--line2);overflow:hidden}
+.mapfr svg.map{position:absolute;inset:0;width:100%;height:100%}
+.uae-land{fill:#EDEBE4;stroke:#D8D4C9;stroke-width:1}
+.uae-border{fill:none;stroke:#B9B4A7;stroke-width:1;stroke-dasharray:3 4}
+.cityl{font-family:var(--sans);font-weight:800;font-size:9.5px;fill:#B0AB9F;letter-spacing:.24em}
+.dockpt{fill:#1B1916;stroke:var(--card);stroke-width:1.5;cursor:pointer}
+.dockpt:hover{fill:var(--red)}
+.dockpt.hotd{fill:var(--red)}
+.corridor{fill:none;stroke:var(--red);stroke-width:1.5;stroke-dasharray:6 5;animation:dash 1.3s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-11}}
+.ring{fill:none;stroke:var(--red);stroke-width:1;transform-box:fill-box;transform-origin:center;animation:ping 2.8s ease-out infinite}
+@keyframes ping{0%{transform:scale(.3);opacity:.8}75%,100%{transform:scale(2.7);opacity:0}}
+.maptag{position:absolute;top:14px;left:16px;font-size:9px;font-weight:900;letter-spacing:.26em;color:var(--faint)}
+.mapcoords{position:absolute;bottom:12px;right:14px;font-family:var(--mono);font-size:10px;color:var(--faint)}
+.ztools{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;border:1px solid var(--line2);background:var(--card)}
+.zt{width:32px;height:32px;display:grid;place-items:center;font-size:15px;color:var(--gray);cursor:pointer;border-bottom:1px solid var(--line)}
+.zt:last-child{border:none}.zt:hover{color:var(--ink);background:var(--paper)}
+/* right rail */
+.rail{display:flex;flex-direction:column;gap:0;min-height:0;overflow-y:auto;padding-right:2px}
+.rail::-webkit-scrollbar{width:4px}.rail::-webkit-scrollbar-thumb{background:var(--line2)}
+.rk{font-size:9.5px;font-weight:900;letter-spacing:.26em;color:var(--faint);margin:0 0 10px}
+.mission{background:var(--card);border:1px solid var(--line2);padding:16px 18px 14px;margin-bottom:14px}
+.mtype{font-size:9px;font-weight:900;letter-spacing:.22em;color:var(--red)}
+.mname{font-family:var(--disp);font-weight:700;font-size:16px;margin-top:6px;line-height:1.3}
+.msub{font-family:var(--mono);font-size:10.5px;color:var(--gray);margin-top:4px}
+.mrule{height:1px;background:var(--line);margin:12px 0}
+.trow{display:flex;justify-content:space-between}
+.tv{font-family:var(--mono);font-size:14px;font-weight:500}
+.tv small{color:var(--faint);font-size:9px}
+.tk{font-size:8.5px;font-weight:900;letter-spacing:.18em;color:var(--faint);margin-top:3px}
+.pbar{height:2px;background:var(--line);margin-top:13px;position:relative}
+.pbar i{position:absolute;inset:0 auto 0 0;background:var(--red);width:0%}
+.plab{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-top:6px}
+/* video card */
+.vid{background:var(--ink);color:#EDEBE4;padding:0;margin-bottom:14px;border:1px solid var(--ink)}
+.vidin{aspect-ratio:16/9;position:relative;display:grid;place-items:center;background:radial-gradient(ellipse 80% 90% at 50% 20%,#2A2620,#14120F)}
+.vidin .fov{position:absolute;inset:12px;border:1px solid rgba(255,255,255,.14)}
+.vidin .ph{text-align:center}
+.vidin .tri{width:0;height:0;border-left:16px solid #fff;border-top:10px solid transparent;border-bottom:10px solid transparent;margin:0 auto;opacity:.85}
+.vidin p{font-size:9px;font-weight:900;letter-spacing:.26em;color:#8f897d;margin-top:10px}
+.vfoot{display:flex;justify-content:space-between;padding:9px 14px;font-family:var(--mono);font-size:9.5px;color:#8f897d;border-top:1px solid rgba(255,255,255,.1)}
+.vfoot b{color:#EDEBE4;font-weight:500}
+/* actions */
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.btn{font-size:10.5px;font-weight:900;letter-spacing:.16em;padding:12px 0;text-align:center;cursor:pointer;transition:all .18s;border:1px solid var(--ink)}
+.btn.pri{background:var(--red);border-color:var(--red);color:#fff}
+.btn.pri:hover{background:#9A0000}
+.btn.sec{color:var(--ink)}
+.btn.sec:hover{background:var(--ink);color:var(--paper)}
+/* ledger */
+.ledger{background:transparent}
+.lrow{display:grid;grid-template-columns:54px 1fr auto;gap:12px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:12px;align-items:baseline}
+.lrow .t{font-family:var(--mono);font-size:9.5px;color:var(--faint)}
+.lrow .m{color:var(--gray);line-height:1.5}
+.lrow .m b{color:var(--ink)}
+.lrow .tag{font-size:8.5px;font-weight:900;letter-spacing:.14em;padding:3px 8px;border:1px solid var(--line2);color:var(--gray)}
+.lrow.al .tag{border-color:var(--hot);color:var(--hot)}
+/* footer strip */
+footer{display:flex;gap:26px;align-items:center;padding:10px 2px 14px;border-top:2px solid var(--ink);font-size:10px;font-weight:800;letter-spacing:.18em;color:var(--gray)}
+footer i{font-style:normal;color:var(--red)}
+footer .sp{flex:1}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="eamp">e<i>&amp;</i></div>
+    <div>
+      <div class="kick">PHYSICAL INTELLIGENCE</div>
+      <h1>UAE DRONE OPERATIONS</h1>
+    </div>
+    <div class="hsp"></div>
+    <span class="live">LIVE GRID</span>
+    <div class="mdate">TUE 22 JUL 2026</div>
+    <div class="mclock" id="clk">18:42:07<small>GST</small></div>
+  </header>
+
+  <div class="figures">
+    <div class="fig"><div class="n">104</div><div class="c">DOCK STATIONS</div></div>
+    <div class="fig"><div class="n" id="fair">17</div><div class="c">AIRBORNE NOW</div></div>
+    <div class="fig"><div class="n">241</div><div class="c">MISSIONS TODAY</div></div>
+    <div class="fig"><div class="n"><em>3</em></div><div class="c">ACTIVE ALERTS</div></div>
+    <div class="fig"><div class="n">99.2<span style="font-size:16px">%</span></div><div class="c">FLEET READY</div></div>
+    <div class="layers">
+      <span class="lb">MAP</span>
+      <div class="lay on">LIGHT</div><div class="lay">DARK</div><div class="lay">SATELLITE</div><div class="lay">TERRAIN</div>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="mapfr" id="mapwrap">
+      <svg class="map" viewBox="0 0 920 620" preserveAspectRatio="xMidYMid meet">
+        <path class="uae-land" d="M62,358 L120,348 L190,357 L238,342 L302,347 L364,320 L420,327 L455,310 L488,292 L520,272 L560,248 L610,212 L648,188 L676,170 L700,148 L716,110 L728,68 L742,76 L758,100 L752,138 L766,150 L770,188 L768,228 L760,252 L730,258 L700,262 L672,276 L688,298 L676,332 L642,340 L610,332 L588,348 L556,358 L520,352 L488,370 L500,410 L470,446 L420,450 L340,450 L200,540 L62,540 Z"/>
+        <path class="uae-border" d="M62,358 L62,540 M62,540 L200,540 L340,450 M700,262 L672,276 L688,298 L676,332"/>
+        <text class="cityl" x="378" y="400">ABU DHABI</text>
+        <text class="cityl" x="558" y="235">DUBAI</text>
+        <text class="cityl" x="645" y="162">RAK</text>
+        <text class="cityl" x="716" y="215">FUJAIRAH</text>
+        <text class="cityl" x="598" y="395">AL AIN</text>
+        <path id="cpath" class="corridor" d="M545,242 C575,215 620,220 655,195"/>
+        <g id="dockpts"></g>
+        <circle class="ring" cx="545" cy="242" r="9"/>
+        <g id="drone"><circle r="4.5" fill="#BC0000"/><circle r="9" fill="none" stroke="#BC0000" stroke-width="1" opacity=".4"/></g>
+      </svg>
+      <div class="maptag">NATIONAL GRID · ALL EMIRATES</div>
+      <div class="ztools"><div class="zt">+</div><div class="zt">−</div></div>
+      <div class="mapcoords" id="coords">25.2048° N · 55.2708° E</div>
+    </div>
+
+    <div class="rail">
+      <div class="rk">ACTIVE MISSION · DXB-017</div>
+      <div class="mission">
+        <div class="mtype">HIGHWAY INSPECTION</div>
+        <div class="mname">E311 Corridor Sweep, Sector 4</div>
+        <div class="msub">DJI M4TD · Dock DXB-017 · WP 12/31</div>
+        <div class="mrule"></div>
+        <div class="trow">
+          <div><div class="tv" id="talt">118<small> m</small></div><div class="tk">ALTITUDE</div></div>
+          <div><div class="tv" id="tspd">16.4<small> m/s</small></div><div class="tk">SPEED</div></div>
+          <div><div class="tv" id="tbat">87<small> %</small></div><div class="tk">BATTERY</div></div>
+          <div><div class="tv">1.9<small> km</small></div><div class="tk">TO DOCK</div></div>
+        </div>
+        <div class="pbar"><i id="mprog"></i></div>
+        <div class="plab"><span id="mpct">0%</span><span>ETA 14:22</span></div>
+      </div>
+
+      <div class="vid">
+        <div class="vidin">
+          <div class="fov"></div>
+          <div class="ph"><div class="tri"></div><p>AI MISSION VIDEO</p></div>
+        </div>
+        <div class="vfoot"><span>HIGGSFIELD · <b>GEN-4</b></span><span>00:47</span></div>
+      </div>
+
+      <div class="acts">
+        <div class="btn pri">TAKE CONTROL</div>
+        <div class="btn sec">RETURN TO DOCK</div>
+      </div>
+
+      <div class="rk">OPERATIONS LEDGER</div>
+      <div class="ledger" id="ledger"></div>
+    </div>
+  </div>
+
+  <footer>
+    <span>SIMULATED ENVIRONMENT</span><i>●</i>
+    <span>e&amp; 5G NETWORK 99.98%</span><i>●</i>
+    <span>GCAA AIRSPACE SYNC</span>
+    <div class="sp"></div>
+    <span>© 2026 e&amp;</span>
+  </footer>
+</div>
+<script>
+const pts=[[380,375],[400,360],[420,378],[358,388],[545,242],[560,230],[575,248],[530,258],[590,220],[640,180],[655,195],[700,220],[718,235],[600,370],[615,382],[210,450],[260,485],[150,435],[100,400],[480,310],[505,285]];
+document.getElementById('dockpts').innerHTML=pts.map((p,i)=>`<circle class="dockpt ${i%5?'':'hotd'}" cx="${p[0]}" cy="${p[1]}" r="4"/>`).join('');
+document.querySelectorAll('.lay').forEach(l=>l.addEventListener('click',()=>{document.querySelectorAll('.lay').forEach(x=>x.classList.remove('on'));l.classList.add('on');}));
+const clk=document.getElementById('clk');
+setInterval(()=>{clk.innerHTML=new Date().toLocaleTimeString('en-GB',{hour12:false})+'<small>GST</small>'},1000);
+const path=document.getElementById('cpath'),drone=document.getElementById('drone'),L=path.getTotalLength();
+let t=0;setInterval(()=>{t=(t+0.004)%1;const p=path.getPointAtLength(t*L);drone.setAttribute('transform',`translate(${p.x},${p.y})`);
+document.getElementById('mprog').style.width=(t*100).toFixed(0)+'%';
+document.getElementById('mpct').textContent=(t*100).toFixed(0)+'%';},50);
+const alt=document.getElementById('talt'),spd=document.getElementById('tspd'),bat=document.getElementById('tbat');
+let b=87;setInterval(()=>{alt.innerHTML=(116+Math.random()*5).toFixed(0)+'<small> m</small>';
+spd.innerHTML=(15.8+Math.random()*1.4).toFixed(1)+'<small> m/s</small>';
+if(Math.random()<.2&&b>60)b--;bat.innerHTML=b+'<small> %</small>';},1400);
+const evs=[['18:42','<b>DXB-017</b> waypoint 12 reached, capture OK','OK',''],
+['18:41','AI detect: <b>3 vehicles</b> shoulder stop, E311 km 41','DETECT',''],
+['18:41','<b>SHJ-003</b> gust 19 kt, holding pattern','WIND',''],
+['18:40','<b>AUH-009</b> M4D launched, perimeter patrol','LAUNCH',''],
+['18:40','<b>Dock SHJ-003</b> door sensor fault','FAULT','al'],
+['18:39','<b>RAK-012</b> survey complete: 4,218 palms counted','AI','']];
+document.getElementById('ledger').innerHTML=evs.map(e=>`<div class="lrow ${e[3]}"><div class="t">${e[0]}</div><div class="m">${e[1]}</div><div class="tag">${e[2]}</div></div>`).join('');
+document.getElementById('mapwrap').addEventListener('mousemove',e=>{
+const r=e.currentTarget.getBoundingClientRect();
+const lon=(51.4+(e.clientX-r.left)/r.width*5.2).toFixed(4);
+const lat=(26.3-(e.clientY-r.top)/r.height*3.7).toFixed(4);
+document.getElementById('coords').textContent=`${lat}° N · ${lon}° E`;});
+</script>
+</body>
+</html>

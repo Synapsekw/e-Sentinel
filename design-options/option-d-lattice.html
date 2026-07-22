@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Option D · LATTICE — Tactical C2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Poppins:wght@800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0B0C; --pan:#0F1112; --pan2:#141719; --raise:#1A1E21;
+  --line:#212629; --line2:#2E3538; --edge:#3A4246;
+  --ink:#D8DDDE; --dim:#8A9396; --faint:#565E61;
+  --red:#E5352B; --hot:#FF5F52; --amber:#E8A33D; --ok:#57C785; --cyan:#4FB8C9;
+  --mono:'IBM Plex Mono',monospace; --cond:'Barlow Condensed',sans-serif; --disp:'Poppins',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font-family:var(--cond);font-size:14px}
+.app{display:grid;grid-template-rows:22px 46px 1fr 130px;grid-template-columns:264px 1fr 330px;height:100vh}
+/* classification strip */
+.classif{grid-column:1/4;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.35em}
+/* command bar */
+.cmdbar{grid-column:1/4;display:flex;align-items:stretch;background:var(--pan);border-bottom:1px solid var(--line2)}
+.blk{display:flex;align-items:center;gap:10px;padding:0 16px;border-right:1px solid var(--line)}
+.eamp{font-family:var(--disp);font-weight:800;font-size:19px;color:#fff}
+.eamp i{color:var(--red);font-style:normal}
+.opname{font-family:var(--cond);font-weight:700;font-size:16px;letter-spacing:.14em;color:#fff}
+.opsub{font-family:var(--mono);font-size:8.5px;letter-spacing:.24em;color:var(--faint);margin-top:1px}
+.kv{line-height:1.25}
+.kv .k{font-family:var(--mono);font-size:8.5px;letter-spacing:.2em;color:var(--faint)}
+.kv .v{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--ink)}
+.kv .v.g{color:var(--ok)} .kv .v.a{color:var(--amber)} .kv .v.r{color:var(--hot)}
+.spacer{flex:1}
+.zclock{display:flex;align-items:center;gap:18px;padding:0 18px}
+.zclock .zt{text-align:right}
+.zclock .big{font-family:var(--mono);font-size:17px;font-weight:600;letter-spacing:.04em}
+.zclock .lab{font-family:var(--mono);font-size:8.5px;letter-spacing:.22em;color:var(--faint)}
+/* left: order of battle */
+.oob{border-right:1px solid var(--line2);background:var(--pan);display:flex;flex-direction:column;overflow:hidden}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 8px;border-bottom:1px solid var(--line)}
+.ph h2{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.24em;color:var(--dim)}
+.ph .n{font-family:var(--mono);font-size:10px;color:var(--faint)}
+.sector{border-bottom:1px solid var(--line)}
+.sechead{display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer;background:var(--pan2)}
+.sechead:hover{background:var(--raise)}
+.sechead .arr{font-family:var(--mono);font-size:9px;color:var(--faint);transition:transform .15s}
+.sector.open .arr{transform:rotate(90deg)}
+.sechead .nm{font-weight:600;font-size:14.5px;letter-spacing:.12em}
+.sechead .agg{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+.sechead .agg b{color:var(--ok);font-weight:500}
+.units{display:none}
+.sector.open .units{display:block}
+.unit{display:grid;grid-template-columns:26px 1fr auto;align-items:center;padding:6px 14px 6px 18px;cursor:pointer;border-top:1px solid var(--line)}
+.unit:hover{background:var(--pan2)}
+.unit.sel{background:var(--raise);box-shadow:inset 2px 0 0 var(--red)}
+.usym{width:14px;height:14px;border:1.5px solid var(--dim);position:relative}
+.usym::after{content:"";position:absolute;inset:4px;background:var(--dim)}
+.unit.fly .usym{border-color:var(--hot)} .unit.fly .usym::after{background:var(--hot)}
+.unit.warn .usym{border-color:var(--amber)} .unit.warn .usym::after{background:var(--amber)}
+.ucall{font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.03em}
+.uloc{font-family:var(--cond);font-size:12px;color:var(--faint);letter-spacing:.06em}
+.ustat{font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right;line-height:1.5}
+.ustat b{font-weight:600;color:var(--ok)}
+.unit.fly .ustat b{color:var(--hot)}
+.unit.warn .ustat b{color:var(--amber)}
+/* map */
+.mapz{position:relative;background:#0B0D0E;overflow:hidden;cursor:crosshair}
+.mapz svg.map{position:absolute;inset:0;width:100%;height:100%}
+.mgrs line{stroke:rgba(140,155,160,.06)}
+.mgrs text{font-family:var(--mono);font-size:8px;fill:#3A4246;letter-spacing:.1em}
+.uae-land{fill:#111416;stroke:#232A2D;stroke-width:1}
+.uae-border{fill:none;stroke:#333C40;stroke-width:1;stroke-dasharray:2 4}
+.cityl{font-family:var(--mono);font-size:8.5px;fill:#4A5458;letter-spacing:.28em}
+.nofly{fill:url(#hatch);stroke:var(--amber);stroke-width:.75;opacity:.5}
+.noflyl{font-family:var(--mono);font-size:7.5px;fill:var(--amber);letter-spacing:.14em;opacity:.8}
+.docksym{cursor:pointer}
+.docksym rect{fill:none;stroke:#7A8488;stroke-width:1.25}
+.docksym circle{fill:#7A8488}
+.docksym:hover rect{stroke:#fff}.docksym:hover circle{fill:#fff}
+.docksym.act rect{stroke:var(--hot)}.docksym.act circle{fill:var(--hot)}
+.rring{fill:none;stroke:rgba(87,199,133,.25);stroke-width:.75}
+.rringl{font-family:var(--mono);font-size:7.5px;fill:rgba(87,199,133,.5);letter-spacing:.08em}
+.corridor{fill:none;stroke:var(--hot);stroke-width:1.25;stroke-dasharray:7 4;opacity:.85;animation:dash 1.4s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-11}}
+.wpt{fill:none;stroke:var(--dim);stroke-width:1}
+.wptl{font-family:var(--mono);font-size:7.5px;fill:var(--faint)}
+.track polygon{fill:var(--hot)}
+.track line{stroke:var(--hot);stroke-width:1.25}
+.datablock{font-family:var(--mono);font-size:8.5px;fill:var(--ink)}
+.datablock .cs{font-weight:600;fill:#fff}
+.datablock .d2{fill:var(--dim)}
+.dbline{stroke:#4A5458;stroke-width:.75}
+/* map overlays */
+.maptl{position:absolute;top:10px;left:12px;font-family:var(--mono);font-size:9px;color:var(--faint);letter-spacing:.2em;display:flex;gap:18px}
+.maptl b{color:var(--dim);font-weight:500}
+.layers{position:absolute;top:28px;left:12px;display:flex;gap:1px;margin-top:6px;border:1px solid var(--line2)}
+.lay{padding:6px 13px;background:var(--pan);font-family:var(--cond);font-weight:600;font-size:12px;letter-spacing:.18em;color:var(--dim);cursor:pointer}
+.lay:hover{color:var(--ink)}
+.lay.on{background:var(--raise);color:#fff;box-shadow:inset 0 -2px 0 var(--red)}
+.mapbr{position:absolute;bottom:10px;right:12px;font-family:var(--mono);font-size:10px;color:var(--dim);background:rgba(10,11,12,.85);border:1px solid var(--line2);padding:5px 10px}
+.mapbl{position:absolute;bottom:10px;left:12px;font-family:var(--mono);font-size:8.5px;color:var(--faint);letter-spacing:.12em}
+.mapbl .bar{width:90px;height:4px;border:1px solid var(--faint);border-top:none;margin-top:3px}
+.compass{position:absolute;top:12px;right:12px;width:54px;height:54px;border:1px solid var(--line2);border-radius:50%;background:rgba(15,17,18,.85);display:grid;place-items:center}
+.compass svg{width:44px;height:44px}
+.ztools{position:absolute;top:76px;right:12px;display:flex;flex-direction:column;border:1px solid var(--line2)}
+.zt{width:32px;height:30px;display:grid;place-items:center;background:var(--pan);color:var(--dim);font-family:var(--mono);font-size:14px;cursor:pointer;border-bottom:1px solid var(--line)}
+.zt:last-child{border:none}.zt:hover{color:#fff;background:var(--raise)}
+/* right: track data */
+.track-pan{border-left:1px solid var(--line2);background:var(--pan);display:flex;flex-direction:column;overflow-y:auto}
+.track-pan::-webkit-scrollbar{width:3px}.track-pan::-webkit-scrollbar-thumb{background:var(--line2)}
+.tp-head{padding:10px 14px;border-bottom:1px solid var(--line)}
+.tp-tag{display:inline-block;font-family:var(--mono);font-size:8.5px;letter-spacing:.2em;color:var(--hot);border:1px solid rgba(229,53,43,.5);padding:2px 7px;margin-bottom:7px}
+.tp-call{font-family:var(--mono);font-size:17px;font-weight:600;letter-spacing:.04em;color:#fff}
+.tp-sub{font-family:var(--cond);font-size:13px;color:var(--dim);letter-spacing:.1em;margin-top:2px}
+.trows{border-bottom:1px solid var(--line)}
+.trow{display:flex;justify-content:space-between;padding:5.5px 14px;border-top:1px solid var(--line);font-family:var(--mono)}
+.trow .k{font-size:9px;letter-spacing:.18em;color:var(--faint);padding-top:2px}
+.trow .v{font-size:12px;font-weight:500}
+.trow .v small{color:var(--faint);font-size:9px}
+.trow .v.g{color:var(--ok)}
+/* video */
+.fpv{margin:12px 14px;border:1px solid var(--line2)}
+.fpv-h{display:flex;justify-content:space-between;padding:6px 10px;background:var(--pan2);font-family:var(--mono);font-size:8.5px;letter-spacing:.2em;color:var(--dim)}
+.fpv-h .rec{color:var(--hot)}.fpv-h .rec::before{content:"● ";animation:bl 1.2s infinite}
+@keyframes bl{50%{opacity:.2}}
+.fpv-f{aspect-ratio:16/9;background:#060708;position:relative;display:grid;place-items:center;overflow:hidden}
+.fpv-f .ret{position:absolute;inset:0}
+.fpv-f .ret::before{content:"";position:absolute;left:50%;top:50%;width:38px;height:38px;transform:translate(-50%,-50%);border:1px solid rgba(216,221,222,.4)}
+.fpv-f .ret::after{content:"";position:absolute;left:50%;top:50%;width:110px;height:1px;transform:translate(-50%,-50%);background:linear-gradient(90deg,rgba(216,221,222,.4),transparent 30%,transparent 70%,rgba(216,221,222,.4))}
+.fpv-f .cdat{position:absolute;font-family:var(--mono);font-size:8px;color:var(--dim);letter-spacing:.1em}
+.fpv-f .c1{top:8px;left:10px}.fpv-f .c2{top:8px;right:10px}.fpv-f .c3{bottom:8px;left:10px}.fpv-f .c4{bottom:8px;right:10px}
+.fpv-f .ph{text-align:center;z-index:2}
+.fpv-f .ph p{font-family:var(--mono);font-size:8.5px;letter-spacing:.24em;color:var(--faint);margin-top:6px}
+.fpv-f .tri{width:0;height:0;border-left:12px solid var(--dim);border-top:8px solid transparent;border-bottom:8px solid transparent;margin:0 auto}
+/* actions */
+.acts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:0 14px 12px}
+.act{font-family:var(--cond);font-weight:700;font-size:12.5px;letter-spacing:.14em;text-align:center;padding:9px 0;border:1px solid var(--line2);color:var(--ink);cursor:pointer;transition:all .12s}
+.act:hover{border-color:var(--edge);background:var(--pan2)}
+.act.pri{background:var(--red);border-color:var(--red);color:#fff}
+.act.pri:hover{background:#C22A21}
+/* tasking */
+.taskh{padding:8px 14px 6px;border-top:1px solid var(--line)}
+.taskh .t{font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.24em;color:var(--dim)}
+.task{padding:2px 14px 12px}
+.task .row{display:grid;grid-template-columns:20px 1fr;gap:8px;padding:4px 0;font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+.task .row .st{color:var(--ok)}
+.task .row.cur .st{color:var(--hot)}
+.task .row.cur{color:var(--ink)}
+.task .row.pend{color:var(--faint)}
+/* bottom: log + cmd */
+.bottom{grid-column:1/4;display:grid;grid-template-columns:1fr 330px;border-top:1px solid var(--line2);background:var(--pan)}
+.log{padding:8px 14px;overflow-y:auto;font-family:var(--mono);font-size:10.5px;line-height:1.9}
+.log::-webkit-scrollbar{width:3px}.log::-webkit-scrollbar-thumb{background:var(--line2)}
+.lg .t{color:var(--faint)}
+.lg .lv{display:inline-block;width:52px;color:var(--ok)}
+.lg .lv.w{color:var(--amber)} .lg .lv.a{color:var(--hot)}
+.lg .m{color:var(--dim)}
+.lg .m b{color:var(--ink);font-weight:500}
+.cmd{border-left:1px solid var(--line);display:flex;flex-direction:column}
+.cmdh{padding:8px 14px 4px;font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.24em;color:var(--dim)}
+.cmdi{flex:1;margin:4px 14px 12px;background:#060708;border:1px solid var(--line2);padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--ok)}
+.cmdi .pr{color:var(--faint)}
+.cur{display:inline-block;width:7px;height:12px;background:var(--ok);vertical-align:-2px;animation:bl 1s steps(1) infinite}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="classif">SIMULATED ENVIRONMENT · e&amp; PHYSICAL INTELLIGENCE · EXERCISE ONLY</div>
+
+  <div class="cmdbar">
+    <div class="blk"><span class="eamp">e<i>&amp;</i></span>
+      <div><div class="opname">UAE DRONE COMMAND</div><div class="opsub">NATIONAL GRID · C2</div></div>
+    </div>
+    <div class="blk"><div class="kv"><div class="k">GRID</div><div class="v g">OPERATIONAL</div></div></div>
+    <div class="blk"><div class="kv"><div class="k">DOCKS</div><div class="v">104</div></div></div>
+    <div class="blk"><div class="kv"><div class="k">AIRBORNE</div><div class="v" id="airb">17</div></div></div>
+    <div class="blk"><div class="kv"><div class="k">ALERTS</div><div class="v r">3</div></div></div>
+    <div class="blk"><div class="kv"><div class="k">AIRSPACE</div><div class="v">GCAA SYNC</div></div></div>
+    <div class="spacer"></div>
+    <div class="zclock">
+      <div class="zt"><div class="big" id="clkz">14:42:07Z</div><div class="lab">ZULU</div></div>
+      <div class="zt"><div class="big" id="clkl">18:42:07</div><div class="lab">GST</div></div>
+    </div>
+    <div class="blk" style="border-left:1px solid var(--line);border-right:none"><div class="kv"><div class="k">OPERATOR</div><div class="v">DK-01</div></div></div>
+  </div>
+
+  <div class="oob">
+    <div class="ph"><h2>ORDER OF BATTLE</h2><span class="n">104 UNITS</span></div>
+    <div id="sectors"></div>
+  </div>
+
+  <div class="mapz" id="mapwrap">
+    <svg class="map" viewBox="0 0 980 640" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <pattern id="hatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+          <line x1="0" y1="0" x2="0" y2="6" stroke="#E8A33D" stroke-width="1" opacity=".35"/>
+        </pattern>
+      </defs>
+      <g class="mgrs" id="mgrs"></g>
+      <path class="uae-land" d="M82,368 L140,358 L210,367 L258,352 L322,357 L384,330 L440,337 L475,320 L508,302 L540,282 L580,258 L630,222 L668,198 L696,180 L720,158 L736,120 L748,78 L762,86 L778,110 L772,148 L786,160 L790,198 L788,238 L780,262 L750,268 L720,272 L692,286 L708,308 L696,342 L662,350 L630,342 L608,358 L576,368 L540,362 L508,380 L520,420 L490,456 L440,460 L360,460 L220,550 L82,550 Z"/>
+      <path class="uae-border" d="M82,368 L82,550 M82,550 L220,550 L360,460 M720,272 L692,286 L708,308 L696,342"/>
+      <text class="cityl" x="400" y="410">ABU DHABI</text>
+      <text class="cityl" x="580" y="245">DUBAI</text>
+      <text class="cityl" x="668" y="172">RAK</text>
+      <text class="cityl" x="738" y="225">FUJAIRAH</text>
+      <text class="cityl" x="620" y="405">AL AIN</text>
+      <text class="cityl" x="170" y="420">AL DHAFRA</text>
+      <!-- no-fly zones -->
+      <circle class="nofly" cx="596" cy="238" r="17"/><text class="noflyl" x="577" y="215">OMDB R-1</text>
+      <circle class="nofly" cx="428" cy="382" r="15"/><text class="noflyl" x="410" y="360">OMAA R-2</text>
+      <!-- range rings around selected dock -->
+      <g id="rings">
+        <circle class="rring" cx="565" cy="252" r="34"/><text class="rringl" x="600" y="250">5KM</text>
+        <circle class="rring" cx="565" cy="252" r="62"/><text class="rringl" x="628" y="250">10KM</text>
+      </g>
+      <path id="cpath" class="corridor" d="M565,252 C595,225 640,230 675,205"/>
+      <!-- waypoints -->
+      <g id="wpts">
+        <rect class="wpt" x="611" y="221" width="7" height="7" transform="rotate(45 614.5 224.5)"/><text class="wptl" x="620" y="220">WP12</text>
+        <rect class="wpt" x="671" y="201" width="7" height="7" transform="rotate(45 674.5 204.5)"/><text class="wptl" x="680" y="200">WP31</text>
+      </g>
+      <g id="docksyms"></g>
+      <!-- live track: chevron + velocity vector + datablock -->
+      <g class="track" id="trk">
+        <line id="vvec" x1="0" y1="0" x2="16" y2="0"/>
+        <polygon id="chev" points="0,-5 9,0 0,5 2.5,0"/>
+      </g>
+      <line class="dbline" id="dbline" x1="0" y1="0" x2="0" y2="0"/>
+      <g class="datablock" id="dblock">
+        <text class="cs" x="0" y="0">EAD-017</text>
+        <text class="d2" x="0" y="10">118M · 16.4M/S</text>
+        <text class="d2" x="0" y="20" id="dbb">BAT 87 · WP12/31</text>
+      </g>
+    </svg>
+    <div class="maptl"><span>GRID <b>MGRS 40R</b></span><span>DATUM <b>WGS-84</b></span><span>TRACKS <b id="trkn">17</b></span></div>
+    <div class="layers">
+      <div class="lay on">TAC DARK</div><div class="lay">TAC LIGHT</div><div class="lay">SAT</div><div class="lay">TERRAIN</div>
+    </div>
+    <div class="compass"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" fill="none" stroke="#2E3538"/><polygon points="22,6 25,22 22,38 19,22" fill="#8A9396"/><polygon points="22,6 25,22 19,22" fill="#E5352B"/><text x="22" y="4" font-family="monospace" font-size="7" fill="#8A9396" text-anchor="middle">N</text></svg></div>
+    <div class="ztools"><div class="zt">+</div><div class="zt">−</div><div class="zt" style="font-size:8px;letter-spacing:.1em">FIT</div></div>
+    <div class="mapbr" id="coords">25.2048N 055.2708E · 40R CN 12345 67890</div>
+    <div class="mapbl">25 KM<div class="bar"></div></div>
+  </div>
+
+  <div class="track-pan">
+    <div class="tp-head">
+      <div class="tp-tag">TRACK · ACTIVE MISSION</div>
+      <div class="tp-call">EAD-017</div>
+      <div class="tp-sub">DJI MATRICE 4TD · DOCK DXB-017 BUSINESS BAY</div>
+    </div>
+    <div class="trows">
+      <div class="trow"><span class="k">MISSION</span><span class="v">HWY INSPECT E311/S4</span></div>
+      <div class="trow"><span class="k">ALT AGL</span><span class="v" id="talt">118 <small>M</small></span></div>
+      <div class="trow"><span class="k">GS</span><span class="v" id="tspd">16.4 <small>M/S</small></span></div>
+      <div class="trow"><span class="k">HDG</span><span class="v" id="thdg">052°</span></div>
+      <div class="trow"><span class="k">BAT</span><span class="v g" id="tbat">87%</span></div>
+      <div class="trow"><span class="k">LINK</span><span class="v g">O3+ · -62 DBM</span></div>
+      <div class="trow"><span class="k">DIST HOME</span><span class="v">1.9 <small>KM</small></span></div>
+    </div>
+    <div class="fpv">
+      <div class="fpv-h"><span>FPV · EO/IR</span><span class="rec">REC</span></div>
+      <div class="fpv-f">
+        <div class="ret"></div>
+        <span class="cdat c1">EO · 1X</span><span class="cdat c2" id="fpvh">HDG 052</span>
+        <span class="cdat c3" id="fpva">ALT 118M</span><span class="cdat c4">GST <span id="fpvt">18:42:07</span></span>
+        <div class="ph"><div class="tri"></div><p>AI MISSION VIDEO SLOT</p></div>
+      </div>
+      <div class="fpv-h" style="border-top:1px solid var(--line)"><span>HIGGSFIELD · GEN-4</span><span>00:47</span></div>
+    </div>
+    <div class="acts">
+      <div class="act pri">ASSUME</div>
+      <div class="act">HOLD</div>
+      <div class="act">RTB</div>
+    </div>
+    <div class="taskh"><div class="t">TASKING</div></div>
+    <div class="task">
+      <div class="row"><span class="st">■</span><span>LAUNCH DXB-017 · 18:31:04 · COMPLETE</span></div>
+      <div class="row"><span class="st">■</span><span>TRANSIT CORRIDOR C4 · COMPLETE</span></div>
+      <div class="row cur"><span class="st">▶</span><span>SWEEP E311 S4 · WP 12/31 · IN PROGRESS</span></div>
+      <div class="row pend"><span class="st">□</span><span>AI ANALYTICS PASS · PENDING</span></div>
+      <div class="row pend"><span class="st">□</span><span>RTB + PRECISION LAND · PENDING</span></div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="log" id="log"></div>
+    <div class="cmd">
+      <div class="cmdh">COMMAND</div>
+      <div class="cmdi"><span class="pr">CMD&gt;</span> <span id="cmdtxt"></span><span class="cur"></span></div>
+    </div>
+  </div>
+</div>
+<script>
+// MGRS grid
+const mg=document.getElementById('mgrs');let s='';
+const cols='ABCDEFGHJKLM';
+for(let x=0;x<=980;x+=70){s+=`<line x1="${x}" y1="0" x2="${x}" y2="640"/>`;if(x<980)s+=`<text x="${x+4}" y="12">${40}R${cols[x/70]}</text>`}
+for(let y=0;y<=640;y+=70)s+=`<line x1="0" y1="${y}" x2="980" y2="${y}"/>`;
+mg.innerHTML=s;
+// dock symbols
+const pts=[[400,385],[420,370],[440,388],[378,398],[565,252],[580,240],[595,258],[550,268],[610,230],[660,190],[675,205],[720,230],[738,245],[620,380],[635,392],[230,460],[280,495],[170,445],[120,410],[500,320],[525,295]];
+document.getElementById('docksyms').innerHTML=pts.map((p,i)=>`<g class="docksym ${i===4||i===10?'act':''}" transform="translate(${p[0]-5},${p[1]-5})"><rect width="10" height="10"/><circle cx="5" cy="5" r="1.8"/></g>`).join('');
+// order of battle
+const secs=[['SECTOR NORTH · DXB/SHJ/AJM',[['EAD-017','Business Bay','fly','AIRBORNE','WP12/31'],['EAD-021','Al Qusais','','READY','R1'],['EAD-009','Marina','','READY','R1'],['ESH-003','Al Zorah','warn','FAULT','MX']]],
+['SECTOR CAPITAL · AUH',[['EAU-004','Corniche','','READY','R1'],['EAU-011','Masdar','fly','AIRBORNE','PATROL'],['EAU-019','Khalifa Port','','READY','R2']]],
+['SECTOR EAST · RAK/FUJ',[['ERK-012','Al Nakheel','','CHARGE','82%'],['EFJ-002','Fujairah Port','','READY','R1']]],
+['SECTOR WEST · AL DHAFRA',[['EAD-031','Ruwais','','READY','R2'],['EAD-033','Liwa','','READY','R2']]]];
+document.getElementById('sectors').innerHTML=secs.map((sec,i)=>`<div class="sector ${i<2?'open':''}"><div class="sechead"><span class="arr">▶</span><span class="nm">${sec[0]}</span><span class="agg"><b>${sec[1].length}</b> UNITS</span></div><div class="units">${sec[1].map((u,j)=>`<div class="unit ${u[2]} ${i===0&&j===0?'sel':''}"><div class="usym"></div><div><div class="ucall">${u[0]}</div><div class="uloc">${u[1].toUpperCase()}</div></div><div class="ustat"><b>${u[3]}</b><br>${u[4]}</div></div>`).join('')}</div></div>`).join('');
+document.querySelectorAll('.sechead').forEach(h=>h.addEventListener('click',()=>h.parentElement.classList.toggle('open')));
+document.querySelectorAll('.unit').forEach(u=>u.addEventListener('click',()=>{document.querySelectorAll('.unit').forEach(x=>x.classList.remove('sel'));u.classList.add('sel');}));
+document.querySelectorAll('.lay').forEach(l=>l.addEventListener('click',()=>{document.querySelectorAll('.lay').forEach(x=>x.classList.remove('on'));l.classList.add('on');}));
+// clocks
+setInterval(()=>{const d=new Date();
+document.getElementById('clkl').textContent=d.toLocaleTimeString('en-GB',{hour12:false});
+const z=new Date(d.getTime()-4*3600e3);
+document.getElementById('clkz').textContent=z.toLocaleTimeString('en-GB',{hour12:false})+'Z';
+document.getElementById('fpvt').textContent=d.toLocaleTimeString('en-GB',{hour12:false});},1000);
+// track along path with heading
+const path=document.getElementById('cpath'),trk=document.getElementById('trk'),L=path.getTotalLength();
+const dbline=document.getElementById('dbline'),dblock=document.getElementById('dblock');
+let t=0;setInterval(()=>{t=(t+0.0035)%1;
+const p=path.getPointAtLength(t*L),p2=path.getPointAtLength(Math.min((t+0.02),1)*L);
+const ang=Math.atan2(p2.y-p.y,p2.x-p.x)*180/Math.PI;
+trk.setAttribute('transform',`translate(${p.x},${p.y}) rotate(${ang})`);
+dbline.setAttribute('x1',p.x+6);dbline.setAttribute('y1',p.y-6);
+dbline.setAttribute('x2',p.x+22);dbline.setAttribute('y2',p.y-22);
+dblock.setAttribute('transform',`translate(${p.x+25},${p.y-30})`);
+document.getElementById('thdg').textContent=String(Math.round((ang+360+90)%360)).padStart(3,'0')+'°';
+document.getElementById('fpvh').textContent='HDG '+String(Math.round((ang+360+90)%360)).padStart(3,'0');},50);
+// telemetry
+let b=87;setInterval(()=>{
+const a=(116+Math.random()*5).toFixed(0);
+document.getElementById('talt').innerHTML=a+' <small>M</small>';
+document.getElementById('fpva').textContent='ALT '+a+'M';
+document.getElementById('tspd').innerHTML=(15.8+Math.random()*1.4).toFixed(1)+' <small>M/S</small>';
+if(Math.random()<.2&&b>60)b--;document.getElementById('tbat').textContent=b+'%';
+document.getElementById('dbb').textContent='BAT '+b+' · WP12/31';},1400);
+// log
+const logs=[['18:42:11','OK','<b>EAD-017</b> WP12 REACHED · CAPTURE OK'],
+['18:41:58','DETECT','AI: <b>3 VEH</b> SHOULDER STOP · E311 KM41 · CONF 0.94'],
+['18:41:30','WX','<b>ESH-003</b> GUST 19KT · HOLDING'],
+['18:40:55','LAUNCH','<b>EAU-011</b> M4D AIRBORNE · PERIMETER PATROL'],
+['18:40:12','FAULT','<b>DOCK ESH-003</b> DOOR SENSOR · TICKET MX-4471'],
+['18:39:47','AI','<b>ERK-012</b> SURVEY COMPLETE · 4218 PALMS · NDVI 0.71']];
+const lvc={OK:'',DETECT:'',LAUNCH:'',AI:'',WX:'w',FAULT:'a'};
+document.getElementById('log').innerHTML=logs.map(l=>`<div class="lg"><span class="t">${l[0]}</span> <span class="lv ${lvc[l[1]]}">${l[1]}</span><span class="m">${l[2]}</span></div>`).join('');
+// cmd typing loop
+const cmds=['TASK EAD-021 PATROL SECTOR N4','ASSUME EAD-017','RTB ESH-003 REASON MX'];
+let ci=0,cc=0;const ct=document.getElementById('cmdtxt');
+setInterval(()=>{cc++;if(cc<=cmds[ci].length){ct.textContent=cmds[ci].slice(0,cc)}else if(cc>cmds[ci].length+18){cc=0;ci=(ci+1)%cmds.length}},90);
+// coords
+document.getElementById('mapwrap').addEventListener('mousemove',e=>{
+const r=e.currentTarget.getBoundingClientRect();
+const lon=(51.4+(e.clientX-r.left)/r.width*5.2),lat=(26.3-(e.clientY-r.top)/r.height*3.7);
+const en=String(Math.round((e.clientX-r.left)*37)).padStart(5,'0'),nn=String(Math.round((r.height-(e.clientY-r.top))*52)).padStart(5,'0');
+document.getElementById('coords').textContent=`${lat.toFixed(4)}N ${lon.toFixed(4).padStart(8,'0')}E · 40R CN ${en} ${nn}`;});
+</script>
+</body>
+</html>

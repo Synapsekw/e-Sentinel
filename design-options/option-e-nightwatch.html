@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Option E · NIGHTWATCH — Phosphor Scope</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Poppins:wght@800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#050807; --pan:rgba(7,13,10,.92); --line:#12291C; --line2:#1C3D2A;
+  --ph:#6BE59A; --ph2:#3E8F63; --dimph:#2A5C41; --brt:#B7F5CF;
+  --amber:#E0B84E; --red:#FF4D42; --ered:#E5352B;
+  --mono:'IBM Plex Mono',monospace; --disp:'Poppins',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--ph);font-family:var(--mono);font-size:12px}
+/* scope */
+.scope{position:fixed;inset:0;cursor:crosshair}
+.scope svg{width:100%;height:100%}
+.gridl line{stroke:rgba(107,229,154,.05)}
+.uae-land{fill:rgba(107,229,154,.045);stroke:var(--ph2);stroke-width:1}
+.uae-border{fill:none;stroke:var(--dimph);stroke-width:1;stroke-dasharray:2 4}
+.cityl{font-family:var(--mono);font-size:8.5px;fill:var(--dimph);letter-spacing:.3em}
+.rring{fill:none;stroke:rgba(107,229,154,.14);stroke-width:.75}
+.rringl{font-size:7.5px;fill:var(--dimph)}
+.sweep{transform-origin:565px 252px;animation:sw 6s linear infinite}
+@keyframes sw{to{transform:rotate(360deg)}}
+.blip{fill:var(--ph)}
+.blip.dockb{fill:none;stroke:var(--ph2);stroke-width:1.25}
+.blip.dockb.act{stroke:var(--brt)}
+.bliplab{font-size:8px;fill:var(--ph2);letter-spacing:.08em}
+.corridor{fill:none;stroke:var(--brt);stroke-width:1.2;stroke-dasharray:6 5;opacity:.7;animation:dash 1.4s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-11}}
+.trail circle{fill:var(--ph)}
+.trk polygon{fill:var(--brt)}
+.dtag{font-size:8.5px;fill:var(--ph)}
+.dtag .h{fill:var(--brt);font-weight:600}
+.dtagline{stroke:var(--ph2);stroke-width:.6}
+.nofly{fill:none;stroke:var(--amber);stroke-width:.8;stroke-dasharray:3 3;opacity:.55}
+.noflyl{font-size:7.5px;fill:var(--amber);opacity:.7;letter-spacing:.12em}
+/* frame panels */
+.panel{position:fixed;background:var(--pan);border:1px solid var(--line2)}
+.tl{top:14px;left:14px;padding:12px 16px 10px;min-width:250px}
+.brand{display:flex;align-items:baseline;gap:10px}
+.eamp{font-family:var(--disp);font-weight:800;font-size:18px;color:#fff}
+.eamp i{color:var(--ered);font-style:normal}
+.brand b{font-size:13px;font-weight:700;letter-spacing:.2em;color:var(--brt)}
+.sub{font-size:8.5px;letter-spacing:.26em;color:var(--ph2);margin-top:4px}
+.stat{display:flex;gap:0;margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.st{padding-right:16px;margin-right:16px;border-right:1px solid var(--line)}
+.st:last-child{border:none;margin:0;padding:0}
+.st .n{font-size:17px;font-weight:600;color:var(--brt)}
+.st .n.r{color:var(--red)}
+.st .c{font-size:7.5px;letter-spacing:.2em;color:var(--ph2);margin-top:3px}
+.tr{top:14px;right:14px;text-align:right;padding:12px 16px}
+.tr .clock{font-size:22px;font-weight:600;color:var(--brt);letter-spacing:.04em}
+.tr .zulu{font-size:10px;color:var(--ph2);margin-top:2px}
+.tr .mode{margin-top:8px;font-size:8.5px;letter-spacing:.22em;color:var(--ph2)}
+.tr .mode b{color:var(--ph)}
+/* left: contact board */
+.bl{left:14px;top:196px;bottom:64px;width:250px;display:flex;flex-direction:column;overflow:hidden}
+.bh{padding:10px 14px 8px;border-bottom:1px solid var(--line);font-size:9.5px;letter-spacing:.26em;color:var(--ph2);display:flex;justify-content:space-between}
+.bh b{color:var(--ph);font-weight:500}
+.contacts{flex:1;overflow-y:auto}
+.contacts::-webkit-scrollbar{width:3px}.contacts::-webkit-scrollbar-thumb{background:var(--line2)}
+.ct{display:grid;grid-template-columns:14px 1fr auto;gap:9px;align-items:center;padding:7px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.ct:hover{background:rgba(107,229,154,.05)}
+.ct.sel{background:rgba(107,229,154,.08);box-shadow:inset 2px 0 0 var(--brt)}
+.ct .sym{width:9px;height:9px;border:1.25px solid var(--ph2)}
+.ct.fly .sym{background:var(--brt);border-color:var(--brt);transform:rotate(45deg)}
+.ct.warn .sym{border-color:var(--amber)}
+.ct .cs{font-size:11px;font-weight:600;color:var(--ph)}
+.ct .lo{font-size:9px;color:var(--dimph);margin-top:1px}
+.ct .rs{font-size:8.5px;color:var(--ph2);text-align:right;line-height:1.5}
+.ct.fly .rs{color:var(--brt)}
+.ct.warn .rs{color:var(--amber)}
+/* right: track + fpv */
+.br{right:14px;top:196px;width:300px;padding:0 0 4px}
+.trkh{padding:11px 15px 9px;border-bottom:1px solid var(--line)}
+.trkh .tag{font-size:8px;letter-spacing:.24em;color:var(--red)}
+.trkh .cs{font-size:16px;font-weight:700;color:var(--brt);margin-top:4px;letter-spacing:.06em}
+.trkh .ms{font-size:9px;color:var(--ph2);margin-top:2px;letter-spacing:.1em}
+.kvrow{display:flex;justify-content:space-between;padding:5px 15px;border-bottom:1px solid var(--line);font-size:10.5px}
+.kvrow .k{color:var(--ph2);letter-spacing:.16em;font-size:8.5px;padding-top:2px}
+.kvrow .v{color:var(--ph);font-weight:500}
+.kvrow .v.b{color:var(--brt)}
+.fpv{margin:12px 15px;border:1px solid var(--line2);aspect-ratio:16/9;position:relative;background:#020403;display:grid;place-items:center}
+.fpv .ret{position:absolute;left:50%;top:50%;width:34px;height:34px;transform:translate(-50%,-50%);border:1px solid rgba(107,229,154,.35)}
+.fpv .cd{position:absolute;font-size:7.5px;color:var(--ph2);letter-spacing:.1em}
+.fpv .c1{top:6px;left:8px}.fpv .c2{top:6px;right:8px}.fpv .c3{bottom:6px;left:8px}.fpv .c4{bottom:6px;right:8px}
+.fpv p{font-size:8px;letter-spacing:.26em;color:var(--dimph)}
+.fpv .rec{position:absolute;top:6px;right:8px;color:var(--red)}
+.fpv .rec::before{content:"● ";animation:bl 1.2s infinite}
+@keyframes bl{50%{opacity:.2}}
+.acts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:0 15px 12px}
+.act{text-align:center;font-size:9.5px;font-weight:600;letter-spacing:.18em;padding:9px 0;border:1px solid var(--line2);color:var(--ph);cursor:pointer}
+.act:hover{background:rgba(107,229,154,.08);border-color:var(--ph2)}
+.act.pri{background:var(--brt);border-color:var(--brt);color:#03130A}
+.act.pri:hover{background:#D9FBE7}
+/* bottom log */
+.bb{left:14px;right:14px;bottom:14px;height:40px;display:flex;align-items:center;gap:20px;padding:0 16px;font-size:10.5px}
+.bb .lab{font-size:8.5px;letter-spacing:.24em;color:var(--ph2)}
+.bb .msg b{color:var(--brt);font-weight:600}
+.bb .msg{color:var(--ph2)}
+.bb .cmd{margin-left:auto;color:var(--ph)}
+.bb .cmd .pr{color:var(--dimph)}
+.cur{display:inline-block;width:6px;height:11px;background:var(--ph);vertical-align:-2px;animation:bl 1s steps(1) infinite}
+.coords{position:fixed;bottom:64px;right:14px;font-size:9.5px;color:var(--ph2);background:var(--pan);border:1px solid var(--line);padding:4px 9px}
+.classif{position:fixed;top:0;left:0;right:0;height:0}
+</style>
+</head>
+<body>
+<div class="scope" id="mapwrap">
+  <svg viewBox="0 0 1460 900" preserveAspectRatio="xMidYMid slice">
+    <g class="gridl" id="gl"></g>
+    <g transform="translate(250,110) scale(1.06)">
+      <path class="uae-land" d="M82,368 L140,358 L210,367 L258,352 L322,357 L384,330 L440,337 L475,320 L508,302 L540,282 L580,258 L630,222 L668,198 L696,180 L720,158 L736,120 L748,78 L762,86 L778,110 L772,148 L786,160 L790,198 L788,238 L780,262 L750,268 L720,272 L692,286 L708,308 L696,342 L662,350 L630,342 L608,358 L576,368 L540,362 L508,380 L520,420 L490,456 L440,460 L360,460 L220,550 L82,550 Z"/>
+      <path class="uae-border" d="M82,368 L82,550 M82,550 L220,550 L360,460 M720,272 L692,286 L708,308 L696,342"/>
+      <text class="cityl" x="400" y="410">ABU DHABI</text>
+      <text class="cityl" x="580" y="245">DUBAI</text>
+      <text class="cityl" x="668" y="172">RAK</text>
+      <text class="cityl" x="738" y="225">FUJAIRAH</text>
+      <text class="cityl" x="620" y="405">AL AIN</text>
+      <circle class="nofly" cx="596" cy="238" r="17"/><text class="noflyl" x="576" y="214">OMDB R-1</text>
+      <circle class="nofly" cx="448" cy="382" r="15"/><text class="noflyl" x="428" y="360">OMAA R-2</text>
+      <!-- range rings + sweep on selected dock -->
+      <g id="rings">
+        <circle class="rring" cx="565" cy="252" r="40"/><text class="rringl" x="608" y="250">5</text>
+        <circle class="rring" cx="565" cy="252" r="80"/><text class="rringl" x="648" y="250">10</text>
+        <circle class="rring" cx="565" cy="252" r="120"/><text class="rringl" x="688" y="250">15</text>
+        <g class="sweep"><path d="M565,252 L565,132 A120,120 0 0,1 625,148 Z" fill="url(#swgrad)"/></g>
+      </g>
+      <path id="cpath" class="corridor" d="M565,252 C595,225 640,230 675,205"/>
+      <g id="docksyms"></g>
+      <g class="trail" id="trail"></g>
+      <g class="trk" id="trk"><polygon points="0,-5 9,0 0,5 2.5,0"/></g>
+      <line class="dtagline" id="dtl" x1="0" y1="0" x2="0" y2="0"/>
+      <g class="dtag" id="dtag">
+        <text class="h" x="0" y="0">EAD-017</text>
+        <text x="0" y="11" id="dt1">118M 16MS 052</text>
+        <text x="0" y="22" id="dt2">BAT87 WP12/31</text>
+      </g>
+    </g>
+    <defs>
+      <linearGradient id="swgrad" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#6BE59A" stop-opacity=".16"/>
+        <stop offset="1" stop-color="#6BE59A" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+  </svg>
+</div>
+
+<div class="panel tl">
+  <div class="brand"><span class="eamp">e<i>&amp;</i></span><b>NIGHTWATCH</b></div>
+  <div class="sub">UAE DRONE GRID · SCOPE MODE</div>
+  <div class="stat">
+    <div class="st"><div class="n">104</div><div class="c">DOCKS</div></div>
+    <div class="st"><div class="n" id="airb">17</div><div class="c">AIRBORNE</div></div>
+    <div class="st"><div class="n r">3</div><div class="c">ALERTS</div></div>
+  </div>
+</div>
+
+<div class="panel tr">
+  <div class="clock" id="clk">18:42:07</div>
+  <div class="zulu" id="clkz">14:42:07 ZULU</div>
+  <div class="mode">MODE <b>TAC NIGHT</b> · GRID <b>MGRS 40R</b> · <b id="trkn">17</b> TRACKS</div>
+</div>
+
+<div class="panel bl">
+  <div class="bh"><span>CONTACT BOARD</span><b id="cbn">11</b></div>
+  <div class="contacts" id="contacts"></div>
+</div>
+
+<div class="panel br">
+  <div class="trkh">
+    <div class="tag">TRACK LOCK · MISSION ACTIVE</div>
+    <div class="cs">EAD-017</div>
+    <div class="ms">M4TD · DXB-017 BUSINESS BAY · HWY INSPECT E311/S4</div>
+  </div>
+  <div class="kvrow"><span class="k">ALT AGL</span><span class="v b" id="talt">118 M</span></div>
+  <div class="kvrow"><span class="k">GROUNDSPEED</span><span class="v" id="tspd">16.4 M/S</span></div>
+  <div class="kvrow"><span class="k">HEADING</span><span class="v" id="thdg">052</span></div>
+  <div class="kvrow"><span class="k">BATTERY</span><span class="v" id="tbat">87 PCT</span></div>
+  <div class="kvrow"><span class="k">LINK</span><span class="v">O3+ / -62DBM</span></div>
+  <div class="fpv">
+    <div class="ret"></div>
+    <span class="cd c1">EO/IR</span><span class="cd rec">REC</span>
+    <span class="cd c3" id="fpva">ALT 118</span><span class="cd c4" id="fpvt">18:42:07</span>
+    <p>AI MISSION VIDEO SLOT</p>
+  </div>
+  <div class="acts">
+    <div class="act pri">ASSUME</div><div class="act">HOLD</div><div class="act">RTB</div>
+  </div>
+</div>
+
+<div class="coords" id="coords">25.2048N 055.2708E</div>
+
+<div class="panel bb">
+  <span class="lab">EVENTS</span>
+  <span class="msg" id="evmsg"><b>EAD-017</b> WP12 REACHED · CAPTURE OK</span>
+  <span class="cmd"><span class="pr">CMD&gt;</span> <span id="cmdtxt"></span><span class="cur"></span></span>
+</div>
+
+<script>
+const gl=document.getElementById('gl');let s='';
+for(let x=0;x<=1460;x+=73)s+=`<line x1="${x}" y1="0" x2="${x}" y2="900"/>`;
+for(let y=0;y<=900;y+=73)s+=`<line x1="0" y1="${y}" x2="1460" y2="${y}"/>`;
+gl.innerHTML=s;
+const pts=[[400,385],[420,370],[440,388],[378,398],[565,252],[580,240],[595,258],[550,268],[610,230],[660,190],[675,205],[720,230],[738,245],[620,380],[635,392],[230,460],[280,495],[170,445],[120,410],[500,320],[525,295]];
+document.getElementById('docksyms').innerHTML=pts.map((p,i)=>`<rect class="blip dockb ${i===4||i===10?'act':''}" x="${p[0]-4.5}" y="${p[1]-4.5}" width="9" height="9"/>`).join('');
+const cts=[['EAD-017','DXB BUSINESS BAY','fly','AIR','WP12'],['EAU-011','AUH MASDAR','fly','AIR','PTL'],['EAD-021','DXB AL QUSAIS','','RDY','R1'],['EAD-009','DXB MARINA','','RDY','R1'],['ESH-003','SHJ AL ZORAH','warn','FLT','MX'],['EAU-004','AUH CORNICHE','','RDY','R1'],['ERK-012','RAK AL NAKHEEL','','CHG','82'],['EFJ-002','FUJ PORT','','RDY','R1'],['EAJ-001','AJM MARINA','','RDY','R2'],['EAD-031','RUWAIS','','RDY','R2'],['EAD-033','LIWA','','RDY','R2']];
+document.getElementById('contacts').innerHTML=cts.map((c,i)=>`<div class="ct ${c[2]} ${i===0?'sel':''}"><div class="sym"></div><div><div class="cs">${c[0]}</div><div class="lo">${c[1]}</div></div><div class="rs">${c[3]}<br>${c[4]}</div></div>`).join('');
+document.querySelectorAll('.ct').forEach(c=>c.addEventListener('click',()=>{document.querySelectorAll('.ct').forEach(x=>x.classList.remove('sel'));c.classList.add('sel');}));
+setInterval(()=>{const d=new Date();
+document.getElementById('clk').textContent=d.toLocaleTimeString('en-GB',{hour12:false});
+const z=new Date(d.getTime()-4*3600e3);
+document.getElementById('clkz').textContent=z.toLocaleTimeString('en-GB',{hour12:false})+' ZULU';
+document.getElementById('fpvt').textContent=d.toLocaleTimeString('en-GB',{hour12:false});},1000);
+const path=document.getElementById('cpath'),trk=document.getElementById('trk'),L=path.getTotalLength();
+const dtl=document.getElementById('dtl'),dtag=document.getElementById('dtag'),trail=document.getElementById('trail');
+let t=0,hist=[];
+setInterval(()=>{t=(t+0.0035)%1;
+const p=path.getPointAtLength(t*L),p2=path.getPointAtLength(Math.min(t+0.02,1)*L);
+const ang=Math.atan2(p2.y-p.y,p2.x-p.x)*180/Math.PI;
+trk.setAttribute('transform',`translate(${p.x},${p.y}) rotate(${ang})`);
+if(hist.length===0||Math.hypot(p.x-hist[hist.length-1][0],p.y-hist[hist.length-1][1])>7){hist.push([p.x,p.y]);if(hist.length>8)hist.shift();
+trail.innerHTML=hist.map((h,i)=>`<circle cx="${h[0]}" cy="${h[1]}" r="1.1" opacity="${(i+1)/hist.length*.5}"/>`).join('');}
+dtl.setAttribute('x1',p.x+6);dtl.setAttribute('y1',p.y-6);dtl.setAttribute('x2',p.x+20);dtl.setAttribute('y2',p.y-20);
+dtag.setAttribute('transform',`translate(${p.x+23},${p.y-28})`);
+const hdg=String(Math.round((ang+450)%360)).padStart(3,'0');
+document.getElementById('thdg').textContent=hdg;
+document.getElementById('dt1').textContent=`118M 16MS ${hdg}`;},50);
+let b=87;setInterval(()=>{
+const a=(116+Math.random()*5).toFixed(0);
+document.getElementById('talt').textContent=a+' M';
+document.getElementById('fpva').textContent='ALT '+a;
+document.getElementById('tspd').textContent=(15.8+Math.random()*1.4).toFixed(1)+' M/S';
+if(Math.random()<.2&&b>60)b--;
+document.getElementById('tbat').textContent=b+' PCT';
+document.getElementById('dt2').textContent=`BAT${b} WP12/31`;},1400);
+const evs=['<b>EAD-017</b> WP12 REACHED · CAPTURE OK','AI DETECT: <b>3 VEH</b> SHOULDER STOP E311 KM41','<b>ESH-003</b> GUST 19KT · HOLDING','<b>EAU-011</b> AIRBORNE · PERIMETER PATROL','<b>DOCK ESH-003</b> DOOR SENSOR FAULT · MX-4471','<b>ERK-012</b> SURVEY DONE · 4218 PALMS · NDVI 0.71'];
+let ei=0;setInterval(()=>{ei=(ei+1)%evs.length;document.getElementById('evmsg').innerHTML=evs[ei];},3400);
+const cmds=['TASK EAD-021 PATROL N4','ASSUME EAD-017','RTB ESH-003'];
+let ci=0,cc=0;setInterval(()=>{cc++;const c=cmds[ci];
+if(cc<=c.length){document.getElementById('cmdtxt').textContent=c.slice(0,cc)}else if(cc>c.length+16){cc=0;ci=(ci+1)%cmds.length}},90);
+document.getElementById('mapwrap').addEventListener('mousemove',e=>{
+const lon=(51.4+e.clientX/innerWidth*5.2).toFixed(4),lat=(26.3-e.clientY/innerHeight*3.7).toFixed(4);
+document.getElementById('coords').textContent=`${lat}N ${String(lon).padStart(8,'0')}E`;});
+</script>
+</body>
+</html>
