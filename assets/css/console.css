@@ -1,0 +1,17 @@
+:root{
+  --bg:#0a0b0e;--panel:rgba(255,255,255,.035);--panel2:rgba(255,255,255,.06);
+  --line:rgba(255,255,255,.09);--txt:#c9cfda;--dim:#7d8697;
+  --red:#ff5a5a;--redd:#BC0000;--amber:#fbbf24;--ok:#4ade80;
+  --sans:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
+  --mono:ui-monospace,'SF Mono','Cascadia Mono',Consolas,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidden}
+button{font-family:inherit;cursor:pointer}
+.lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--dim)}
+#map{position:fixed;inset:0;background:var(--bg)}
+#boot-error{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:9999}
+#boot-error[hidden]{display:none}
+.be-inner{text-align:center;font-family:var(--mono);font-size:11px;letter-spacing:.18em;color:var(--dim)}
+.be-logo{font-size:42px;font-weight:800;color:#fff;margin-bottom:18px;font-family:var(--sans)}
+.be-logo i{color:var(--redd);font-style:normal}

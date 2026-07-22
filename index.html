@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>e&amp; UAE Operations Console · Physical Intelligence</title>
+<link rel="stylesheet" href="assets/js/vendor/maplibre-gl.css">
+<link rel="stylesheet" href="assets/css/console.css">
+</head>
+<body>
+<div id="map"></div>
+<div id="boot-error" hidden>
+  <div class="be-inner">
+    <div class="be-logo">e<i>&amp;</i></div>
+    <p>CONSOLE FAILED TO INITIALISE. CHECK assets/js/vendor FILES.</p>
+  </div>
+</div>
+<script src="assets/js/vendor/maplibre-gl.js"></script>
+<script src="assets/js/main.js"></script>
+<script src="assets/js/ui/map.js"></script>
+<script>document.addEventListener('DOMContentLoaded',()=>window.EC2.init());</script>
+</body>
+</html>
