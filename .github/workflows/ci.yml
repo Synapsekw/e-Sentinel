@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run test suite
+        run: node --test tests/*.test.js
+      - name: Syntax-check app scripts
+        run: |
+          for f in assets/js/main.js assets/js/ui/*.js assets/js/sim/*.js assets/js/data/*.js; do
+            node --check "$f"
+          done
