@@ -21,7 +21,62 @@
   </button>
   <div class="g-alt lbl" id="g-alt">ALT 12742 KM · ORBITAL</div>
 </div>
-<div id="offline-chip" class="chip" hidden>OFFLINE MODE &middot; VECTOR MAP</div>
+<header id="topbar" hidden>
+  <div class="t-brand"><span class="t-eamp">e<i>&amp;</i></span>
+    <div><div class="ttl">UAE OPERATIONS CONSOLE</div>
+    <div class="lbl">PHYSICAL INTELLIGENCE &middot; NATIONAL GRID</div></div>
+  </div>
+  <div class="chip ok-chip"><span class="dot"></span>GRID ONLINE</div>
+  <div class="chip" id="c-docks">DOCKS <b>104</b></div>
+  <div class="chip" id="c-air">AIRBORNE <b>0</b></div>
+  <div class="chip warn" id="c-alerts" hidden>ALERTS <b>0</b></div>
+  <div class="chip warn" id="offline-chip" hidden>OFFLINE MODE &middot; VECTOR MAP</div>
+  <div class="sp"></div>
+  <div class="seg" id="timescale">
+    <button data-ts="1" class="on">1&times;</button><button data-ts="4">4&times;</button><button data-ts="16">16&times;</button>
+  </div>
+  <div class="seg" id="layerseg">
+    <button data-l="dark" class="on">DARK</button><button data-l="light">LIGHT</button>
+    <button data-l="sat">SATELLITE</button><button data-l="terrain">TERRAIN</button>
+  </div>
+  <button class="tbtn" id="btn-newmission" disabled title="AVAILABLE AFTER MISSION WIZARD TASK">NEW MISSION</button>
+  <button class="tbtn" id="btn-media" disabled title="AVAILABLE AFTER MEDIA TASK">MEDIA</button>
+  <button class="tbtn" id="btn-globe">GLOBE</button>
+  <div id="clock">--:--:-- <span>GST</span></div>
+</header>
+<aside id="side" hidden>
+  <div class="panel">
+    <h4 class="lbl">National grid</h4>
+    <div class="stats" id="grid-stats">
+      <div class="st"><div class="n" id="st-ready">0</div><div class="c">Ready</div></div>
+      <div class="st"><div class="n" id="st-flying">0</div><div class="c">Flying</div></div>
+      <div class="st"><div class="n" id="st-charge">0</div><div class="c">Charging</div></div>
+      <div class="st"><div class="n" id="st-alert">0</div><div class="c">Alerts</div></div>
+    </div>
+  </div>
+  <div class="panel side-filters">
+    <h4 class="lbl">Filter</h4>
+    <div class="filters" id="filters">
+      <button class="fchip on" data-filter="ALL">ALL</button>
+      <button class="fchip" data-filter="AUH">AUH</button>
+      <button class="fchip" data-filter="DXB">DXB</button>
+      <button class="fchip" data-filter="SHJ">SHJ</button>
+      <button class="fchip" data-filter="AJM">AJM</button>
+      <button class="fchip" data-filter="UAQ">UAQ</button>
+      <button class="fchip" data-filter="RAK">RAK</button>
+      <button class="fchip" data-filter="FUJ">FUJ</button>
+      <button class="fchip" data-filter="AAN">AAN</button>
+      <button class="fchip" data-filter="FLYING">FLYING</button>
+      <button class="fchip" data-filter="ALERTS">ALERTS</button>
+    </div>
+  </div>
+  <div class="panel side-docklist">
+    <h4 class="lbl">Dock network</h4>
+    <div id="docklist"></div>
+  </div>
+</aside>
+<aside id="rpanel" hidden><div id="rpanel-body"></div></aside>
+<footer id="ticker" hidden><span class="lbl">EVENTS</span><div id="tickstream"></div></footer>
 <div id="boot-error" hidden>
   <div class="be-inner">
     <div class="be-logo">e<i>&amp;</i></div>
@@ -35,6 +90,7 @@
 <script src="assets/js/main.js"></script>
 <script src="assets/js/ui/map.js"></script>
 <script src="assets/js/ui/globe.js"></script>
+<script src="assets/js/ui/panels.js"></script>
 <script>document.addEventListener('DOMContentLoaded',()=>window.EC2.init());</script>
 </body>
 </html>
