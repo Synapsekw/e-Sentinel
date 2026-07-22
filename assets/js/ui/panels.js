@@ -14,6 +14,18 @@ let currentFilter = 'ALL';
 // calls out to avoid.
 let droneTeleTimer = null;
 
+// Completed missions this session (newest first, capped), backing the
+// MEDIA grid. A mission lands here once via recordCompletedMission() when
+// the engine emits its 'MISSION <id> COMPLETE' event.
+let sessionMissions = [];
+const SESSION_MISSIONS_CAP = 40;
+
+// rAF handle for the debrief panel's animated video placeholder — tracked at
+// module scope for the same reason as droneTeleTimer: setRightPanel() must
+// be able to kill it unconditionally on every mode switch so it only ever
+// animates while the debrief panel is actually visible.
+let debriefAnimId = null;
+
 const DRONE_STATE_LABELS = {
   takeoff: 'TAKEOFF', transit: 'TRANSIT', 'on-task': 'ON TASK',
   rtb: 'RETURN TO DOCK', landing: 'LANDING', hold: 'HELD', docked: 'DOCKED',
@@ -286,6 +298,270 @@ function updateDroneTelemetry(droneId){
   }
 }
 
+// ---------- debrief panel + MEDIA library (Task 13) ----------
+
+function fmtMMSS(totalS){
+  const s = Math.max(0, Math.round(totalS || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0');
+}
+
+// camelCase -> "SPACED UPPER" for analytics field labels.
+function humanizeKey(key){
+  return String(key).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toUpperCase();
+}
+
+function formatAnalyticsValue(v){
+  if (Array.isArray(v)) return v.join(' · ');
+  return String(v);
+}
+
+function analyticsDL(mission){
+  const a = mission.analytics || {};
+  const keys = Object.keys(a);
+  if (!keys.length) return '<p class="lbl" style="margin-top:10px">NO ANALYTICS CAPTURED</p>';
+  return (
+    '<dl class="rp-analytics">' +
+      keys.map(k =>
+        '<div class="rp-kv"><dt class="k">' + humanizeKey(k) + '</dt><dd class="v">' + formatAnalyticsValue(a[k]) + '</dd></div>'
+      ).join('') +
+    '</dl>'
+  );
+}
+
+function debriefVideoSrc(mission){
+  const variants = (typeof VIDEO_MANIFEST !== 'undefined' && VIDEO_MANIFEST[mission.type]) || [];
+  if (!variants.length) return null;
+  const idx = Number.isInteger(mission._videoVariant) ? mission._videoVariant : 0;
+  return 'videos/' + variants[idx % variants.length];
+}
+
+function debriefVideoHTML(mission){
+  const src = debriefVideoSrc(mission);
+  return (
+    '<div class="lbl" style="margin-top:16px">Mission video</div>' +
+    '<div class="debrief-video">' +
+      (src ? '<video id="debrief-video" controls preload="metadata" src="' + src + '"></video>' : '') +
+      '<div class="debrief-canvas-wrap" id="debrief-canvas-wrap"' + (src ? ' hidden' : '') + '>' +
+        '<canvas id="debrief-canvas"></canvas>' +
+      '</div>' +
+    '</div>' +
+    '<div class="debrief-video-foot lbl">HIGGSFIELD &middot; GEN-4 &middot; ' + fmtMMSS(mission.durationS) + '</div>'
+  );
+}
+
+function renderDebriefPanel(mission){
+  const cfg = (typeof MISSIONS_CONFIG !== 'undefined' && MISSIONS_CONFIG[mission.type]) || { label: String(mission.type).toUpperCase() };
+  return (
+    '<div class="lbl">Mission debrief</div>' +
+    '<div class="rp-id">' + mission.id + '</div>' +
+    '<div class="rp-name">' + cfg.label + '</div>' +
+    '<div class="rp-kv"><span class="k">Dock</span><span class="v">' + mission.dockId + '</span></div>' +
+    '<div class="rp-kv"><span class="k">Duration</span><span class="v">' + fmtMMSS(mission.durationS) + '</span></div>' +
+    '<div class="rp-kv"><span class="k">Distance</span><span class="v">' + (mission.distanceKm || 0).toFixed(1) + ' KM</span></div>' +
+    '<div class="lbl" style="margin-top:16px">Mission analytics</div>' +
+    analyticsDL(mission) +
+    debriefVideoHTML(mission) +
+    '<div class="rp-actions">' +
+      '<button class="ghost" id="db-export" disabled title="SIMULATED">EXPORT REPORT</button>' +
+      '<button class="ghost" id="db-share" disabled title="SIMULATED">SHARE</button>' +
+    '</div>'
+  );
+}
+
+function stopDebriefAnim(){
+  if (debriefAnimId){ cancelAnimationFrame(debriefAnimId); debriefAnimId = null; }
+}
+
+// Drifting horizon + reticle + caption, drawn at ~30fps. Only ever runs
+// while the canvas is actually the visible debrief placeholder — the rAF
+// loop bails the moment the canvas leaves the DOM, and setRightPanel()
+// cancels it unconditionally on every mode switch (see stopDebriefAnim above).
+function drawDebriefFrame(ctx, canvas, ts){
+  const w = canvas.width, h = canvas.height;
+  if (!w || !h) return;
+  ctx.fillStyle = '#0a0b0e';
+  ctx.fillRect(0, 0, w, h);
+
+  const drift = Math.sin(ts / 4000) * h * 0.05;
+  const horizonY = h * 0.52 + drift;
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, '#12151a');
+  grad.addColorStop(Math.max(0, Math.min(1, horizonY / h)), '#0e1013');
+  grad.addColorStop(1, '#07080a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.strokeStyle = 'rgba(255,90,90,.28)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, horizonY);
+  ctx.lineTo(w, horizonY);
+  ctx.stroke();
+
+  const cx = w / 2, cy = h / 2, r = Math.min(w, h) * 0.11;
+  ctx.strokeStyle = 'rgba(255,90,90,.35)';
+  ctx.strokeRect(cx - r, cy - r, r * 2, r * 2);
+  ctx.beginPath();
+  ctx.moveTo(cx - r - 13, cy); ctx.lineTo(cx + r + 13, cy);
+  ctx.moveTo(cx, cy - r - 13); ctx.lineTo(cx, cy + r + 13);
+  ctx.strokeStyle = 'rgba(255,90,90,.3)';
+  ctx.stroke();
+
+  ctx.font = '700 9px ui-monospace, "SF Mono", Consolas, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,.34)';
+  ctx.textAlign = 'center';
+  ctx.fillText('AI MISSION VIDEO · PENDING GENERATION', w / 2, h - 12);
+}
+
+function startDebriefPlaceholder(canvas){
+  if (!canvas) return;
+  stopDebriefAnim();
+  canvas.width = canvas.clientWidth || 300;
+  canvas.height = canvas.clientHeight || 169;
+  const ctx = canvas.getContext('2d');
+  let last = 0;
+  function frame(ts){
+    if (!canvas.isConnected){ debriefAnimId = null; return; } // panel torn down elsewhere
+    if (ts - last >= 33){ // cap ~30fps
+      last = ts;
+      drawDebriefFrame(ctx, canvas, ts);
+    }
+    debriefAnimId = requestAnimationFrame(frame);
+  }
+  debriefAnimId = requestAnimationFrame(frame);
+}
+
+function wireDebriefPanel(){
+  const video = $('debrief-video');
+  const canvasWrap = $('debrief-canvas-wrap');
+  const canvas = $('debrief-canvas');
+  if (video){
+    // Swallow the load failure — every manifest entry 404s until real
+    // footage is dropped into videos/, and that must never surface a
+    // console error or a broken player.
+    video.addEventListener('error', () => {
+      video.hidden = true;
+      if (canvasWrap) canvasWrap.hidden = false;
+      startDebriefPlaceholder(canvas);
+    }, { once: true });
+  } else if (canvasWrap){
+    canvasWrap.hidden = false;
+    startDebriefPlaceholder(canvas);
+  }
+}
+
+function timeHHMM(date){
+  return date instanceof Date
+    ? date.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' })
+    : '--:--';
+}
+
+function analyticsSummaryLine(mission){
+  const a = mission.analytics || {};
+  const keys = Object.keys(a).slice(0, 2);
+  if (!keys.length) return 'NO ANALYTICS';
+  return keys.map(k => humanizeKey(k) + ' ' + formatAnalyticsValue(a[k])).join(' · ');
+}
+
+function renderMediaPanel(){
+  if (!sessionMissions.length){
+    return (
+      '<div class="lbl">Media</div>' +
+      '<div class="rp-empty">NO MISSIONS RECORDED YET &middot; CREATE ONE WITH + NEW MISSION</div>'
+    );
+  }
+  const cards = sessionMissions.map(m => {
+    const cfg = (typeof MISSIONS_CONFIG !== 'undefined' && MISSIONS_CONFIG[m.type]) || { label: String(m.type).toUpperCase() };
+    return (
+      '<button class="media-card" data-mid="' + m.id + '">' +
+        '<div class="media-card-type lbl">' + cfg.label + '</div>' +
+        '<div class="media-card-id">' + m.id + '</div>' +
+        '<div class="media-card-meta">' +
+          '<span>' + timeHHMM(m._debriefAt) + '</span>' +
+          '<span class="state-chip">' + String(m.state).toUpperCase() + '</span>' +
+        '</div>' +
+        '<div class="media-card-analytics">' + analyticsSummaryLine(m) + '</div>' +
+      '</button>'
+    );
+  }).join('');
+  return (
+    '<div class="lbl">Media &middot; ' + sessionMissions.length + ' mission' + (sessionMissions.length === 1 ? '' : 's') + ' this session</div>' +
+    '<div class="media-grid">' + cards + '</div>'
+  );
+}
+
+function wireMediaPanel(){
+  const grid = document.querySelector('#rpanel-body .media-grid');
+  if (!grid) return;
+  grid.addEventListener('click', (e) => {
+    const card = e.target.closest('.media-card');
+    if (!card) return;
+    const mission = sessionMissions.find(m => m.id === card.dataset.mid);
+    if (mission) openDebrief(mission);
+  });
+}
+
+// Shared entry point for every way a debrief can be opened (ticker chip,
+// auto-open on completion, MEDIA card click, EC2.playMissionVideo). Exits
+// any active capture mode first so the wizard/manual overlays never get
+// left stranded under a panel swap they didn't expect.
+function openDebrief(mission){
+  if (!mission) return;
+  if (EC2.control && EC2.control.mode === 'manual' && EC2.control.exitManual) EC2.control.exitManual();
+  if (EC2.control && EC2.control.mode === 'wizard' && EC2.control.exitWizard) EC2.control.exitWizard();
+  EC2.state.selection = null;
+  updateRowSelection();
+  EC2.ui.setRightPanel('debrief', mission);
+}
+
+// Assigns a stable, rotating video variant per mission (by how many prior
+// missions of the same type this session has already recorded), records it
+// for the MEDIA grid, fires the ticker chip, and auto-opens the debrief for
+// user-created missions only (scheduler-spawned auto missions still land in
+// MEDIA, just without stealing the operator's panel).
+function recordCompletedMission(mission){
+  if (mission._debriefAt) return; // already recorded (defensive; engine only emits COMPLETE once per mission)
+  mission._debriefAt = new Date();
+  const variants = (typeof VIDEO_MANIFEST !== 'undefined' && VIDEO_MANIFEST[mission.type]) || [];
+  const priorOfType = sessionMissions.filter(m => m.type === mission.type).length;
+  mission._videoVariant = variants.length ? (priorOfType % variants.length) : 0;
+
+  sessionMissions.unshift(mission);
+  if (sessionMissions.length > SESSION_MISSIONS_CAP) sessionMissions.length = SESSION_MISSIONS_CAP;
+
+  EC2.ui.pushEvent({
+    level: 'info',
+    source: mission.dockId,
+    message: 'DEBRIEF READY · ' + mission.id,
+    onClick: () => openDebrief(mission)
+  });
+
+  const userCreated = !!(EC2.control && EC2.control.userMissions && EC2.control.userMissions.has(mission.id));
+  if (userCreated) openDebrief(mission);
+}
+
+// Polls for window.__engine the same way control.js's wireEngineWatch does
+// (the engine doesn't exist until the first console dive-in), then parses
+// mission completion straight off the existing 'MISSION <id> COMPLETE'
+// event text — no engine.js changes needed.
+function wireDebriefWatch(){
+  const COMPLETE_RE = /^MISSION (\S+) COMPLETE$/;
+  const trySubscribe = () => {
+    if (!window.__engine) return false;
+    window.__engine.onEvent((ev) => {
+      const m = COMPLETE_RE.exec(ev.message);
+      if (!m) return;
+      const mission = window.__engine.missions.get(m[1]);
+      if (mission) recordCompletedMission(mission);
+    });
+    return true;
+  };
+  if (trySubscribe()) return;
+  const iv = setInterval(() => { if (trySubscribe()) clearInterval(iv); }, 300);
+}
+
 function wireRightPanelActions(mode, data){
   if (mode === 'dock' && data){
     const locate = $('rp-locate');
@@ -345,6 +621,10 @@ function wireRightPanelActions(mode, data){
     if (altUp) altUp.addEventListener('click', () => {
       if (window.__engine) window.__engine.nudgeAlt(droneId, 10);
     });
+  } else if (mode === 'debrief' && data){
+    wireDebriefPanel();
+  } else if (mode === 'media'){
+    wireMediaPanel();
   }
 }
 
@@ -376,7 +656,9 @@ EC2.ui = {
     empty: renderEmptyPanel,
     dock: renderDockPanel,
     drone: renderDronePanel,
-    site: renderSitePanel
+    site: renderSitePanel,
+    debrief: renderDebriefPanel,
+    media: renderMediaPanel
   },
 
   setStats(o){
@@ -443,17 +725,21 @@ EC2.ui = {
     }
   },
 
+  // ev.onClick (optional) makes the chip clickable (e.g. DEBRIEF READY ·
+  // <id> opening that mission's debrief) — everything else about the chip
+  // (level styling, 30-item cap, prepend order) is unchanged.
   pushEvent(ev){
     const stream = $('tickstream');
     if (!stream) return;
     const level = ev.level === 'warn' ? ' warn' : ev.level === 'alert' ? ' alert' : '';
     const time = ev.time || nowClockStr();
     const el = document.createElement('span');
-    el.className = 'tick-ev' + level;
+    el.className = 'tick-ev' + level + (ev.onClick ? ' clickable' : '');
     el.innerHTML =
       '<span class="tt">' + time + '</span>' +
       '<span class="src">' + ev.source + '</span>' +
       '<span class="msg">' + ev.message + '</span>';
+    if (typeof ev.onClick === 'function') el.addEventListener('click', ev.onClick);
     stream.insertBefore(el, stream.firstChild);
     while (stream.children.length > 30) stream.removeChild(stream.lastChild);
   },
@@ -475,6 +761,9 @@ EC2.ui = {
     // is the one place every mode switch passes through, so it's the one
     // place that can guarantee no interval pile-up.
     if (droneTeleTimer){ clearInterval(droneTeleTimer); droneTeleTimer = null; }
+    // Same guarantee for the debrief panel's placeholder-video rAF loop —
+    // it must stop the instant the panel is no longer showing it.
+    stopDebriefAnim();
 
     // FOLLOW only survives a setRightPanel call that re-selects the exact
     // same drone (e.g. the periodic dock-list refresh); any real selection
@@ -559,6 +848,15 @@ function wireTopbar(){
   if (newMissionBtn) newMissionBtn.addEventListener('click', () => {
     if (!EC2.control || !EC2.control.enterWizard || EC2.control.mode !== 'normal') return;
     EC2.control.enterWizard(null);
+  });
+
+  const mediaBtn = $('btn-media');
+  if (mediaBtn) mediaBtn.addEventListener('click', () => {
+    if (EC2.control && EC2.control.mode === 'manual') EC2.control.exitManual();
+    if (EC2.control && EC2.control.mode === 'wizard') EC2.control.exitWizard();
+    EC2.state.selection = null;
+    updateRowSelection();
+    EC2.ui.setRightPanel('media');
   });
 
   const layerSeg = $('layerseg');
@@ -681,6 +979,11 @@ function wireMapDockInteractions(){
   EC2.map.on('mouseleave', 'sites-dots', () => { if (!inCaptureMode()) EC2.map.getCanvas().style.cursor = ''; });
 }
 
+// Public API (Task 13 contract): jump straight to a mission's debrief and
+// attempt its video. Shares the same capture-mode-safe entry point as the
+// ticker chip / MEDIA card click.
+EC2.playMissionVideo = function(mission){ openDebrief(mission); };
+
 EC2.initPanels = function(){
   buildDockIndex();
   buildSiteIndex();
@@ -691,6 +994,7 @@ EC2.initPanels = function(){
   wireScene();
   wireMapDockInteractions();
   startFollowDriver();
+  wireDebriefWatch();
   EC2.ui.renderDockList('ALL');
   EC2.ui.setRightPanel('empty');
   // Static plausible snapshot until the sim engine boots (first dive-in);

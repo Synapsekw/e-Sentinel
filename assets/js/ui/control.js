@@ -10,7 +10,11 @@ const control = {
   mode: 'normal',
   activeId: null,
   _followWasAuto: false,
-  wizard: null
+  wizard: null,
+  // Mission ids launched by the operator via this wizard (Task 13's debrief
+  // flow auto-opens only for these; scheduler-spawned auto missions still
+  // land in the MEDIA library but don't steal the panel on completion).
+  userMissions: new Set()
 };
 EC2.control = control;
 
@@ -449,6 +453,7 @@ function handleWizardLaunch(){
     renderWizard();
     return;
   }
+  control.userMissions.add(mission.id);
   const droneId = 'D-' + w.dockId;
   cleanupWizardUI();
   EC2.followDroneId = droneId;
