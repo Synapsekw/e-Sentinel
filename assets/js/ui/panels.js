@@ -5,6 +5,7 @@ const EMIRATE_NAMES = {
 };
 
 let dockIndex = null;
+let siteIndex = null;
 let currentFilter = 'ALL';
 
 // 2 Hz live-refresh timer for the 'drone' right-panel mode. Tracked at
@@ -23,6 +24,11 @@ function $(id){ return document.getElementById(id); }
 function buildDockIndex(){
   dockIndex = new Map();
   DATA_DOCKS.forEach(d => dockIndex.set(d.id, d));
+}
+
+function buildSiteIndex(){
+  siteIndex = new Map();
+  DATA_SITES.forEach(s => siteIndex.set(s.id, s));
 }
 
 // Deterministic per-dock hash so the same dock always shows the same
@@ -91,6 +97,26 @@ function renderDockPanel(dock){
       '<button class="primary" id="rp-launch" disabled title="AVAILABLE AFTER MISSION WIZARD TASK">LAUNCH MISSION</button>' +
       '<button class="ghost" id="rp-locate">LOCATE</button>' +
     '</div>'
+  );
+}
+
+// ---------- site panel (Task 10.5, live tower sites) ----------
+
+const SITE_STATUS_CHIP = {
+  installed: { cls: '', text: 'INSTALLED · LIVE' },
+  'not-installed': { cls: 'amber', text: 'NOT INSTALLED' },
+  replace: { cls: 'red', text: 'NEEDS REPLACEMENT' }
+};
+
+function renderSitePanel(site){
+  const chip = SITE_STATUS_CHIP[site.status] || SITE_STATUS_CHIP.installed;
+  const [lon, lat] = site.coords;
+  return (
+    '<div class="rp-id">' + site.id + '</div>' +
+    '<div class="rp-name">' + site.name + '</div>' +
+    '<div class="rp-kv"><span class="k">Coordinates</span><span class="v">' + lat.toFixed(5) + ', ' + lon.toFixed(5) + '</span></div>' +
+    '<div class="state-chip' + (chip.cls ? ' ' + chip.cls : '') + '">' + chip.text + '</div>' +
+    '<div class="lbl" style="margin-top:14px">E&amp; TOWER SITE · LIVE NETWORK</div>'
   );
 }
 
@@ -294,7 +320,8 @@ EC2.ui = {
   panelRenderers: {
     empty: renderEmptyPanel,
     dock: renderDockPanel,
-    drone: renderDronePanel
+    drone: renderDronePanel,
+    site: renderSitePanel
   },
 
   setStats(o){
@@ -446,6 +473,12 @@ EC2.select = function(sel){
     // No flyTo here — FOLLOW (below) drives the camera for a live drone;
     // an unrequested jump on every selection would fight the operator.
     EC2.ui.setRightPanel('drone', drone);
+  } else if (sel.type === 'site'){
+    const site = siteIndex.get(sel.id);
+    if (!site) return;
+    EC2.state.selection = { type: 'site', id: sel.id };
+    updateRowSelection(); // no dock-list row matches a site; this just clears any dock highlight
+    EC2.ui.setRightPanel('site', site);
   }
 };
 
@@ -483,6 +516,16 @@ function wireFilters(){
     container.querySelectorAll('.fchip').forEach(b => b.classList.remove('on'));
     btn.classList.add('on');
     EC2.ui.renderDockList(btn.dataset.filter);
+  });
+}
+
+function wireLiveNetwork(){
+  const el = $('live-net');
+  if (!el) return;
+  const fly = () => { if (EC2.map) EC2.map.flyTo({ center: [54.9, 24.3], zoom: 8.3 }); };
+  el.addEventListener('click', fly);
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); fly(); }
   });
 }
 
@@ -542,13 +585,24 @@ function wireMapDockInteractions(){
   });
   EC2.map.on('mouseenter', 'drones-layer', () => { EC2.map.getCanvas().style.cursor = 'pointer'; });
   EC2.map.on('mouseleave', 'drones-layer', () => { EC2.map.getCanvas().style.cursor = ''; });
+
+  // Live tower sites (Task 10.5) — static, click selects the site card.
+  EC2.map.on('click', 'sites-dots', (e) => {
+    const f = e.features && e.features[0];
+    if (!f) return;
+    EC2.select({ type: 'site', id: f.properties.id });
+  });
+  EC2.map.on('mouseenter', 'sites-dots', () => { EC2.map.getCanvas().style.cursor = 'pointer'; });
+  EC2.map.on('mouseleave', 'sites-dots', () => { EC2.map.getCanvas().style.cursor = ''; });
 }
 
 EC2.initPanels = function(){
   buildDockIndex();
+  buildSiteIndex();
   wireTopbar();
   wireFilters();
   wireClock();
+  wireLiveNetwork();
   wireScene();
   wireMapDockInteractions();
   startFollowDriver();

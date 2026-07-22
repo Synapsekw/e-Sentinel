@@ -16,6 +16,42 @@ EC2.dockFeatures = function(){
   })) };
 };
 
+EC2.siteFeatures = function(){
+  return { type:'FeatureCollection', features: DATA_SITES.map(s => ({
+    type:'Feature',
+    properties:{ id:s.id, name:s.name, status:s.status },
+    geometry:{ type:'Point', coordinates:s.coords }
+  })) };
+};
+
+// ---------- orbital declutter (Task 10.5) ----------
+// Layers that only make sense once the operator has dived into the theater;
+// hidden while in the orbital 'globe' scene so only the single UAE beacon
+// shows. Guarded with getLayer() since sites-dots/sites-labels are added in
+// the same initMap() style build and callers may run before the style has
+// fully attached them.
+const OPERATIONAL_LAYER_IDS = [
+  'docks-dots', 'docks-rings', 'drones-layer', 'missions-active-line',
+  'sites-dots', 'sites-labels', 'uae-places', 'uae-roads'
+];
+
+// Shared by sites-dots (fill) and sites-labels (text) so the label always
+// matches its dot's status color. installed = green (live), not-installed =
+// amber (planned), replace = red (needs replacement).
+const SITE_STATUS_COLOR = ['match', ['get', 'status'],
+  'installed', '#4ade80',
+  'not-installed', '#fbbf24',
+  'replace', '#ff5a5a',
+  '#4ade80'];
+
+EC2.setOperationalLayersVisible = function(visible){
+  if (!EC2.map) return;
+  const vis = visible ? 'visible' : 'none';
+  for (const id of OPERATIONAL_LAYER_IDS){
+    if (EC2.map.getLayer(id)) EC2.map.setLayoutProperty(id, 'visibility', vis);
+  }
+};
+
 // ---------- live sim layers (Task 9) ----------
 
 function emptyFC(){ return { type:'FeatureCollection', features:[] }; }
@@ -148,6 +184,7 @@ EC2.initMap = function(){
       'uae-roads':  { type: 'geojson', data: GEO_UAE.roads },
       'uae-places': { type: 'geojson', data: GEO_UAE.places },
       'docks':      { type: 'geojson', data: EC2.dockFeatures() },
+      'sites':      { type: 'geojson', data: EC2.siteFeatures() },
       'drones':     { type: 'geojson', data: emptyFC() },
       'missions-active': { type: 'geojson', data: emptyFC() },
       'world':      { type: 'geojson', data: GEO_WORLD }
@@ -221,6 +258,23 @@ EC2.initMap = function(){
           'circle-stroke-color': '#0a0b0e',
           'circle-stroke-width': 1.5
         } },
+      { id: 'sites-dots', type: 'circle', source: 'sites',
+        paint: {
+          'circle-radius': 5,
+          'circle-color': SITE_STATUS_COLOR,
+          'circle-stroke-color': '#0a0b0e',
+          'circle-stroke-width': 1.5
+        } },
+      { id: 'sites-labels', type: 'symbol', source: 'sites',
+        layout: {
+          'text-field': ['get', 'id'],
+          'text-font': ['Open Sans Regular'],
+          'text-size': 10,
+          'text-offset': [0, -1.2],
+          'text-anchor': 'bottom'
+        },
+        paint: { 'text-color': SITE_STATUS_COLOR },
+        minzoom: 7.5 },
       { id: 'drones-layer', type: 'symbol', source: 'drones',
         layout: {
           'icon-image': 'drone-triangle',
@@ -242,6 +296,11 @@ EC2.initMap = function(){
     if (!EC2.map.hasImage('drone-triangle')) EC2.map.addImage('drone-triangle', droneIconImage());
     EC2.mapLoaded = true;
     startPingDriver();
+    // Orbital declutter (Task 10.5): subscribe once, then immediately apply
+    // the current scene so boot (scene === 'globe') hides operational
+    // layers before the first paint, rather than waiting for a scene fire.
+    EC2.onSceneChange(scene => EC2.setOperationalLayersVisible(scene === 'console'));
+    EC2.setOperationalLayersVisible(EC2.state.scene === 'console');
     res();
   }));
 

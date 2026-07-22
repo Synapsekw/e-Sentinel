@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>e&amp; UAE Operations Console · Physical Intelligence</title>
+<title>SENTINEL · Global Command &amp; Control · e&amp;</title>
 <link rel="stylesheet" href="assets/js/vendor/maplibre-gl.css">
 <link rel="stylesheet" href="assets/css/console.css">
 </head>
 <body>
 <div id="map"></div>
 <div id="globe-ui">
-  <div class="g-brand"><span class="g-eamp">e<i>&amp;</i></span>
-    <div><b>GLOBAL COMMAND</b><span class="lbl">PHYSICAL INTELLIGENCE · ORBITAL VIEW</span></div>
+  <div class="g-brand"><img class="g-logo" src="assets/img/eand-logo-white.png" alt="e&amp;">
+    <div><b>SENTINEL</b><span class="lbl">GLOBAL COMMAND &amp; CONTROL · ORBITAL VIEW</span></div>
   </div>
   <div class="g-hint lbl">DRAG TO ROTATE · CLICK UAE TO ENTER THEATER</div>
   <button id="uae-beacon-tag" class="g-tag" hidden>
@@ -22,9 +22,9 @@
   <div class="g-alt lbl" id="g-alt">ALT 12742 KM · ORBITAL</div>
 </div>
 <header id="topbar" hidden>
-  <div class="t-brand"><span class="t-eamp">e<i>&amp;</i></span>
-    <div><div class="ttl">UAE OPERATIONS CONSOLE</div>
-    <div class="lbl">PHYSICAL INTELLIGENCE &middot; NATIONAL GRID</div></div>
+  <div class="t-brand"><img class="t-logo" src="assets/img/eand-logo-white.png" alt="e&amp;">
+    <div><div class="ttl">SENTINEL</div>
+    <div class="lbl">GLOBAL COMMAND &amp; CONTROL</div></div>
   </div>
   <div class="chip ok-chip"><span class="dot"></span>GRID ONLINE</div>
   <div class="chip" id="c-docks">DOCKS <b>104</b></div>
@@ -45,6 +45,10 @@
   <div id="clock">--:--:-- <span>GST</span></div>
 </header>
 <aside id="side" hidden>
+  <div class="panel live-net" id="live-net" role="button" tabindex="0">
+    <h4 class="lbl">Live network · 19 sites</h4>
+    <div class="ln-summary"><b class="ln-ok">13</b> LIVE &middot; <b class="ln-amber">4</b> PLANNED &middot; <b class="ln-red">2</b> REPLACE</div>
+  </div>
   <div class="panel">
     <h4 class="lbl">National grid</h4>
     <div class="stats" id="grid-stats">
@@ -79,7 +83,7 @@
 <footer id="ticker" hidden><span class="lbl">EVENTS</span><div id="tickstream"></div></footer>
 <div id="boot-error" hidden>
   <div class="be-inner">
-    <div class="be-logo">e<i>&amp;</i></div>
+    <img class="be-logo-img" src="assets/img/eand-logo-white.png" alt="e&amp;">
     <p>CONSOLE FAILED TO INITIALISE. CHECK assets/js/vendor FILES.</p>
   </div>
 </div>
@@ -87,6 +91,7 @@
 <script src="assets/js/data/geo-world.js"></script>
 <script src="assets/js/data/geo-uae.js"></script>
 <script src="assets/js/data/docks.js"></script>
+<script src="assets/js/data/sites.js"></script>
 <script src="assets/js/sim/router.js"></script>
 <script src="assets/js/data/missions-config.js"></script>
 <script src="assets/js/sim/engine.js"></script>

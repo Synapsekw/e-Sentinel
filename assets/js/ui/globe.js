@@ -162,6 +162,15 @@ EC2.exitToOrbit = function(){
   });
 };
 
+// The beacon is the orbital-view "you are here" marker; it is redundant
+// once the operator is inside the console (theater) scene, so it hides
+// there and returns whenever the globe scene is back.
+function setBeaconVisible(visible){
+  const vis = visible ? 'visible' : 'none';
+  if (EC2.map.getLayer('beacon-ping')) EC2.map.setLayoutProperty('beacon-ping', 'visibility', vis);
+  if (EC2.map.getLayer('beacon-dot')) EC2.map.setLayoutProperty('beacon-dot', 'visibility', vis);
+}
+
 EC2.initGlobe = function(){
   overlayEl = document.getElementById('globe-ui');
   tagEl = document.getElementById('uae-beacon-tag');
@@ -173,5 +182,10 @@ EC2.initGlobe = function(){
   wireClicks();
   resumeAt = performance.now() + IDLE_RESUME_MS;
   requestAnimationFrame(tick);
+
+  // Subscribe once; honor initial state (scene is 'globe' at boot, so the
+  // beacon starts visible, which is already the layer default above).
+  EC2.onSceneChange(scene => setBeaconVisible(scene !== 'console'));
+  setBeaconVisible(EC2.state.scene !== 'console');
 };
 })();
