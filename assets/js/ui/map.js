@@ -221,7 +221,7 @@ EC2.initMap = function(){
       { id: 'uae-places', type: 'symbol', source: 'uae-places',
         layout: {
           'text-field': ['upcase', ['get', 'name']],
-          'text-font': ['Open Sans Regular'],
+          'text-font': ['Noto Sans Regular'],
           'text-size': 10,
           'text-letter-spacing': 0.3
         },
@@ -268,7 +268,7 @@ EC2.initMap = function(){
       { id: 'sites-labels', type: 'symbol', source: 'sites',
         layout: {
           'text-field': ['get', 'id'],
-          'text-font': ['Open Sans Regular'],
+          'text-font': ['Noto Sans Regular'],
           'text-size': 10,
           'text-offset': [0, -1.2],
           'text-anchor': 'bottom'
