@@ -11,10 +11,123 @@ const RASTERS = {
 EC2.dockFeatures = function(){
   return { type:'FeatureCollection', features: DATA_DOCKS.map(d => ({
     type:'Feature',
-    properties:{ id:d.id, name:d.name, emirate:d.emirate, model:d.model, state:'ready' },
+    properties:{ id:d.id, name:d.name, emirate:d.emirate, model:d.model, state:'ready', selected:false },
     geometry:{ type:'Point', coordinates:d.coords }
   })) };
 };
+
+// ---------- live sim layers (Task 9) ----------
+
+function emptyFC(){ return { type:'FeatureCollection', features:[] }; }
+
+function droneIconImage(){
+  const size = 24;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = '#ff5a5a';
+  ctx.beginPath();
+  ctx.moveTo(size / 2, 2);
+  ctx.lineTo(size - 4, size - 5);
+  ctx.lineTo(4, size - 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2 + 3, 2, 0, Math.PI * 2);
+  ctx.fill();
+  return ctx.getImageData(0, 0, size, size);
+}
+
+function buildDockFeatures(engine){
+  const sel = EC2.state.selection;
+  const selId = sel && sel.type === 'dock' ? sel.id : null;
+  const features = [];
+  for (const dock of engine.docks.values()){
+    features.push({
+      type: 'Feature',
+      properties: {
+        id: dock.id, name: dock.name, emirate: dock.emirate,
+        model: dock.drone ? dock.drone.model : '',
+        state: dock.state, selected: dock.id === selId
+      },
+      geometry: { type: 'Point', coordinates: dock.coords }
+    });
+  }
+  return { type: 'FeatureCollection', features };
+}
+
+function buildDroneFeatures(engine){
+  const features = [];
+  for (const drone of engine.drones.values()){
+    if (drone.state === 'docked') continue;
+    const p = drone.pos;
+    if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
+    features.push({
+      type: 'Feature',
+      properties: { id: drone.id, heading: drone.heading || 0, state: drone.state },
+      geometry: { type: 'Point', coordinates: p }
+    });
+  }
+  return { type: 'FeatureCollection', features };
+}
+
+function buildMissionLineFeatures(engine){
+  const features = [];
+  for (const mission of engine.missions.values()){
+    if (mission.state !== 'active') continue;
+    if (!Array.isArray(mission.waypoints) || mission.waypoints.length < 2) continue;
+    features.push({
+      type: 'Feature',
+      properties: { id: mission.id, type: mission.type },
+      geometry: { type: 'LineString', coordinates: mission.waypoints }
+    });
+  }
+  return { type: 'FeatureCollection', features };
+}
+
+let lastActiveMissionsKey = '';
+
+// Called once per rAF frame by main.js's engine loop. Keeps the three live
+// sources (docks/drones/missions-active) in sync with engine state — each
+// source gets at most one setData() per frame.
+EC2.updateLiveLayers = function(engine){
+  if (!EC2.map || !EC2.mapLoaded || !engine) return;
+
+  const dockSrc = EC2.map.getSource('docks');
+  if (dockSrc) dockSrc.setData(buildDockFeatures(engine));
+
+  const droneSrc = EC2.map.getSource('drones');
+  if (droneSrc) droneSrc.setData(buildDroneFeatures(engine));
+
+  const missionSrc = EC2.map.getSource('missions-active');
+  if (missionSrc){
+    let key = '';
+    for (const m of engine.missions.values()) if (m.state === 'active') key += m.id + ',';
+    if (key !== lastActiveMissionsKey){
+      lastActiveMissionsKey = key;
+      missionSrc.setData(buildMissionLineFeatures(engine));
+    }
+  }
+};
+
+// Subtle pulsing ring around any dock with an outbound drone, or the
+// currently selected dock. Single rAF driver; paint-only, no setData.
+function startPingDriver(){
+  const PERIOD_MS = 1600;
+  function tick(ts){
+    requestAnimationFrame(tick);
+    if (!EC2.map || !EC2.map.getLayer('docks-rings') || EC2.state.scene !== 'console') return;
+    const phase = (ts % PERIOD_MS) / PERIOD_MS;
+    const radius = 9 + phase * 7;          // 9 -> 16
+    const opacity = 0.45 * (1 - phase);    // fades out
+    const cond = ['any', ['==', ['get', 'state'], 'drone-away'], ['get', 'selected']];
+    EC2.map.setPaintProperty('docks-rings', 'circle-radius', ['case', cond, radius, 0]);
+    EC2.map.setPaintProperty('docks-rings', 'circle-opacity', ['case', cond, opacity, 0]);
+  }
+  requestAnimationFrame(tick);
+}
 
 EC2.initMap = function(){
   const rasterSources = {};
@@ -35,6 +148,8 @@ EC2.initMap = function(){
       'uae-roads':  { type: 'geojson', data: GEO_UAE.roads },
       'uae-places': { type: 'geojson', data: GEO_UAE.places },
       'docks':      { type: 'geojson', data: EC2.dockFeatures() },
+      'drones':     { type: 'geojson', data: emptyFC() },
+      'missions-active': { type: 'geojson', data: emptyFC() },
       'world':      { type: 'geojson', data: GEO_WORLD }
     }),
     layers: [
@@ -75,21 +190,45 @@ EC2.initMap = function(){
         },
         paint: { 'text-color': '#7d8697' },
         minzoom: 5.5 },
+      { id: 'missions-active-line', type: 'line', source: 'missions-active',
+        paint: {
+          'line-color': '#ff5a5a',
+          'line-opacity': 0.55,
+          'line-width': 1.5,
+          'line-dasharray': [2, 2]
+        } },
       { id: 'docks-rings', type: 'circle', source: 'docks',
         paint: {
-          'circle-radius': 9,
+          'circle-radius': 0,
           'circle-opacity': 0,
-          'circle-stroke-color': 'rgba(255,90,90,.35)',
+          'circle-stroke-color': 'rgba(255,90,90,.45)',
           'circle-stroke-width': 1
         } },
       { id: 'docks-dots', type: 'circle', source: 'docks',
         paint: {
-          'circle-radius': ['case', ['==', ['get', 'state'], 'alert'], 5.5, 4.5],
+          'circle-radius': ['case',
+            ['any', ['==', ['get', 'state'], 'fault'], ['==', ['get', 'state'], 'offline']], 5.5,
+            4.5],
           'circle-color': ['match', ['get', 'state'],
             'ready', '#ff5a5a',
+            'launching', '#ff5a5a',
+            'drone-away', '#7d8697',
+            'landing', '#7d8697',
+            'charging', '#fbbf24',
+            'fault', '#fbbf24',
+            'offline', '#444a55',
             '#ff5a5a'],
           'circle-stroke-color': '#0a0b0e',
           'circle-stroke-width': 1.5
+        } },
+      { id: 'drones-layer', type: 'symbol', source: 'drones',
+        layout: {
+          'icon-image': 'drone-triangle',
+          'icon-size': 0.75,
+          'icon-rotate': ['get', 'heading'],
+          'icon-rotation-alignment': 'map',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
         } }
     ]
   };
@@ -99,7 +238,12 @@ EC2.initMap = function(){
     center: UAE_CENTER, zoom: 1.4, attributionControl: false,
     canvasContextAttributes: { antialias: true }
   });
-  EC2.mapReady = new Promise(res => EC2.map.on('load', res));
+  EC2.mapReady = new Promise(res => EC2.map.on('load', () => {
+    if (!EC2.map.hasImage('drone-triangle')) EC2.map.addImage('drone-triangle', droneIconImage());
+    EC2.mapLoaded = true;
+    startPingDriver();
+    res();
+  }));
 
   let tileErrors = 0, offlineTimer = null;
   EC2.map.on('error', (e) => {

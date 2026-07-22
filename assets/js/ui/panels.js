@@ -22,11 +22,30 @@ function hashStr(s){
   return Math.abs(h);
 }
 
-function batteryFor(id){ return 85 + (hashStr(id) % 15); } // 85..99
+// Once the sim engine (Task 9) is running, battery/state are read live off
+// it; the hash-based placeholder only covers the pre-dive-in globe scene
+// (or the rare case the engine hasn't been created yet).
+function batteryFor(id){
+  if (window.__engine){
+    const dock = window.__engine.docks.get(id);
+    if (dock) return Math.round(dock.battery);
+  }
+  return 85 + (hashStr(id) % 15); // 85..99
+}
 
-// Sim engine (Task 9) will drive real per-dock state; every dock is
-// 'ready' until then, so FLYING/ALERTS filters legitimately return none.
-function stateFor(/* dock */){ return 'ready'; }
+// Returns the dock's real sim state ('ready'|'launching'|'drone-away'|
+// 'landing'|'charging'|'fault'|'offline') once the engine exists, else
+// 'ready' so filters/UI have a sane default before dive-in.
+function stateFor(dock){
+  if (window.__engine){
+    const live = window.__engine.docks.get(dock.id);
+    if (live) return live.state;
+  }
+  return 'ready';
+}
+
+const FLYING_STATES = ['launching', 'drone-away', 'landing'];
+const ALERT_STATES = ['fault', 'offline'];
 
 function nowClockStr(){
   return new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -117,8 +136,8 @@ EC2.ui = {
 
     const rows = DATA_DOCKS.filter(d => {
       if (currentFilter === 'ALL') return true;
-      if (currentFilter === 'FLYING') return stateFor(d) === 'flying';
-      if (currentFilter === 'ALERTS') return stateFor(d) === 'alert';
+      if (currentFilter === 'FLYING') return FLYING_STATES.includes(stateFor(d));
+      if (currentFilter === 'ALERTS') return ALERT_STATES.includes(stateFor(d));
       return d.emirate === currentFilter;
     });
 
@@ -133,11 +152,13 @@ EC2.ui = {
     const sel = EC2.state.selection;
     for (const d of rows){
       const battery = batteryFor(d.id);
+      const live = stateFor(d);
+      const sdClass = 'sd' + (ALERT_STATES.includes(live) ? ' alert' : '');
       const row = document.createElement('button');
       row.className = 'dock-row' + ((sel && sel.type === 'dock' && sel.id === d.id) ? ' sel' : '');
       row.dataset.dockId = d.id;
       row.innerHTML =
-        '<span class="sd"></span>' +
+        '<span class="' + sdClass + '"></span>' +
         '<span class="di"><b>' + d.id + '</b><i>' + d.name + '</i></span>' +
         '<span class="dr"><span class="model">' + d.model + '</span><span class="batt">' + battery + '%</span></span>';
       row.addEventListener('click', () => EC2.select({ type: 'dock', id: d.id }));
@@ -283,7 +304,18 @@ EC2.initPanels = function(){
   wireMapDockInteractions();
   EC2.ui.renderDockList('ALL');
   EC2.ui.setRightPanel('empty');
-  // Static plausible grid snapshot; sim engine (Task 9) drives this via setStats.
+  // Static plausible snapshot until the sim engine boots (first dive-in);
+  // from then on main.js's rAF loop drives real counts via setStats each ~1s.
   EC2.ui.setStats({ ready: 81, flying: 17, charge: 4, alert: 2 });
+
+  // Dock list rows embed live per-dock battery/state once window.__engine
+  // exists (see stateFor/batteryFor above) but nothing re-renders them on
+  // its own — poll while the console scene is showing so FLYING/ALERTS
+  // filters and per-row battery stay current.
+  setInterval(() => {
+    if (EC2.state.scene !== 'console' || !window.__engine) return;
+    EC2.ui.renderDockList();
+    if (EC2.refreshCounts) EC2.refreshCounts(window.__engine);
+  }, 2000);
 };
 })();
