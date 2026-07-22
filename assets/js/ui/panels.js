@@ -86,6 +86,8 @@ function renderDockPanel(dock){
   const battery = batteryFor(dock.id);
   const state = stateFor(dock);
   const emirate = EMIRATE_NAMES[dock.emirate] || dock.emirate;
+  const launchDisabled = state !== 'ready';
+  const launchTitle = launchDisabled ? 'DRONE NOT AVAILABLE AT THIS DOCK' : '';
   return (
     '<div class="rp-id">' + dock.id + '</div>' +
     '<div class="rp-name">' + dock.name + '</div>' +
@@ -95,7 +97,8 @@ function renderDockPanel(dock){
     '<div class="batt-bar"><i style="width:' + battery + '%"></i></div>' +
     '<div class="state-chip">' + state.toUpperCase() + '</div>' +
     '<div class="rp-actions">' +
-      '<button class="primary" id="rp-launch" disabled title="AVAILABLE AFTER MISSION WIZARD TASK">LAUNCH MISSION</button>' +
+      '<button class="primary" id="rp-launch"' + (launchDisabled ? ' disabled' : '') +
+        (launchTitle ? ' title="' + launchTitle + '"' : '') + '>LAUNCH MISSION</button>' +
       '<button class="ghost" id="rp-locate">LOCATE</button>' +
     '</div>'
   );
@@ -289,6 +292,14 @@ function wireRightPanelActions(mode, data){
     if (locate) locate.addEventListener('click', () => {
       if (EC2.map) EC2.map.flyTo({ center: data.coords, zoom: 14 });
     });
+    const launch = $('rp-launch');
+    if (launch) launch.addEventListener('click', () => {
+      if (EC2.control && EC2.control.enterWizard) EC2.control.enterWizard(data.id);
+    });
+  } else if (mode === 'wizard' && data){
+    // Mission wizard (Task 12) owns its own state/rendering/wiring in
+    // control.js — this registry only needs to dispatch to it.
+    if (EC2.control && EC2.control.wireWizardPanel) EC2.control.wireWizardPanel(data);
   } else if (mode === 'drone' && data){
     const droneId = data.id;
 
@@ -506,6 +517,10 @@ EC2.select = function(sel){
       !(sel.type === 'drone' && sel.id === EC2.control.activeId)){
     EC2.control.exitManual();
   }
+  // The mission wizard (Task 12) owns the right panel exclusively while
+  // engaged — any selection made elsewhere (dock list row, etc.) cancels it
+  // cleanly first rather than leaving stale wizard state under a panel swap.
+  if (EC2.control && EC2.control.mode === 'wizard') EC2.control.exitWizard();
 
   if (sel.type === 'dock'){
     const dock = dockIndex.get(sel.id);
@@ -539,6 +554,12 @@ EC2.select = function(sel){
 function wireTopbar(){
   const globeBtn = $('btn-globe');
   if (globeBtn) globeBtn.addEventListener('click', () => EC2.exitToOrbit());
+
+  const newMissionBtn = $('btn-newmission');
+  if (newMissionBtn) newMissionBtn.addEventListener('click', () => {
+    if (!EC2.control || !EC2.control.enterWizard || EC2.control.mode !== 'normal') return;
+    EC2.control.enterWizard(null);
+  });
 
   const layerSeg = $('layerseg');
   if (layerSeg) layerSeg.addEventListener('click', (e) => {
@@ -612,6 +633,7 @@ function wireScene(){
     // FOLLOW makes no sense once we've left the console map (globe scene).
     if (scene !== 'console'){
       if (EC2.control && EC2.control.mode === 'manual') EC2.control.exitManual();
+      if (EC2.control && EC2.control.mode === 'wizard') EC2.control.exitWizard();
       EC2.followDroneId = null;
       EC2.state.selection = null;
       EC2.ui.setRightPanel('empty'); // also clears droneTeleTimer

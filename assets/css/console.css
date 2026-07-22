@@ -240,6 +240,50 @@ button{font-family:inherit;cursor:pointer}
 .rp-alt-row{align-items:center}
 .rp-alt-row[hidden]{display:none}
 
+/* ---------- mission wizard (Task 12) ---------- */
+.wz-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.wz-tile{
+  display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;
+  background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 6px;
+  color:var(--txt);
+}
+.wz-tile:hover{border-color:var(--red);color:#fff}
+.wz-tile.sel{border-color:var(--red);background:rgba(255,90,90,.1);color:#fff}
+.wz-glyph{font-size:20px;line-height:1;color:var(--red)}
+.wz-label{font-family:var(--mono);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase}
+
+.wz-field{margin-top:16px}
+.wz select{
+  display:block;width:100%;margin-top:7px;background:var(--panel2);
+  border:1px solid var(--line);border-radius:9px;color:#fff;
+  font-family:var(--mono);font-size:11px;letter-spacing:.03em;padding:9px 10px;
+}
+.wz select:disabled{opacity:.5}
+.wz input[type="range"]{
+  width:100%;margin-top:10px;appearance:none;-webkit-appearance:none;
+  height:4px;border-radius:2px;background:var(--panel2);outline:none;
+}
+.wz input[type="range"]::-webkit-slider-thumb{
+  appearance:none;-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+  background:var(--red);border:2px solid #0a0b0e;cursor:pointer;
+}
+.wz input[type="range"]::-moz-range-thumb{
+  width:15px;height:15px;border-radius:50%;background:var(--red);
+  border:2px solid #0a0b0e;cursor:pointer;
+}
+.wz-type-hdr{
+  margin-top:10px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+  text-transform:uppercase;color:#fff;
+}
+.wz-hint{margin-top:10px;font-size:11.5px;color:var(--txt);line-height:1.6}
+.wz-stats.stats{margin-top:14px}
+.wz-summary{margin-top:14px}
+.wz-error{
+  margin-top:12px;padding:9px 11px;border-radius:9px;
+  background:rgba(255,90,90,.1);border:1px solid rgba(255,90,90,.35);
+  color:var(--red);font-family:var(--mono);font-size:10.5px;letter-spacing:.03em;line-height:1.5;
+}
+
 /* ---------- ticker ---------- */
 #ticker{
   position:fixed;left:318px;right:340px;bottom:0;height:34px;z-index:800;

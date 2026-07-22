@@ -33,7 +33,8 @@ EC2.siteFeatures = function(){
 const OPERATIONAL_LAYER_IDS = [
   'docks-dots', 'docks-rings', 'drones-layer', 'missions-active-line',
   'sites-dots', 'sites-labels', 'uae-places', 'uae-roads',
-  'manual-wpts-dots', 'manual-wpts-labels'
+  'manual-wpts-dots', 'manual-wpts-labels',
+  'wizard-preview-line', 'wizard-preview-dots', 'wizard-preview-labels'
 ];
 
 // Shared by sites-dots (fill) and sites-labels (text) so the label always
@@ -189,6 +190,7 @@ EC2.initMap = function(){
       'drones':     { type: 'geojson', data: emptyFC() },
       'missions-active': { type: 'geojson', data: emptyFC() },
       'manual-wpts': { type: 'geojson', data: emptyFC() },
+      'wizard-preview': { type: 'geojson', data: emptyFC() },
       'world':      { type: 'geojson', data: GEO_WORLD }
     }),
     layers: [
@@ -296,6 +298,37 @@ EC2.initMap = function(){
           'circle-stroke-width': 1.5
         } },
       { id: 'manual-wpts-labels', type: 'symbol', source: 'manual-wpts',
+        layout: {
+          'text-field': ['to-string', ['get', 'n']],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 10,
+          'text-allow-overlap': true,
+          'text-ignore-placement': true
+        },
+        paint: { 'text-color': '#fbbf24' } },
+      // Mission wizard (Task 12) route preview — dashed amber line + numbered
+      // markers, distinct from the solid-red active-mission line above so a
+      // preview never reads as a live flight. Single 'wizard-preview' source
+      // mixes LineString (route) + Point (waypoints/box corners) features,
+      // filtered per layer by geometry type; control.js drives its data.
+      { id: 'wizard-preview-line', type: 'line', source: 'wizard-preview',
+        filter: ['==', ['geometry-type'], 'LineString'],
+        paint: {
+          'line-color': '#fbbf24',
+          'line-opacity': 0.85,
+          'line-width': 2,
+          'line-dasharray': [2, 2]
+        } },
+      { id: 'wizard-preview-dots', type: 'circle', source: 'wizard-preview',
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-radius': 7,
+          'circle-color': 'rgba(251,191,36,.18)',
+          'circle-stroke-color': '#fbbf24',
+          'circle-stroke-width': 1.5
+        } },
+      { id: 'wizard-preview-labels', type: 'symbol', source: 'wizard-preview',
+        filter: ['==', ['geometry-type'], 'Point'],
         layout: {
           'text-field': ['to-string', ['get', 'n']],
           'text-font': ['Noto Sans Regular'],
