@@ -120,8 +120,12 @@ EC2.initMap = function(){
     if (on){
       tileErrors = 0;
       offlineTimer = setInterval(() => { // recheck: try loading a 1px tile
+        const myTimer = offlineTimer;
         const img = new Image();
-        img.onload = () => { clearInterval(offlineTimer); offlineTimer = null; EC2.setOffline(false); };
+        img.onload = () => {
+          if (offlineTimer !== myTimer) return; // stale probe from a previous episode
+          clearInterval(offlineTimer); offlineTimer = null; EC2.setOffline(false);
+        };
         img.src = 'https://a.basemaps.cartocdn.com/dark_all/3/5/3.png?t=' + Date.now();
       }, 15000);
     }
