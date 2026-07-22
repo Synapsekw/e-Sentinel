@@ -148,15 +148,15 @@ EC2.enterTheater = function(){
 };
 
 EC2.exitToOrbit = function(){
-  if(EC2.state.scene !== 'console') return;
+  if(EC2.state.scene !== 'console' || diving) return;
   diving = true; diveDir = 'out';
-  EC2.state.scene = 'globe';
-  overlayEl.hidden = false;
   resumeAt = 0; // stay paused for the duration of the return flight
-  EC2.onSceneChange.fire();
   EC2.map.flyTo({ center: ORBIT.center, zoom: ORBIT.zoom, duration: DIVE_MS, curve: DIVE_CURVE });
   EC2.map.once('moveend', function(){
     diving = false; diveDir = null;
+    EC2.state.scene = 'globe';
+    overlayEl.hidden = false;
+    EC2.onSceneChange.fire();
     resumeAt = performance.now() + IDLE_RESUME_MS;
     updateAltReadout();
   });
