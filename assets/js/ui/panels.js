@@ -515,7 +515,11 @@ function wireScene(){
   EC2.onSceneChange(scene => {
     setVisible(scene === 'console');
     // FOLLOW makes no sense once we've left the console map (globe scene).
-    if (scene !== 'console') EC2.followDroneId = null;
+    if (scene !== 'console'){
+      EC2.followDroneId = null;
+      EC2.state.selection = null;
+      EC2.ui.setRightPanel('empty'); // also clears droneTeleTimer
+    }
   });
 }
 

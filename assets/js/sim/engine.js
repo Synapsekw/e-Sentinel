@@ -210,7 +210,7 @@ function create(opts){
     drone._legDistKm = R.pathLengthKm(leg) || 0.0001;
     drone._legProgress = 0;
     if (forced){
-      emit('warn', drone.id, drone.id + ' BATTERY ' + Math.round(drone.battery) + '% — FORCED RTB');
+      emit('warn', drone.id, drone.id + ' BATTERY ' + Math.round(drone.battery) + '% · FORCED RTB');
     }
   }
 
@@ -254,7 +254,9 @@ function create(opts){
     // wind-hold resume
     if (drone._holdUntil && engine.now >= drone._holdUntil){
       drone._holdUntil = 0;
-      emit('info', drone.id, drone.id + ' RESUMING — WIND ADVISORY CLEARED');
+      if (drone.state !== 'hold'){
+        emit('info', drone.id, drone.id + ' RESUMING · WIND ADVISORY CLEARED');
+      }
     }
 
     // battery drains in every airborne state
@@ -278,7 +280,7 @@ function create(opts){
         (drone.state === 'transit' || drone.state === 'on-task' || drone.state === 'rtb') &&
         engine.rand() < dt / 3000){
       drone._holdUntil = engine.now + 60;
-      emit('warn', drone.id, drone.id + ' HOLDING — WIND ADVISORY');
+      emit('warn', drone.id, drone.id + ' HOLDING · WIND ADVISORY');
     }
     const holding = !!(drone._holdUntil && engine.now < drone._holdUntil);
     if (holding) return;
@@ -335,6 +337,8 @@ function create(opts){
           drone.missionId = null;
           drone.pos = dock.coords.slice();
           drone.heading = 0;
+          drone.alt = 0;
+          drone.speedMs = 0;
           dock.state = drone.battery < 100 ? 'charging' : 'ready';
         }
         break;
@@ -397,7 +401,7 @@ function create(opts){
     drone._legProgress = 0;
     dock.state = 'launching';
 
-    emit('info', drone.id, drone.id + ' LAUNCHED — ' + config.label + ' FROM ' + String(dock.name).toUpperCase());
+    emit('info', drone.id, drone.id + ' LAUNCHED · ' + config.label + ' FROM ' + String(dock.name).toUpperCase());
     return mission;
   };
 
@@ -434,7 +438,7 @@ function create(opts){
       return true;
     }
     if (drone.state !== 'hold') return false;
-    drone.state = drone._preHoldState || 'transit';
+    drone.state = drone._preHoldState;
     drone._preHoldState = null;
     emit('info', drone.id, 'MANUAL RESUME COMMAND · ' + drone.id);
     return true;
@@ -482,13 +486,13 @@ function create(opts){
         const dock = pick(engine.rand, ready);
         dock.state = 'fault';
         dock._faultUntil = engine.now + 120;
-        emit('alert', dock.id, dock.id + ' FAULT DETECTED — OFFLINE FOR SERVICE');
+        emit('alert', dock.id, dock.id + ' FAULT DETECTED · OFFLINE FOR SERVICE');
       }
     }
     for (const dock of engine.docks.values()){
       if (dock.state === 'fault' && engine.now >= dock._faultUntil){
         dock.state = 'ready';
-        emit('info', dock.id, dock.id + ' FAULT CLEARED — BACK ONLINE');
+        emit('info', dock.id, dock.id + ' FAULT CLEARED · BACK ONLINE');
       }
     }
   }
