@@ -9,6 +9,18 @@
 </head>
 <body>
 <div id="map"></div>
+<div id="globe-ui">
+  <div class="g-brand"><span class="g-eamp">e<i>&amp;</i></span>
+    <div><b>GLOBAL COMMAND</b><span class="lbl">PHYSICAL INTELLIGENCE · ORBITAL VIEW</span></div>
+  </div>
+  <div class="g-hint lbl">DRAG TO ROTATE · CLICK UAE TO ENTER THEATER</div>
+  <button id="uae-beacon-tag" class="g-tag" hidden>
+    <b>UNITED ARAB EMIRATES</b>
+    <span class="ok">GRID ONLINE · 104 DOCKS</span>
+    <span class="lbl">CLICK TO ENTER THEATER</span>
+  </button>
+  <div class="g-alt lbl" id="g-alt">ALT 12742 KM · ORBITAL</div>
+</div>
 <div id="boot-error" hidden>
   <div class="be-inner">
     <div class="be-logo">e<i>&amp;</i></div>
@@ -21,6 +33,7 @@
 <script src="assets/js/data/docks.js"></script>
 <script src="assets/js/main.js"></script>
 <script src="assets/js/ui/map.js"></script>
+<script src="assets/js/ui/globe.js"></script>
 <script>document.addEventListener('DOMContentLoaded',()=>window.EC2.init());</script>
 </body>
 </html>

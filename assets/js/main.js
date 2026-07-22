@@ -4,6 +4,7 @@ window.EC2 = {
     try{
       if(typeof maplibregl === 'undefined') throw new Error('maplibre missing');
       EC2.initMap();
+      EC2.mapReady.then(() => EC2.initGlobe && EC2.initGlobe());
     }catch(err){
       console.error(err);
       document.getElementById('boot-error').hidden = false;

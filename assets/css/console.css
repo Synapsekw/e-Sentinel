@@ -15,3 +15,23 @@ button{font-family:inherit;cursor:pointer}
 .be-inner{text-align:center;font-family:var(--mono);font-size:11px;letter-spacing:.18em;color:var(--dim)}
 .be-logo{font-size:42px;font-weight:800;color:#fff;margin-bottom:18px;font-family:var(--sans)}
 .be-logo i{color:var(--redd);font-style:normal}
+
+#globe-ui{position:fixed;inset:0;z-index:20;pointer-events:none}
+#globe-ui[hidden]{display:none}
+.g-brand{position:absolute;top:28px;left:32px;display:flex;align-items:center;gap:14px}
+.g-eamp{font-family:var(--sans);font-size:32px;font-weight:800;color:#fff;line-height:1}
+.g-eamp i{color:var(--redd);font-style:normal}
+.g-brand b{display:block;font-size:13px;letter-spacing:.1em;color:#fff;margin-bottom:5px}
+.g-hint{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);white-space:nowrap}
+.g-alt{position:absolute;bottom:30px;right:32px}
+.g-tag{
+  position:fixed;pointer-events:auto;transform:translateY(-50%);
+  display:flex;flex-direction:column;gap:4px;text-align:left;
+  background:rgba(10,11,14,.85);border:1px solid var(--line);border-radius:8px;
+  padding:10px 14px;color:var(--txt);
+  transition:border-color .15s ease;
+}
+.g-tag:hover{border-color:var(--red)}
+.g-tag[hidden]{display:none}
+.g-tag b{font-size:12px;letter-spacing:.05em;color:#fff}
+.g-tag .ok{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--ok)}
