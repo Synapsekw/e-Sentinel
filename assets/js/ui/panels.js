@@ -417,6 +417,14 @@ function drawDebriefFrame(ctx, canvas, ts){
 
 function startDebriefPlaceholder(canvas){
   if (!canvas) return;
+  // Guard against a stale video 'error' handler from a *previously* rendered
+  // debrief panel firing late (e.g. a slow 404 that resolves after the user
+  // has already opened a different mission's debrief). That old canvas is no
+  // longer in the document by the time this fires — bail before touching
+  // stopDebriefAnim() so we never cancel the CURRENTLY visible placeholder's
+  // rAF loop out from under it. Checked here (not just inside the frame
+  // loop) so we never even kill-and-restart for a detached canvas.
+  if (!canvas.isConnected) return;
   stopDebriefAnim();
   canvas.width = canvas.clientWidth || 300;
   canvas.height = canvas.clientHeight || 169;
