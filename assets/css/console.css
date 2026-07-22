@@ -35,3 +35,15 @@ button{font-family:inherit;cursor:pointer}
 .g-tag[hidden]{display:none}
 .g-tag b{font-size:12px;letter-spacing:.05em;color:#fff}
 .g-tag .ok{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--ok)}
+
+.chip{
+  font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  background:var(--panel2);border:1px solid var(--line);border-radius:20px;
+  padding:6px 12px;color:var(--txt);
+}
+.chip[hidden]{display:none}
+#offline-chip{
+  position:fixed;top:68px;right:16px;z-index:30;
+  border-color:rgba(251,191,36,.4);color:var(--amber);
+  background:rgba(251,191,36,.08);
+}
