@@ -183,3 +183,63 @@ test('nudgeAlt clamps altitude to the 30-120m band', () => {
   e.nudgeAlt(d.id, 1000);
   assert.strictEqual(d.alt, 120);
 });
+
+// ---- Review-fix regression: completion-order pruning + ambient ticker cadence ----
+
+test('pruneFinishedMissions evicts by completion order, not creation order, keeping <=60 finished', () => {
+  const e = mk();
+  // One mission per dock (up to 70) via createMission directly — cheaper and
+  // more deterministic than waiting on the scheduler to fill the fleet.
+  const docks = [...e.docks.values()].slice(0, 70);
+  const missions = docks.map(dock => e.createMission({
+    type: 'security',
+    dockId: dock.id,
+    waypoints: globalThis.SimRouter.perimeter(dock.coords, 1200, 6),
+    params: { altM: 80, speedMs: 15 }
+  }));
+  const drones = docks.map(dock => dock.drone);
+
+  // Let every drone clear takeoff + transit onto its on-task leg. The r=1200m/
+  // speedMs=15 route keeps on-task alive for ~480s — comfortably longer than
+  // the ~140s (initial wait) + ~210s (staggered forcing below) this test needs,
+  // so no drone completes its route naturally before we force it.
+  for (let i = 0; i < 140; i++) e.tick(1);
+  assert.ok(drones.every(d => d.state === 'on-task' || d.state === 'transit'),
+    'expected every drone to still be flying before forcing completion');
+
+  // Force completion (commandRTB completes the mission immediately, see
+  // beginRtb -> finalizeMission) in REVERSE creation order, staggered a few
+  // ticks apart. This makes the earliest-CREATED missions (index 0..9) the
+  // LATEST-COMPLETED ones, and the latest-created (index 60..69) the
+  // EARLIEST-completed ones — decoupling completion order from creation
+  // order so creation-order pruning and completion-order pruning disagree.
+  for (let i = missions.length - 1; i >= 0; i--){
+    assert.ok(e.commandRTB(drones[i].id), 'commandRTB should succeed for ' + drones[i].id);
+    for (let t = 0; t < 3; t++) e.tick(1);
+  }
+
+  const finished = [...e.missions.values()].filter(m => m.state !== 'active');
+  assert.ok(finished.length <= 60, 'finished missions must be capped at 60, got ' + finished.length);
+
+  // Earliest-created / latest-completed missions must survive.
+  const earliestCreatedIds = missions.slice(0, 10).map(m => m.id);
+  for (const id of earliestCreatedIds){
+    assert.ok(e.missions.has(id), id + ' (created first, completed last) should survive pruning');
+  }
+  // Latest-created / earliest-completed missions should be the ones pruned.
+  const earliestCompletedIds = missions.slice(-10).map(m => m.id);
+  const evicted = earliestCompletedIds.filter(id => !e.missions.has(id)).length;
+  assert.ok(evicted >= 8,
+    'earliest-completed missions should be pruned first (evicted ' + evicted + '/10)');
+});
+
+test('ambient ticker events bound the max gap to <=5s of sim time over a 10-minute window', () => {
+  const e = mk();
+  const times = [];
+  e.onEvent(ev => { times.push(ev.time); });
+  for (let i = 0; i < 600; i++) e.tick(1); // 10 sim minutes
+  assert.ok(times.length > 1, 'expected ticker events over the window');
+  let maxGap = 0;
+  for (let i = 1; i < times.length; i++) maxGap = Math.max(maxGap, times[i] - times[i - 1]);
+  assert.ok(maxGap <= 5, 'max ticker gap should be <=5s of sim time, got ' + maxGap);
+});

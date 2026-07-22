@@ -725,7 +725,7 @@ EC2.ui = {
         // A wizard or manual-control session mid-flight owns the map/panel;
         // switching the selection out from under it would strand or lose
         // that in-progress state. Block the row and surface why briefly.
-        if (EC2.control && (EC2.control.mode === 'wizard' || EC2.control.mode === 'manual')){
+        if (inCaptureMode()){
           row.title = 'EXIT CURRENT MODE FIRST';
           setTimeout(() => { row.title = ''; }, 2000);
           return;

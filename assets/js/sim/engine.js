@@ -4,6 +4,7 @@
 // ---------- constants ----------
 const AIRBORNE_TARGET = 14;
 const SCHED_INTERVAL_S = 8;
+const AMBIENT_INTERVAL_S = 4;
 const TAKEOFF_S = 20;
 const LANDING_S = 20;
 const FLIGHT_S_FULL = 40 * 60;           // 40 min full-battery flight
@@ -134,6 +135,8 @@ function create(opts){
     rand: mulberry32(42),
     airborneTarget: AIRBORNE_TARGET,
     _schedAcc: 0,
+    _ambientAcc: 0,
+    _ambientIdx: 0,
     _missionSeq: 0,
     _subscribers: []
   };
@@ -192,6 +195,7 @@ function create(opts){
   function finalizeMission(mission, drone){
     if (!mission || mission.state === 'complete') return;
     mission.state = 'complete';
+    mission.completedAt = engine.now;
     mission.progress = 1;
     const config = MISSIONS_CONFIG[mission.type];
     try {
@@ -204,7 +208,11 @@ function create(opts){
   }
 
   // Bounds engine.missions growth over a long session: once more than 60
-  // finished (non-active) missions have accumulated, evict the oldest ones.
+  // finished (non-active) missions have accumulated, evict the oldest ones
+  // by completion order (mission.completedAt, set in finalizeMission when a
+  // mission leaves 'active') rather than creation order, so a mission that
+  // was created early but finished late (e.g. a long corridor run) isn't
+  // evicted ahead of missions that both started and finished earlier.
   // Active missions are never touched. panels.js keeps its own independent
   // sessionMissions list (with its own cap) for the MEDIA library, so this
   // only affects the engine's live working set.
@@ -212,11 +220,12 @@ function create(opts){
   function pruneFinishedMissions(){
     const finished = [];
     for (const m of engine.missions.values()){
-      if (m.state !== 'active') finished.push(m.id);
+      if (m.state !== 'active') finished.push(m);
     }
     const excess = finished.length - MISSIONS_KEEP;
     if (excess <= 0) return;
-    for (let i = 0; i < excess; i++) engine.missions.delete(finished[i]);
+    finished.sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0));
+    for (let i = 0; i < excess; i++) engine.missions.delete(finished[i].id);
   }
 
   function beginRtb(drone, dock, mission, forced){
@@ -570,6 +579,37 @@ function create(opts){
     return true;
   };
 
+  // ---- ambient ticker stream ----
+  // Low-priority, always-on filler so the ticker's worst-case gap is bounded
+  // by construction (spec: ticker updates <=5s of sim time), independent of
+  // how sparse mission/detection events are tuned to be. Rotates through a
+  // small fixed set of quiet ops-floor lines deterministically (index
+  // counter), touching engine.rand only for the random dock pick.
+  function ambientGrid(){
+    let airborne = 0, ready = 0;
+    for (const d of engine.drones.values()) if (d.state !== 'docked') airborne++;
+    for (const dk of engine.docks.values()) if (dk.state === 'ready') ready++;
+    return 'GRID · ' + airborne + ' AIRBORNE · ' + ready + ' READY';
+  }
+  function ambientNetwork(){
+    return 'NETWORK · E& 5G 99.98% · GCAA SYNC OK';
+  }
+  function ambientDock(){
+    const docks = [...engine.docks.values()];
+    if (!docks.length) return 'DOCK · BATTERY -- · NOMINAL';
+    const dock = pick(engine.rand, docks);
+    return 'DOCK ' + dock.id + ' · BATTERY ' + Math.round(dock.battery) + '% · NOMINAL';
+  }
+  function ambientUtm(){
+    return 'UTM · FLIGHT PLANS SYNCED · ZERO CONFLICTS';
+  }
+  const AMBIENT_GENERATORS = [ambientGrid, ambientNetwork, ambientDock, ambientUtm];
+  function runAmbientPass(){
+    const gen = AMBIENT_GENERATORS[engine._ambientIdx % AMBIENT_GENERATORS.length];
+    engine._ambientIdx += 1;
+    emit('info', 'OPS', gen());
+  }
+
   // ---- scheduler ----
   function runSchedulerPass(){
     let airborne = 0;
@@ -632,6 +672,12 @@ function create(opts){
     while (engine._schedAcc >= SCHED_INTERVAL_S){
       engine._schedAcc -= SCHED_INTERVAL_S;
       runSchedulerPass();
+    }
+
+    engine._ambientAcc += dt;
+    while (engine._ambientAcc >= AMBIENT_INTERVAL_S){
+      engine._ambientAcc -= AMBIENT_INTERVAL_S;
+      runAmbientPass();
     }
 
     tickFaults(dt);
