@@ -522,7 +522,15 @@ control.wireWizardPanel = function(w){
 
   if (w.step === 1){
     document.querySelectorAll('.wz-tile').forEach(btn => {
-      btn.addEventListener('click', () => { w.type = btn.dataset.type; renderWizard(); });
+      btn.addEventListener('click', () => {
+        const newType = btn.dataset.type;
+        if (newType !== w.type) {
+          w.altM = null;
+          w.speedMs = null;
+        }
+        w.type = newType;
+        renderWizard();
+      });
     });
     const dockSel = $('wz-dock');
     if (dockSel) dockSel.addEventListener('change', () => {
