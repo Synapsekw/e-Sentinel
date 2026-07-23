@@ -19,6 +19,21 @@ const RASTER_ATTRIBUTION = {
   terrain: 'Powered by Esri &middot; Source: Esri, Maxar, Earthstar Geographics'
 };
 
+// CARTO's anonymous vector tiles (OpenMapTiles schema). The dark raster is
+// fully desaturated, so water and green spaces read as undifferentiated
+// gray; these tiles feed the dark-water/dark-greens/dark-parks overlay
+// fills below, giving exact coastlines and park outlines at every zoom.
+// Attribution string matches the CARTO rasters so the control dedupes it.
+const VECTOR_TILES = [
+  'https://tiles-a.basemaps.cartocdn.com/vectortiles/carto.streets/v1/{z}/{x}/{y}.mvt',
+  'https://tiles-b.basemaps.cartocdn.com/vectortiles/carto.streets/v1/{z}/{x}/{y}.mvt',
+  'https://tiles-c.basemaps.cartocdn.com/vectortiles/carto.streets/v1/{z}/{x}/{y}.mvt',
+  'https://tiles-d.basemaps.cartocdn.com/vectortiles/carto.streets/v1/{z}/{x}/{y}.mvt'
+];
+
+// Water/green tint layers shown only while the dark basemap is active.
+const DARK_OVERLAY_IDS = ['dark-water', 'dark-greens', 'dark-parks'];
+
 // Local glyph vendoring (Task 14 fix): MapLibre's demotiles.maplibre.org
 // glyph host is unreachable on a cold offline/file:// boot, so uae-places /
 // sites-labels / manual-wpts-labels / wizard-preview-labels text never
@@ -207,6 +222,10 @@ EC2.initMap = function(){
     glyphs: localGlyphsUrl(),
     projection: { type: 'globe' },
     sources: Object.assign({}, rasterSources, {
+      'carto-streets': {
+        type: 'vector', tiles: VECTOR_TILES, minzoom: 0, maxzoom: 14,
+        attribution: RASTER_ATTRIBUTION.dark
+      },
       'uae':        { type: 'geojson', data: GEO_UAE.borders },
       'uae-roads':  { type: 'geojson', data: GEO_UAE.roads },
       'uae-places': { type: 'geojson', data: GEO_UAE.places },
@@ -220,14 +239,34 @@ EC2.initMap = function(){
     }),
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': '#0a0b0e' } },
+      // Boot scene is 'globe', whose effective basemap is satellite (the
+      // orbital view reads as Earth from space); raster-dark starts hidden
+      // and applyBasemap() swaps rasters on scene/layer/offline changes.
       { id: 'raster-dark', type: 'raster', source: 'raster-dark',
+        layout: { visibility: 'none' },
         paint: { 'raster-saturation': -1, 'raster-contrast': 0.05 } },
       { id: 'raster-light', type: 'raster', source: 'raster-light',
         layout: { visibility: 'none' } },
-      { id: 'raster-sat', type: 'raster', source: 'raster-sat',
-        layout: { visibility: 'none' } },
+      { id: 'raster-sat', type: 'raster', source: 'raster-sat' },
       { id: 'raster-terrain', type: 'raster', source: 'raster-terrain',
         layout: { visibility: 'none' } },
+      // Dark-basemap tint overlays: the desaturated dark raster renders sea
+      // and parks as flat gray, so translucent fills restore a deep-navy
+      // water tone and muted green for parks/grass/wood. Kept translucent so
+      // the raster's own labels and texture still show through.
+      { id: 'dark-water', type: 'fill', source: 'carto-streets',
+        'source-layer': 'water',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#1c4d75', 'fill-opacity': 0.45 } },
+      { id: 'dark-greens', type: 'fill', source: 'carto-streets',
+        'source-layer': 'landcover',
+        filter: ['in', ['get', 'class'], ['literal', ['grass', 'wood', 'wetland']]],
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#2e7d4f', 'fill-opacity': 0.3 } },
+      { id: 'dark-parks', type: 'fill', source: 'carto-streets',
+        'source-layer': 'park',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#2e7d4f', 'fill-opacity': 0.3 } },
       { id: 'world-land-fill', type: 'fill', source: 'world',
         layout: { visibility: 'none' },
         paint: { 'fill-color': '#14171c' } },
@@ -390,6 +429,10 @@ EC2.initMap = function(){
     // layers before the first paint, rather than waiting for a scene fire.
     EC2.onSceneChange(scene => EC2.setOperationalLayersVisible(scene === 'console'));
     EC2.setOperationalLayersVisible(EC2.state.scene === 'console');
+    // Orbital satellite (see effectiveLayer): swap basemaps when the scene
+    // flips between globe (always sat) and console (operator's layer pick).
+    EC2.onSceneChange(() => applyBasemap());
+    applyBasemap();
     res();
   }));
 
@@ -402,9 +445,7 @@ EC2.initMap = function(){
 
   EC2.setOffline = function(on){
     EC2.state.offline = on;
-    for (const k of ['dark','light','sat','terrain'])
-      EC2.map.setLayoutProperty('raster-'+k, 'visibility',
-        (!on && k===EC2.state.layer) ? 'visible' : 'none');
+    applyBasemap();
     for (const id of ['world-land-fill','world-land-line'])
       EC2.map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
     document.getElementById('offline-chip').hidden = !on;
@@ -424,11 +465,26 @@ EC2.initMap = function(){
   };
 };
 
+// The basemap the operator actually sees: the orbital scene always shows
+// satellite imagery regardless of the layer chips; the selected layer
+// applies once inside the theater (console scene).
+function effectiveLayer(){
+  return EC2.state.scene === 'globe' ? 'sat' : EC2.state.layer;
+}
+
+function applyBasemap(){
+  if (!EC2.map) return;
+  const eff = EC2.state.offline ? null : effectiveLayer();
+  for (const k of ['dark','light','sat','terrain'])
+    EC2.map.setLayoutProperty('raster-'+k, 'visibility', k===eff ? 'visible' : 'none');
+  const overlayVis = eff === 'dark' ? 'visible' : 'none';
+  for (const id of DARK_OVERLAY_IDS)
+    if (EC2.map.getLayer(id)) EC2.map.setLayoutProperty(id, 'visibility', overlayVis);
+}
+
 EC2.setLayer = function(name){
   EC2.state.layer = name;
   document.documentElement.dataset.maplayer = name; // lets CSS adapt chips on light
-  if (EC2.state.offline) return; // rasters stay hidden until connectivity returns
-  for (const k of ['dark','light','sat','terrain'])
-    EC2.map.setLayoutProperty('raster-'+k, 'visibility', k===name?'visible':'none');
+  applyBasemap(); // no-ops the rasters while offline (eff === null)
 };
 })();
