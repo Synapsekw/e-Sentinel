@@ -569,3 +569,43 @@ body.side-collapsed #basemap-loading{left:14px}
   .ok-chip{display:none}
   #topbar{gap:8px}
 }
+
+/* ---------- FLIGHT REQUESTS (left panel, customer tasking) ---------- */
+.side-requests .lbl{display:flex;align-items:center;gap:8px}
+.req-count{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:16px;height:16px;padding:0 4px;border-radius:99px;
+  background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.4);
+  color:var(--amber);font-family:var(--mono);font-size:9px;letter-spacing:.04em;
+}
+#reqlist{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.req-row{
+  display:block;width:100%;text-align:left;
+  background:var(--panel2);border:1px solid transparent;border-radius:9px;
+  padding:8px 10px;cursor:pointer;
+}
+.req-row:hover{border-color:var(--line)}
+.req-head{display:flex;align-items:center;gap:8px}
+.req-pri{
+  flex:none;font-family:var(--mono);font-size:8px;letter-spacing:.12em;
+  padding:2px 6px;border-radius:99px;border:1px solid transparent;text-transform:uppercase;
+}
+.req-pri.urgent{background:rgba(251,191,36,.16);border-color:rgba(251,191,36,.5);color:var(--amber)}
+.req-pri.priority{border-color:rgba(255,255,255,.35);color:#e8ecf4}
+.req-pri.routine{border-color:var(--line);color:var(--dim)}
+.req-cust{font-family:var(--mono);font-size:11px;color:#fff;letter-spacing:.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.req-age{margin-left:auto;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.06em}
+.req-line{
+  display:block;margin-top:4px;font-family:var(--mono);font-size:9px;color:var(--txt);
+  letter-spacing:.06em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+/* Request review panel: priority chip variants + read-only status chip */
+.req-pri-chip.urgent{color:var(--amber);border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.06)}
+.req-pri-chip.priority{color:#e8ecf4;border-color:rgba(255,255,255,.3)}
+.req-pri-chip.routine{color:var(--dim);border-color:var(--line)}
+.state-chip.req-status{margin-top:16px;color:var(--dim);border-color:var(--line)}
+
+/* ---------- compact filter chips (filters now live inside the dock-network panel) ---------- */
+.side-docklist .filters{gap:4px;margin:8px 0 10px}
+.side-docklist .fchip{font-size:8.5px;padding:3px 7px;letter-spacing:.08em}

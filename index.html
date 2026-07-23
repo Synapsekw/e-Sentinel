@@ -39,7 +39,8 @@
     <button data-l="dark" class="on">DARK</button><button data-l="light">LIGHT</button>
     <button data-l="sat">SATELLITE</button><button data-l="terrain">TERRAIN</button>
   </div>
-  <button class="tbtn" id="btn-missions" title="LAUNCH A PREDEFINED MISSION" aria-haspopup="true" aria-expanded="false">MISSIONS &#9662;</button>
+  <button class="tbtn" id="btn-ops" title="OPS DIGEST">OPS</button>
+<button class="tbtn" id="btn-missions" title="LAUNCH A PREDEFINED MISSION" aria-haspopup="true" aria-expanded="false">MISSIONS &#9662;</button>
   <button class="tbtn" id="btn-newmission" title="CREATE A NEW MISSION">+ NEW MISSION</button>
   <button class="tbtn" id="btn-media" title="MISSION MEDIA LIBRARY">MEDIA</button>
   <button class="tbtn" id="btn-globe">GLOBE</button>
@@ -59,9 +60,13 @@
       <div class="st"><div class="n" id="st-alert">0</div><div class="c">Alerts</div></div>
     </div>
   </div>
-  <div class="panel side-filters">
-    <h4 class="lbl">Filter</h4>
-    <div class="filters" id="filters">
+  <div class="panel side-requests">
+    <h4 class="lbl">Flight requests <span id="req-count" class="req-count" hidden>0</span></h4>
+    <div id="reqlist"></div>
+  </div>
+  <div class="panel side-docklist">
+    <h4 class="lbl">Dock network</h4>
+    <div class="filters filters-compact" id="filters">
       <button class="fchip on" data-filter="ALL">ALL</button>
       <button class="fchip" data-filter="AUH">AUH</button>
       <button class="fchip" data-filter="DXB">DXB</button>
@@ -74,9 +79,6 @@
       <button class="fchip" data-filter="FLYING">FLYING</button>
       <button class="fchip" data-filter="ALERTS">ALERTS</button>
     </div>
-  </div>
-  <div class="panel side-docklist">
-    <h4 class="lbl">Dock network</h4>
     <div id="docklist"></div>
   </div>
 </aside>

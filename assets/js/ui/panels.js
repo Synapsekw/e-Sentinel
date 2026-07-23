@@ -27,6 +27,11 @@ let dockSearch = '';
 let dockSort = 'ID';
 let dockListSig = null;
 
+// FLIGHT REQUESTS panel: last rendered pending-request id signature — when
+// unchanged, the 2s poll only patches the age cells in place (same
+// signature-vs-patch pattern as dockListSig above).
+let reqListSig = null;
+
 // Completed missions this session (newest first, capped), backing the
 // MEDIA grid. A mission lands here once via recordCompletedMission() when
 // the engine emits its 'MISSION <id> COMPLETE' event.
@@ -681,12 +686,12 @@ function debriefVideoHTML(mission){
 
 // ---------- route snapshot (pure string-built inline SVG, no libs) ----------
 
-// Plots mission.waypoints normalized into a 240x140 box with 8% padding:
-// the flown track (polyline), dock/start (square), end (circle) and small
-// dots at each 25% of the path length. Shared between the debrief panel and
-// the exported report.
-function routeSvg(mission){
-  const wps = (mission.waypoints || []).filter(p =>
+// Plots a waypoints array ([lon,lat] pairs) normalized into a 240x140 box
+// with 8% padding: the track (polyline), dock/start (square), end (circle)
+// and small dots at each 25% of the path length. Shared between the debrief
+// panel, the exported report and the flight-request review preview.
+function routeSvg(waypoints){
+  const wps = (waypoints || []).filter(p =>
     Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
   if (wps.length < 2) return '';
   const W = 240, H = 140, PX = W * 0.08, PY = H * 0.08;
@@ -740,12 +745,17 @@ function routeSvg(mission){
 
 function renderDebriefPanel(mission){
   const cfg = (typeof MISSIONS_CONFIG !== 'undefined' && MISSIONS_CONFIG[mission.type]) || { label: String(mission.type).toUpperCase() };
-  const route = routeSvg(mission);
+  const route = routeSvg(mission.waypoints);
   return (
     '<div class="lbl">Mission debrief</div>' +
     '<div class="rp-id">' + mission.id + '</div>' +
     '<div class="rp-name">' + cfg.label + '</div>' +
     '<div class="rp-kv"><span class="k">Dock</span><span class="v">' + mission.dockId + '</span></div>' +
+    // Customer credit (flight-request missions only): the requester's short
+    // code, mirroring the REQUESTED BY row in the exported report.
+    (mission.requestedBy
+      ? '<div class="rp-kv"><span class="k">Requested by</span><span class="v">' + escapeHtml(mission.requestedBy) + '</span></div>'
+      : '') +
     '<div class="rp-kv"><span class="k">Duration</span><span class="v">' + fmtMMSS(mission.durationS) + '</span></div>' +
     '<div class="rp-kv"><span class="k">Distance</span><span class="v">' + (mission.distanceKm || 0).toFixed(1) + ' KM</span></div>' +
     (route
@@ -770,7 +780,7 @@ function missionReportHTML(mission){
   const rows = Object.keys(a).map(k =>
     '<tr><td>' + escapeHtml(humanizeKey(k)) + '</td><td>' + escapeHtml(formatAnalyticsValue(k, a[k])) + '</td></tr>'
   ).join('');
-  const route = routeSvg(mission);
+  const route = routeSvg(mission.waypoints);
   return (
     '<!doctype html><html><head><meta charset="utf-8">' +
     '<title>SENTINEL REPORT · ' + escapeHtml(mission.id) + '</title>' +
@@ -797,6 +807,7 @@ function missionReportHTML(mission){
       '<tr><td>MISSION ID</td><td>' + escapeHtml(mission.id) + '</td></tr>' +
       '<tr><td>TYPE</td><td>' + escapeHtml(cfg.label) + '</td></tr>' +
       '<tr><td>DOCK</td><td>' + escapeHtml(mission.dockId) + '</td></tr>' +
+      (mission.requestedBy ? '<tr><td>REQUESTED BY</td><td>' + escapeHtml(mission.requestedBy) + '</td></tr>' : '') +
       '<tr><td>DURATION</td><td>' + fmtMMSS(mission.durationS) + '</td></tr>' +
       '<tr><td>DISTANCE</td><td>' + (mission.distanceKm || 0).toFixed(1) + ' KM</td></tr>' +
     '</table>' +
@@ -1087,6 +1098,192 @@ function wireDebriefWatch(){
   const iv = setInterval(() => { if (trySubscribe()) clearInterval(iv); }, 300);
 }
 
+// ---------- FLIGHT REQUESTS (customer tasking, R-4) ----------
+
+// Everything here is hard-guarded against the engine lane being momentarily
+// absent (engine boots on first dive-in; engine.requests lands in a parallel
+// change): no engine / no requests Map simply renders the empty state.
+
+const REQ_PRI_CLASS = { URGENT: 'urgent', PRIORITY: 'priority', ROUTINE: 'routine' };
+
+function getRequest(id){
+  const engine = window.__engine;
+  return (engine && engine.requests && engine.requests.get(id)) || null;
+}
+
+function pendingRequests(){
+  const engine = window.__engine;
+  if (!engine || !engine.requests) return [];
+  const out = [];
+  for (const r of engine.requests.values()){
+    if (r.status === 'pending') out.push(r);
+  }
+  out.sort((a, b) => (b.requestedAt || 0) - (a.requestedAt || 0)); // newest first
+  return out;
+}
+
+// Request age as 'T+M:SS' from sim time (engine.now - requestedAt).
+function reqAgeStr(req){
+  const engine = window.__engine;
+  const now = engine ? engine.now : 0;
+  return 'T+' + fmtETA(Math.max(0, now - (req.requestedAt || 0)));
+}
+
+function missionTypeLabel(type){
+  const cfg = (typeof MISSIONS_CONFIG !== 'undefined' && MISSIONS_CONFIG[type]) || null;
+  return cfg ? cfg.label : String(type).toUpperCase();
+}
+
+function reqRowHTML(req){
+  const pri = String(req.priority || 'ROUTINE').toUpperCase();
+  const priCls = REQ_PRI_CLASS[pri] || 'routine';
+  return (
+    '<button class="req-row" data-req="' + escapeHtml(req.id) + '">' +
+      '<span class="req-head">' +
+        '<span class="req-pri ' + priCls + '">' + escapeHtml(pri) + '</span>' +
+        '<b class="req-cust">' + escapeHtml(req.customer) + '</b>' +
+        '<span class="req-age" data-req-age="' + escapeHtml(req.id) + '">' + reqAgeStr(req) + '</span>' +
+      '</span>' +
+      '<span class="req-line">' + escapeHtml(missionTypeLabel(req.type)) + ' &middot; ' + escapeHtml(req.place) + '</span>' +
+    '</button>'
+  );
+}
+
+// Renders the FLIGHT REQUESTS left panel (#reqlist + #req-count badge).
+// Same rebuild-vs-patch discipline as renderDockList: rows are rebuilt only
+// when the pending id-set changes; otherwise only the T+ ages are patched in
+// place, so hover/focus on a row survives the 2s poll.
+function renderRequestList(force){
+  const list = $('reqlist');
+  if (!list) return;
+  const pending = pendingRequests();
+
+  const badge = $('req-count');
+  if (badge){
+    const n = String(pending.length);
+    if (badge.textContent !== n) badge.textContent = n;
+    badge.hidden = !pending.length;
+  }
+
+  const sig = pending.map(r => r.id).join(',');
+  if (!force && sig === reqListSig && list.children.length){
+    list.querySelectorAll('[data-req-age]').forEach(el => {
+      const req = getRequest(el.getAttribute('data-req-age'));
+      if (!req) return;
+      const txt = reqAgeStr(req);
+      if (el.textContent !== txt) el.textContent = txt;
+    });
+    return;
+  }
+  reqListSig = sig;
+
+  if (!pending.length){
+    list.innerHTML = '<div class="lbl empty-note">NO PENDING REQUESTS &middot; GRID AT READINESS</div>';
+    return;
+  }
+  list.innerHTML = pending.map(reqRowHTML).join('');
+}
+
+// One delegated click listener on #reqlist: jump the map to the customer's
+// coordinates and open the request review panel. Selection stays as-is —
+// a request is not a map entity, so the review panel rides on the panel
+// registry alone (looked up fresh by id on every render).
+function wireRequestList(){
+  const list = $('reqlist');
+  if (!list) return;
+  list.addEventListener('click', (e) => {
+    const row = e.target.closest('.req-row');
+    if (!row || inCaptureMode()) return;
+    const req = getRequest(row.dataset.req);
+    if (!req) return;
+    if (EC2.map && Array.isArray(req.coords)) EC2.map.flyTo({ center: req.coords, zoom: 12.2 });
+    EC2.ui.setRightPanel('request', req.id);
+  });
+}
+
+// REQUEST REVIEW right panel. data is the request ID (not the object) so
+// every render reads the current status straight off the engine — a request
+// approved/declined/fulfilled elsewhere renders read-only here. The hidden
+// marker records the rendered status so refreshViewedRequest can detect a
+// live status change and re-render.
+function renderRequestPanel(reqId){
+  const req = getRequest(reqId);
+  if (!req){
+    return (
+      '<div class="lbl">Flight request</div>' +
+      '<div class="rp-empty">REQUEST NOT FOUND &middot; MAY HAVE BEEN PRUNED</div>'
+    );
+  }
+  const pri = String(req.priority || 'ROUTINE').toUpperCase();
+  const priCls = REQ_PRI_CLASS[pri] || 'routine';
+  const params = req.params || {};
+  const wps = req.waypoints || [];
+  const distKm = (typeof SimRouter !== 'undefined' && wps.length > 1) ? SimRouter.pathLengthKm(wps) : 0;
+  const speed = Number(params.speedMs) || 0;
+  const durS = speed > 0 ? (distKm * 1000) / speed : 0;
+  const route = routeSvg(wps);
+  const isPending = req.status === 'pending';
+  return (
+    '<div class="lbl">Flight request</div>' +
+    '<div class="rp-id">' + escapeHtml(req.id) + '</div>' +
+    '<div class="rp-name">' + escapeHtml(req.customerFull || req.customer) + '</div>' +
+    '<div class="rp-emirate">' + escapeHtml(req.customer) + '</div>' +
+    '<div class="state-chip req-pri-chip ' + priCls + '">' + escapeHtml(pri) + '</div>' +
+    '<div class="rp-kv"><span class="k">Mission</span><span class="v">' + escapeHtml(missionTypeLabel(req.type)) + '</span></div>' +
+    '<div class="rp-kv"><span class="k">Area</span><span class="v">' + escapeHtml(req.place) + '</span></div>' +
+    '<div class="rp-kv"><span class="k">Requested</span><span class="v">' + reqAgeStr(req) + '</span></div>' +
+    '<div class="rp-kv"><span class="k">Altitude</span><span class="v">' + (params.altM != null ? params.altM + ' M' : '&mdash;') + '</span></div>' +
+    '<div class="rp-kv"><span class="k">Speed</span><span class="v">' + (params.speedMs != null ? params.speedMs + ' M/S' : '&mdash;') + '</span></div>' +
+    '<div class="rp-kv"><span class="k">Assigned dock</span><span class="v">' + (req.dockId ? escapeHtml(req.dockId) : '&mdash;') + '</span></div>' +
+    '<div class="rp-kv"><span class="k">Distance</span><span class="v">' + distKm.toFixed(1) + ' KM</span></div>' +
+    '<div class="rp-kv"><span class="k">Est duration</span><span class="v">' + fmtMMSS(durS) + '</span></div>' +
+    (route
+      ? '<div class="lbl" style="margin-top:16px">Planned route</div>' +
+        '<div class="debrief-route">' + route + '</div>'
+      : '') +
+    (isPending
+      ? '<div class="rp-actions">' +
+          '<button class="primary" id="req-approve">APPROVE &amp; LAUNCH</button>' +
+          '<button class="ghost" id="req-decline">DECLINE</button>' +
+        '</div>'
+      : '<div class="state-chip req-status">' + escapeHtml(String(req.status).toUpperCase()) + '</div>') +
+    '<span id="req-panel-marker" hidden data-req="' + escapeHtml(req.id) + '" data-status="' + escapeHtml(req.status) + '"></span>'
+  );
+}
+
+// Re-renders the open request review panel when the viewed request's status
+// no longer matches what was rendered (approved/declined/fulfilled elsewhere,
+// or via this panel's own buttons). No-op when no request panel is showing.
+// `requestId` (optional) limits the refresh to events about that request.
+function refreshViewedRequest(requestId){
+  const marker = $('req-panel-marker');
+  if (!marker) return;
+  const id = marker.dataset.req;
+  if (requestId && requestId !== id) return;
+  const req = getRequest(id);
+  if (!req) return;
+  if (req.status !== marker.dataset.status) EC2.ui.setRightPanel('request', id);
+}
+
+// Subscribes to engine events (same engine-poll pattern as wireDebriefWatch)
+// so a new FLIGHT_REQUEST lands in the left panel immediately instead of
+// waiting for the 2s poll — and any REQUEST_* resolution refreshes both the
+// list and an open review panel.
+function wireRequestWatch(){
+  const trySubscribe = () => {
+    if (!window.__engine || !window.__engine.onEvent) return false;
+    window.__engine.onEvent((ev) => {
+      const code = ev && ev.code ? String(ev.code) : '';
+      if (code !== 'FLIGHT_REQUEST' && code.indexOf('REQUEST_') !== 0) return;
+      renderRequestList(true);
+      refreshViewedRequest(ev.extra && ev.extra.requestId);
+    });
+    return true;
+  };
+  if (trySubscribe()) return;
+  const iv = setInterval(() => { if (trySubscribe()) clearInterval(iv); }, 300);
+}
+
 function wireRightPanelActions(mode, data){
   if (mode === 'dock' && data){
     const locate = $('rp-locate');
@@ -1187,6 +1384,45 @@ function wireRightPanelActions(mode, data){
       } catch (e){
         EC2.ui.pushEvent({ level: 'warn', source: site.id, message: 'NO DRONE AVAILABLE FOR INSPECTION' });
       }
+    });
+  } else if (mode === 'request' && data){
+    const reqId = data;
+
+    // APPROVE & LAUNCH: the engine creates and launches the pre-planned
+    // mission (or throws, e.g. 'NO READY DOCK IN RANGE' — surfaced as a warn
+    // chip, never a crash). On success the mission counts as user-created
+    // (debrief auto-opens on completion) and the console jumps to follow the
+    // launched drone.
+    const approve = $('req-approve');
+    if (approve) approve.addEventListener('click', () => {
+      const engine = window.__engine;
+      if (!engine || !engine.approveRequest){
+        EC2.ui.pushEvent({ level: 'warn', source: 'OPS', message: 'REQUEST APPROVAL UNAVAILABLE · ENGINE OFFLINE' });
+        return;
+      }
+      let mission = null;
+      try {
+        mission = engine.approveRequest(reqId);
+      } catch (err){
+        EC2.ui.pushEvent({ level: 'warn', source: 'OPS',
+          message: 'REQUEST APPROVAL FAILED · ' + (err && err.message ? err.message : 'UNKNOWN') });
+        EC2.ui.setRightPanel('request', reqId); // re-render current status
+        return;
+      }
+      if (!mission) return;
+      if (EC2.control && EC2.control.userMissions) EC2.control.userMissions.add(mission.id);
+      renderRequestList(true); // pending set changed
+      const droneId = 'D-' + mission.dockId;
+      EC2.followDroneId = droneId;
+      EC2.select({ type: 'drone', id: droneId });
+    });
+
+    const decline = $('req-decline');
+    if (decline) decline.addEventListener('click', () => {
+      const engine = window.__engine;
+      if (engine && engine.declineRequest) engine.declineRequest(reqId);
+      renderRequestList(true);
+      EC2.ui.setRightPanel('empty');
     });
   } else if (mode === 'debrief' && data){
     wireDebriefPanel(data);
@@ -1479,7 +1715,8 @@ EC2.ui = {
     drone: renderDronePanel,
     site: renderSitePanel,
     debrief: renderDebriefPanel,
-    media: renderMediaPanel
+    media: renderMediaPanel,
+    request: renderRequestPanel
   },
 
   setStats(o){
@@ -1680,6 +1917,19 @@ EC2.select = function(sel){
 function wireTopbar(){
   const globeBtn = $('btn-globe');
   if (globeBtn) globeBtn.addEventListener('click', () => EC2.exitToOrbit());
+
+  // OPS: back to the ops digest (the default/empty right panel). Clears the
+  // selection and any FOLLOW camera; exits capture modes first (same courtesy
+  // as the MEDIA button) so the wizard/manual overlays never get stranded.
+  const opsBtn = $('btn-ops');
+  if (opsBtn) opsBtn.addEventListener('click', () => {
+    if (EC2.control && EC2.control.mode === 'manual') EC2.control.exitManual();
+    if (EC2.control && EC2.control.mode === 'wizard') EC2.control.exitWizard();
+    EC2.state.selection = null;
+    updateRowSelection();
+    EC2.followDroneId = null;
+    EC2.ui.setRightPanel('empty');
+  });
 
   const newMissionBtn = $('btn-newmission');
   if (newMissionBtn) newMissionBtn.addEventListener('click', () => {
@@ -1901,6 +2151,9 @@ EC2.initPanels = function(){
   startFollowDriver();
   startTickerDriver();
   wireDebriefWatch();
+  wireRequestList();
+  wireRequestWatch();
+  renderRequestList(); // paints the empty state until the engine spawns requests
   EC2.ui.renderDockList('ALL');
   EC2.ui.setRightPanel('empty');
   // Static plausible snapshot until the sim engine boots (first dive-in);
@@ -1914,6 +2167,12 @@ EC2.initPanels = function(){
   setInterval(() => {
     if (EC2.state.scene !== 'console' || !window.__engine) return;
     EC2.ui.renderDockList();
+    // Flight requests ride the same 2s driver: ages patch in place, rows
+    // rebuild only when the pending set changes, and an open review panel
+    // re-renders if its request's status moved (safety net under the
+    // event-driven refresh in wireRequestWatch).
+    renderRequestList();
+    refreshViewedRequest();
     if (EC2.refreshCounts) EC2.refreshCounts(window.__engine);
   }, 2000);
 };
