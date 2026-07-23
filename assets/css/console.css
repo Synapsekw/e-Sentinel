@@ -4,16 +4,20 @@
   --red:#ff5a5a;--redd:#BC0000;--amber:#fbbf24;--ok:#4ade80;
   --sans:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
   --mono:ui-monospace,'SF Mono','Cascadia Mono',Consolas,Menlo,monospace;
-  /* Opaque backing for chrome surfaces (topbar/ticker/side/rpanel). Dark map:
-     the .82 glass reads fine over the near-black basemap. Bright basemaps
-     (light/sat/terrain) would otherwise let the light UI text wash out, so the
-     backing deepens to near-solid — see the [data-maplayer] overrides below,
-     keyed off the attribute map.js sets on <html> when the layer changes. */
+  /* Frosted-glass backing for chrome surfaces (topbar/ticker/side/rpanel),
+     driven with a matching backdrop blur. Dark map: the .82 tint over the
+     near-black basemap already reads as subtle glass. Bright basemaps
+     (light/sat/terrain) need a *dark* translucent tint instead of the white
+     glass the panels use by default — enough to keep light UI text legible,
+     but still translucent (with a stronger blur) so the frosted map shows
+     through and the glass look stays consistent across every mode. Keyed off
+     the data-maplayer attribute map.js sets on <html> when the layer changes. */
   --chrome:rgba(10,11,14,.82);
+  --chrome-blur:blur(10px);
 }
 :root[data-maplayer="light"],
 :root[data-maplayer="sat"],
-:root[data-maplayer="terrain"]{ --chrome:rgba(9,10,13,.94); }
+:root[data-maplayer="terrain"]{ --chrome:rgba(10,11,14,.7); --chrome-blur:blur(18px); }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidden}
 button{font-family:inherit;cursor:pointer}
@@ -64,7 +68,7 @@ button{font-family:inherit;cursor:pointer}
 #topbar{
   position:fixed;top:0;left:0;right:0;height:56px;z-index:900;
   display:flex;align-items:center;gap:14px;padding:0 16px;
-  background:var(--chrome);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  background:var(--chrome);backdrop-filter:var(--chrome-blur);-webkit-backdrop-filter:var(--chrome-blur);
   border-bottom:1px solid var(--line);
 }
 #topbar[hidden]{display:none}
@@ -96,18 +100,53 @@ button{font-family:inherit;cursor:pointer}
   position:fixed;top:56px;bottom:0;left:0;width:318px;z-index:800;
   overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;
   border-right:1px solid var(--line);background:var(--panel);
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  backdrop-filter:var(--chrome-blur);-webkit-backdrop-filter:var(--chrome-blur);
   scrollbar-width:thin;scrollbar-color:#333 transparent;
 }
 #side[hidden]{display:none}
 #rpanel{
   position:fixed;top:56px;bottom:0;right:0;width:340px;z-index:800;
   overflow-y:auto;border-left:1px solid var(--line);background:var(--panel);
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  backdrop-filter:var(--chrome-blur);-webkit-backdrop-filter:var(--chrome-blur);
   scrollbar-width:thin;scrollbar-color:#333 transparent;
 }
 #rpanel[hidden]{display:none}
 #rpanel-body{padding:14px}
+
+/* ---------- collapsible side panels ---------- */
+/* Each panel slides off its own edge on collapse; a small glass handle tab
+   stays pinned to the panel's inner edge so it's always reachable, and it
+   rides along to the screen edge when collapsed. The ticker (which is inset by
+   the two panel widths) reflows to fill whatever space a collapse frees up. */
+#side,#rpanel{transition:transform .28s ease}
+body.side-collapsed #side{transform:translateX(-100%)}
+body.rpanel-collapsed #rpanel{transform:translateX(100%)}
+
+.panel-toggle{
+  position:fixed;z-index:850;top:50%;
+  width:20px;height:58px;display:flex;align-items:center;justify-content:center;
+  background:var(--chrome);backdrop-filter:var(--chrome-blur);-webkit-backdrop-filter:var(--chrome-blur);
+  border:1px solid var(--line);color:var(--dim);
+  transition:left .28s ease,right .28s ease,opacity .2s ease,color .15s ease;
+}
+.panel-toggle[hidden]{display:none}
+.panel-toggle:hover{color:#fff;border-color:var(--red)}
+/* Chevron drawn from two borders of a small box, rotated to point the right
+   way; it flips 180deg between the open (collapse) and collapsed (expand)
+   states. currentColor keeps it in step with the button's hover color. */
+.panel-toggle i{
+  display:block;width:6px;height:6px;
+  border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;
+  transition:transform .28s ease;
+}
+#side-toggle{left:318px;transform:translateY(-50%);border-left:none;border-radius:0 8px 8px 0}
+#rpanel-toggle{right:340px;transform:translateY(-50%);border-right:none;border-radius:8px 0 0 8px}
+#side-toggle i{transform:translateX(1px) rotate(135deg)}   /* points left = collapse */
+#rpanel-toggle i{transform:translateX(-1px) rotate(-45deg)} /* points right = collapse */
+body.side-collapsed #side-toggle{left:0}
+body.rpanel-collapsed #rpanel-toggle{right:0}
+body.side-collapsed #side-toggle i{transform:translateX(-1px) rotate(-45deg)}  /* points right = expand */
+body.rpanel-collapsed #rpanel-toggle i{transform:translateX(1px) rotate(135deg)} /* points left = expand */
 
 /* Bright-basemap legibility: #side / #rpanel are near-transparent glass by
    design (var(--panel)) so the dark map shows through. Over the light, sat and
@@ -342,10 +381,13 @@ button{font-family:inherit;cursor:pointer}
 #ticker{
   position:fixed;left:318px;right:340px;bottom:0;height:34px;z-index:800;
   display:flex;align-items:center;gap:12px;padding:0 14px;
-  background:var(--chrome);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  background:var(--chrome);backdrop-filter:var(--chrome-blur);-webkit-backdrop-filter:var(--chrome-blur);
   border-top:1px solid var(--line);overflow:hidden;
+  transition:left .28s ease,right .28s ease,opacity .2s ease;
 }
 #ticker[hidden]{display:none}
+body.side-collapsed #ticker{left:0}
+body.rpanel-collapsed #ticker{right:0}
 #ticker>.lbl{flex:none}
 #tickstream{flex:1;display:flex;gap:22px;overflow-x:auto;scrollbar-width:none;white-space:nowrap}
 #tickstream::-webkit-scrollbar{display:none}
@@ -372,3 +414,23 @@ button{font-family:inherit;cursor:pointer}
 .maplibregl-ctrl-attrib a{color:var(--dim) !important}
 .maplibregl-ctrl-attrib a:hover{color:#fff !important}
 .maplibregl-ctrl-attrib-button{filter:invert(1) brightness(1.6) opacity(.7)}
+
+/* Predefined-mission dropdown (top bar MISSIONS button) — one-click launch */
+.missions-menu{
+  position:fixed;z-index:950;min-width:260px;
+  background:var(--chrome);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--line);border-radius:12px;padding:6px;
+  box-shadow:0 18px 48px rgba(0,0,0,.55);
+}
+.missions-menu[hidden]{display:none}
+.mm-head{padding:8px 10px 6px}
+.mm-item{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;
+  background:none;border:none;border-radius:8px;cursor:pointer;
+  padding:9px 10px;color:var(--txt);text-align:left;
+}
+.mm-item:hover,.mm-item:focus-visible{background:var(--panel2);outline:none}
+.mm-label{font-family:var(--sans);font-size:12.5px;letter-spacing:.02em}
+.mm-item:hover .mm-label{color:#fff}
+.mm-pat{white-space:nowrap;color:var(--dim)}
+.mm-item:hover .mm-pat{color:var(--red)}

@@ -943,8 +943,28 @@ function wireClock(){
   setInterval(paint, 1000);
 }
 
+// Left/right panels collapse to their own screen edge, leaving a small handle
+// tab behind to reopen. State lives as body classes (side-collapsed /
+// rpanel-collapsed) that the CSS keys off; the handle's aria-expanded/label
+// track it for assistive tech.
+function wirePanelToggles(){
+  [['side-toggle', 'side-collapsed', 'left'],
+   ['rpanel-toggle', 'rpanel-collapsed', 'right']].forEach(([btnId, cls, side]) => {
+    const btn = $(btnId);
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const collapsed = document.body.classList.toggle(cls);
+      btn.setAttribute('aria-expanded', String(!collapsed));
+      const verb = collapsed ? 'Expand' : 'Collapse';
+      btn.title = verb + ' panel';
+      btn.setAttribute('aria-label', verb + ' ' + side + ' panel');
+    });
+  });
+}
+
 function wireScene(){
-  const chromeEls = [$('topbar'), $('side'), $('rpanel'), $('ticker')].filter(Boolean);
+  const chromeEls = [$('topbar'), $('side'), $('rpanel'), $('ticker'),
+                     $('side-toggle'), $('rpanel-toggle')].filter(Boolean);
   chromeEls.forEach(el => el.classList.add('chrome-in'));
 
   function setVisible(show){
@@ -1027,6 +1047,7 @@ EC2.initPanels = function(){
   wireClock();
   wireLiveNetwork();
   wireScene();
+  wirePanelToggles();
   wireMapDockInteractions();
   startFollowDriver();
   wireDebriefWatch();
