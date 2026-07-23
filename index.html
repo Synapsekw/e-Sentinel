@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SENTINEL · e& Physical Intelligence</title>
+<link rel="stylesheet" href="assets/css/landing.css">
+</head>
+<body>
+<main id="landing">
+  <button id="brand" aria-label="Enter SENTINEL module selection">
+    <img class="brand-logo" src="assets/img/eand-logo-white.png" alt="e&amp;">
+    <h1>SENTINEL</h1>
+    <div class="lbl brand-sub">PHYSICAL INTELLIGENCE · UNIFIED DRONE OPERATIONS</div>
+    <div class="lbl brand-hint" id="brand-hint">CLICK TO INITIALISE</div>
+  </button>
+
+  <nav id="modules" hidden aria-label="Modules">
+    <a class="mcard" href="console.html" style="--i:0">
+      <div class="m-head">
+        <span class="m-num lbl">01</span>
+        <span class="m-status on"><span class="dot"></span>ONLINE</span>
+      </div>
+      <h2>Simulation</h2>
+      <p class="lbl">NATIONAL GRID C2 · 104 DOCKS · LIVE FLEET · MISSION VIDEO DEBRIEFS</p>
+    </a>
+    <a class="mcard" href="planner.html" aria-disabled="true" style="--i:1">
+      <div class="m-head">
+        <span class="m-num lbl">02</span>
+        <span class="m-status dev"><span class="dot"></span>IN DEVELOPMENT</span>
+      </div>
+      <h2>Deployment Planner</h2>
+      <p class="lbl">CUSTOMER AOI · DOCK PLACEMENT · COVERAGE &amp; OVERLAP · AI CO-PLANNER</p>
+    </a>
+    <a class="mcard" aria-disabled="true" style="--i:2">
+      <div class="m-head">
+        <span class="m-num lbl">03</span>
+        <span class="m-status planned"><span class="dot"></span>PLANNED</span>
+      </div>
+      <h2>Telemetry</h2>
+      <p class="lbl">FLIGHT HISTORY · TRACK REPLAY · PERFORMANCE ANALYTICS</p>
+    </a>
+    <a class="mcard" aria-disabled="true" style="--i:3">
+      <div class="m-head">
+        <span class="m-num lbl">04</span>
+        <span class="m-status planned"><span class="dot"></span>PLANNED</span>
+      </div>
+      <h2>Compliance</h2>
+      <p class="lbl">DRONE LOGBOOK · APPROVALS · REGULATORY AUDIT TRAIL</p>
+    </a>
+  </nav>
+
+  <footer class="lbl" id="foot">© 2026 e&amp; · SIMULATED ENVIRONMENT · ALL OPERATIONAL DATA SYNTHETIC</footer>
+</main>
+<script>
+(function(){
+  var brand=document.getElementById('brand');
+  var modules=document.getElementById('modules');
+  var opened=false;
+  function open(){
+    if(opened) return; opened=true;
+    document.body.classList.add('open');
+    modules.hidden=false;
+    // force reflow so the reveal transition runs after hidden is cleared
+    void modules.offsetWidth;
+    document.body.classList.add('revealed');
+    brand.setAttribute('aria-expanded','true');
+    brand.disabled=true;
+  }
+  brand.addEventListener('click',open);
+  document.addEventListener('keydown',function(e){ if(e.key==='Enter'&&!opened) open(); });
+  document.querySelectorAll('.mcard[aria-disabled="true"]').forEach(function(a){
+    a.addEventListener('click',function(e){ e.preventDefault(); });
+    a.setAttribute('tabindex','-1');
+  });
+})();
+</script>
+</body>
+</html>

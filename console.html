@@ -27,18 +27,13 @@
     <div class="lbl">GLOBAL COMMAND &amp; CONTROL</div></div>
   </div>
   <div class="chip ok-chip"><span class="dot"></span>GRID ONLINE</div>
-  <div class="chip" id="c-docks">DOCKS <b>104</b></div>
+  <button class="chip chip-btn" id="btn-docks" aria-haspopup="true" aria-expanded="false">DOCKS <b>104</b> <span class="caret">&#9662;</span></button>
   <div class="chip" id="c-air">AIRBORNE <b>0</b></div>
   <div class="chip warn" id="c-alerts" hidden>ALERTS <b>0</b></div>
   <div class="chip warn" id="offline-chip" hidden>OFFLINE MODE &middot; VECTOR MAP</div>
   <div class="sp"></div>
-  <div class="seg" id="timescale">
-    <button data-ts="1" class="on">1&times;</button><button data-ts="4">4&times;</button><button data-ts="16">16&times;</button>
-  </div>
-  <div class="seg" id="layerseg">
-    <button data-l="dark" class="on">DARK</button><button data-l="light">LIGHT</button>
-    <button data-l="sat">SATELLITE</button><button data-l="terrain">TERRAIN</button>
-  </div>
+  <button class="tbtn" id="btn-layers" aria-haspopup="true" aria-expanded="false">LAYERS &middot; DARK &#9662;</button>
+  <button class="tbtn" id="btn-filter" aria-haspopup="true" aria-expanded="false">FILTER &#9662;</button>
   <button class="tbtn" id="btn-ops" title="OPS DIGEST">OPS</button>
 <button class="tbtn" id="btn-missions" title="LAUNCH A PREDEFINED MISSION" aria-haspopup="true" aria-expanded="false">MISSIONS &#9662;</button>
   <button class="tbtn" id="btn-newmission" title="CREATE A NEW MISSION">+ NEW MISSION</button>
@@ -62,24 +57,21 @@
   </div>
   <div class="panel side-requests">
     <h4 class="lbl">Flight requests <span id="req-count" class="req-count" hidden>0</span></h4>
-    <div id="reqlist"></div>
-  </div>
-  <div class="panel side-docklist">
-    <h4 class="lbl">Dock network</h4>
-    <div class="filters filters-compact" id="filters">
-      <button class="fchip on" data-filter="ALL">ALL</button>
-      <button class="fchip" data-filter="AUH">AUH</button>
-      <button class="fchip" data-filter="DXB">DXB</button>
-      <button class="fchip" data-filter="SHJ">SHJ</button>
-      <button class="fchip" data-filter="AJM">AJM</button>
-      <button class="fchip" data-filter="UAQ">UAQ</button>
-      <button class="fchip" data-filter="RAK">RAK</button>
-      <button class="fchip" data-filter="FUJ">FUJ</button>
-      <button class="fchip" data-filter="AAN">AAN</button>
-      <button class="fchip" data-filter="FLYING">FLYING</button>
-      <button class="fchip" data-filter="ALERTS">ALERTS</button>
+    <div id="reqboard">
+      <div class="lbl empty-note" id="req-empty">NO REQUESTS YET &middot; GRID AT READINESS</div>
+      <div class="req-sec" id="req-sec-new" hidden>
+        <div class="lbl req-sec-h">New</div>
+        <div id="reqlist" class="req-sec-list"></div>
+      </div>
+      <div class="req-sec" id="req-sec-active" hidden>
+        <div class="lbl req-sec-h">In progress</div>
+        <div id="req-active" class="req-sec-list"></div>
+      </div>
+      <div class="req-sec" id="req-sec-done" hidden>
+        <div class="lbl req-sec-h">Delivered</div>
+        <div id="req-done" class="req-sec-list"></div>
+      </div>
     </div>
-    <div id="docklist"></div>
   </div>
 </aside>
 <aside id="rpanel" hidden><div id="rpanel-body"></div></aside>

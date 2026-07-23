@@ -4,11 +4,12 @@ Simulated national drone command & control console for the UAE, built for e& Phy
 
 ## Run
 
-No build, no server. Double-click `index.html` (or serve statically). Internet enables the map raster layers (dark, light, satellite, terrain); without it the console falls back to an embedded vector map automatically.
+No build, no server. Double-click `index.html` (or serve statically) to open the module landing page, then select a module. Internet enables the map raster layers (dark, light, satellite, terrain); without it the console falls back to an embedded vector map automatically.
 
 ## Structure
 
-- `index.html` single page, classic scripts, `file://` safe
+- `index.html` module landing page (Simulation, Deployment Planner, Telemetry, Compliance)
+- `console.html` the simulation console, classic scripts, `file://` safe
 - `assets/js/sim/` pure simulation logic (router, engine), Node-testable
 - `assets/js/ui/` map, globe entry, panels, interaction modes
 - `assets/js/data/` docks, live sites, geo data, mission types, video manifest

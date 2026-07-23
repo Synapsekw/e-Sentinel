@@ -27,9 +27,10 @@ let dockSearch = '';
 let dockSort = 'ID';
 let dockListSig = null;
 
-// FLIGHT REQUESTS panel: last rendered pending-request id signature — when
-// unchanged, the 2s poll only patches the age cells in place (same
-// signature-vs-patch pattern as dockListSig above).
+// FLIGHT REQUESTS board: last rendered id:status signature across all three
+// sections (NEW / IN PROGRESS / DELIVERED) — when unchanged, the 2s poll
+// only patches ages / progress bars / ETAs in place (same signature-vs-patch
+// pattern as dockListSig above).
 let reqListSig = null;
 
 // Completed missions this session (newest first, capped), backing the
@@ -137,7 +138,12 @@ const DETECTION_SUFFIXES = [
 ];
 
 function isDetectionEvent(ev){
-  if (!ev || ev.level !== 'info' || !/^D-/.test(ev.source || '')) return false;
+  if (!ev) return false;
+  // Engine detections now self-identify (code 'DETECTION', tracks lane);
+  // the structural suffix match below stays as the fallback for events
+  // emitted before that lane landed.
+  if (ev.code === 'DETECTION') return true;
+  if (ev.level !== 'info' || !/^D-/.test(ev.source || '')) return false;
   const msg = String(ev.message || '');
   return DETECTION_SUFFIXES.some(sfx => msg === ev.source + ' ' + sfx);
 }
@@ -173,7 +179,10 @@ function digestStatsLine(){
   for (const d of engine.drones.values()){
     if (d.state !== 'docked') airborne++;
   }
-  return 'AIRBORNE ' + airborne + ' · READY ' + ready + ' · ALERTS ' + alerts;
+  // TRACKS only appears once the engine's detection-tracks lane exists —
+  // status 'active' only (tasked tracks are already being handled).
+  const trackPart = engine.tracks ? ' · TRACKS ' + activeTrackCount() : '';
+  return 'AIRBORNE ' + airborne + ' · READY ' + ready + trackPart + ' · ALERTS ' + alerts;
 }
 
 function digestMissionRowsHTML(missions){
@@ -205,6 +214,25 @@ function lastDetections(n){
   return out;
 }
 
+// True when a detection event spawned a track that is still worth jumping
+// to (active or tasked) — such rows render as buttons that fly to the track.
+function detectionEventTrack(ev){
+  if (!ev || !ev.trackId) return null;
+  const track = getTrack(ev.trackId);
+  return (track && (track.status === 'active' || track.status === 'tasked')) ? track : null;
+}
+
+// data-key signature for the digest's detection list. Includes each row's
+// track status so a track expiring/resolving re-renders its row from
+// clickable back to inert text (not just when the event set changes).
+function detectionRowsKey(dets){
+  return dets.map(ev => {
+    const track = ev.trackId ? getTrack(ev.trackId) : null;
+    const trackPart = ev.trackId ? '|' + ev.trackId + ':' + (track ? track.status : 'gone') : '';
+    return ev.time + '|' + ev.source + '|' + ev.message + trackPart;
+  }).join('~');
+}
+
 function detectionRowsHTML(dets){
   if (!dets.length){
     return '<div class="lbl empty-note">NO DETECTIONS LOGGED YET</div>';
@@ -212,13 +240,18 @@ function detectionRowsHTML(dets){
   return dets.map(ev => {
     const msg = String(ev.message || '');
     const body = msg.indexOf(ev.source + ' ') === 0 ? msg.slice(ev.source.length + 1) : msg;
-    return (
-      '<div class="dg-det">' +
-        '<span class="tt">T+' + fmtMMSS(ev.time) + '</span>' +
-        '<span class="src">' + escapeHtml(ev.source) + '</span>' +
-        '<span class="msg">' + escapeHtml(body) + '</span>' +
-      '</div>'
-    );
+    const inner =
+      '<span class="tt">T+' + fmtMMSS(ev.time) + '</span>' +
+      '<span class="src">' + escapeHtml(ev.source) + '</span>' +
+      '<span class="msg">' + escapeHtml(body) + '</span>';
+    // A detection that spawned a still-live track becomes a jump target
+    // (button semantics); non-track detections stay inert text.
+    const track = detectionEventTrack(ev);
+    if (track){
+      return '<button type="button" class="dg-det dg-det-track" data-track="' +
+        escapeHtml(track.id) + '" title="OPEN ' + escapeHtml(track.id) + '">' + inner + '</button>';
+    }
+    return '<div class="dg-det">' + inner + '</div>';
   }).join('');
 }
 
@@ -235,7 +268,7 @@ function renderEmptyPanel(){
       '</div>' +
       '<div class="lbl" style="margin-top:16px">Last detections</div>' +
       '<div class="digest-dets" id="digest-detections" data-key="' +
-        dets.map(ev => ev.time + '|' + ev.source + '|' + ev.message).join('~') + '">' +
+        escapeHtml(detectionRowsKey(dets)) + '">' +
         detectionRowsHTML(dets) + '</div>' +
     '</div>'
   );
@@ -273,7 +306,7 @@ function updateOpsDigest(){
   const dets = lastDetections(3);
   const detEl = $('digest-detections');
   if (detEl){
-    const dkey = dets.map(ev => ev.time + '|' + ev.source + '|' + ev.message).join('~');
+    const dkey = detectionRowsKey(dets);
     if (detEl.dataset.key !== dkey){
       detEl.dataset.key = dkey;
       detEl.innerHTML = detectionRowsHTML(dets);
@@ -756,6 +789,11 @@ function renderDebriefPanel(mission){
     (mission.requestedBy
       ? '<div class="rp-kv"><span class="k">Requested by</span><span class="v">' + escapeHtml(mission.requestedBy) + '</span></div>'
       : '') +
+    // Detection-track credit (track-response missions only): the track this
+    // mission was tasked against, mirroring TRACK RESPONSE in the report.
+    (mission.trackId
+      ? '<div class="rp-kv"><span class="k">Track response</span><span class="v">' + escapeHtml(mission.trackId) + '</span></div>'
+      : '') +
     '<div class="rp-kv"><span class="k">Duration</span><span class="v">' + fmtMMSS(mission.durationS) + '</span></div>' +
     '<div class="rp-kv"><span class="k">Distance</span><span class="v">' + (mission.distanceKm || 0).toFixed(1) + ' KM</span></div>' +
     (route
@@ -808,6 +846,7 @@ function missionReportHTML(mission){
       '<tr><td>TYPE</td><td>' + escapeHtml(cfg.label) + '</td></tr>' +
       '<tr><td>DOCK</td><td>' + escapeHtml(mission.dockId) + '</td></tr>' +
       (mission.requestedBy ? '<tr><td>REQUESTED BY</td><td>' + escapeHtml(mission.requestedBy) + '</td></tr>' : '') +
+      (mission.trackId ? '<tr><td>TRACK RESPONSE</td><td>' + escapeHtml(mission.trackId) + '</td></tr>' : '') +
       '<tr><td>DURATION</td><td>' + fmtMMSS(mission.durationS) + '</td></tr>' +
       '<tr><td>DISTANCE</td><td>' + (mission.distanceKm || 0).toFixed(1) + ' KM</td></tr>' +
     '</table>' +
@@ -1111,15 +1150,41 @@ function getRequest(id){
   return (engine && engine.requests && engine.requests.get(id)) || null;
 }
 
-function pendingRequests(){
+// Newest-first by request time — the shared sort for every board section.
+function byNewestRequested(a, b){ return (b.requestedAt || 0) - (a.requestedAt || 0); }
+
+const REQ_DONE_MAX = 6;
+
+// The three REQUEST TRACKING BOARD sections in render order. completed and
+// declined requests share the DELIVERED section (capped to the most recent
+// ~6); the engine itself keeps ≤20 requests total (pending ≤4), so nothing
+// here grows unbounded.
+function requestBuckets(){
   const engine = window.__engine;
-  if (!engine || !engine.requests) return [];
-  const out = [];
+  const buckets = { pending: [], active: [], done: [] };
+  if (!engine || !engine.requests) return buckets;
   for (const r of engine.requests.values()){
-    if (r.status === 'pending') out.push(r);
+    if (r.status === 'pending') buckets.pending.push(r);
+    else if (r.status === 'approved') buckets.active.push(r);
+    else buckets.done.push(r); // completed | declined
   }
-  out.sort((a, b) => (b.requestedAt || 0) - (a.requestedAt || 0)); // newest first
-  return out;
+  buckets.pending.sort(byNewestRequested);
+  buckets.active.sort(byNewestRequested);
+  buckets.done.sort(byNewestRequested);
+  buckets.done = buckets.done.slice(0, REQ_DONE_MAX);
+  return buckets;
+}
+
+// The mission behind an approved/completed request, wherever it still lives:
+// engine.missions first, then the MEDIA library list (finished missions may
+// be pruned from the engine but survive in sessionMissions). Null when
+// neither has it — callers must treat the row as inert then.
+function requestMission(req){
+  if (!req || !req.missionId) return null;
+  const engine = window.__engine;
+  const live = engine && engine.missions ? engine.missions.get(req.missionId) : null;
+  if (live) return live;
+  return sessionMissions.find(m => m.id === req.missionId) || null;
 }
 
 // Request age as 'T+M:SS' from sim time (engine.now - requestedAt).
@@ -1149,55 +1214,162 @@ function reqRowHTML(req){
   );
 }
 
-// Renders the FLIGHT REQUESTS left panel (#reqlist + #req-count badge).
-// Same rebuild-vs-patch discipline as renderDockList: rows are rebuilt only
-// when the pending id-set changes; otherwise only the T+ ages are patched in
-// place, so hover/focus on a row survives the 2s poll.
+// IN PROGRESS row: live progress bar + ETA off the linked mission. A missing
+// mission with the request still 'approved' means the launch is (briefly) in
+// flight or the mission got pruned — rendered as 'LAUNCHING' with an empty
+// bar, patched live once/if the mission shows up.
+function reqProgressHTML(req){
+  const engine = window.__engine;
+  const m = engine && engine.missions ? engine.missions.get(req.missionId) : null;
+  const active = !!(m && m.state === 'active');
+  const pct = active ? Math.round((m.progress || 0) * 100) : 0;
+  const eta = active ? 'ETA ' + fmtETA((m.durationS || 0) * (1 - (m.progress || 0))) : 'LAUNCHING';
+  return (
+    '<button class="req-row req-prog" data-req="' + escapeHtml(req.id) + '">' +
+      '<span class="req-head">' +
+        '<b class="req-cust">' + escapeHtml(req.customer) + '</b>' +
+        '<span class="req-age req-eta" data-req-eta="' + escapeHtml(req.id) + '">' + eta + '</span>' +
+      '</span>' +
+      '<span class="req-line">' + escapeHtml(missionTypeLabel(req.type)) + ' &middot; ' + escapeHtml(req.place) + '</span>' +
+      '<span class="req-bar"><i data-req-bar="' + escapeHtml(req.id) + '" style="width:' + pct + '%"></i></span>' +
+    '</button>'
+  );
+}
+
+// DELIVERED row: a completed request opens its mission debrief when the
+// mission object is still reachable (engine.missions or the MEDIA list —
+// see requestMission); an unreachable one renders inert. Declined requests
+// render dim and inert.
+function reqDoneHTML(req){
+  const line = '<span class="req-line">' + escapeHtml(missionTypeLabel(req.type)) +
+    ' &middot; ' + escapeHtml(req.place) + '</span>';
+  if (req.status === 'declined'){
+    return (
+      '<div class="req-row req-done req-declined">' +
+        '<span class="req-head">' +
+          '<b class="req-cust">' + escapeHtml(req.customer) + '</b>' +
+          '<span class="req-age">DECLINED</span>' +
+        '</span>' + line +
+      '</div>'
+    );
+  }
+  const reachable = !!requestMission(req);
+  const tag = reachable ? 'button' : 'div';
+  return (
+    '<' + tag + ' class="req-row req-done' + (reachable ? '' : ' req-inert') +
+      '" data-req="' + escapeHtml(req.id) + '">' +
+      '<span class="req-head">' +
+        '<b class="req-cust">' + escapeHtml(req.customer) + '</b>' +
+        '<span class="req-age" data-req-done="' + escapeHtml(req.id) + '">DELIVERED &middot; ' + reqAgeStr(req) + '</span>' +
+      '</span>' + line +
+    '</' + tag + '>'
+  );
+}
+
+// One board section: small .lbl header + rows, collapsed entirely (header
+// included, via [hidden] on the wrapper) when it has nothing to show.
+function fillReqSection(secId, listId, rows, rowFn){
+  const sec = $(secId), list = $(listId);
+  if (!sec || !list) return;
+  sec.hidden = !rows.length;
+  list.innerHTML = rows.length ? rows.map(rowFn).join('') : '';
+}
+
+// In-place refresh for the unchanged-signature path: NEW ages, IN PROGRESS
+// bars/ETAs and DELIVERED ages all patch without touching row DOM, so
+// hover/focus survives the 2s poll.
+function patchRequestBoard(board){
+  board.querySelectorAll('[data-req-age]').forEach(el => {
+    const req = getRequest(el.getAttribute('data-req-age'));
+    if (!req) return;
+    const txt = reqAgeStr(req);
+    if (el.textContent !== txt) el.textContent = txt;
+  });
+  board.querySelectorAll('[data-req-done]').forEach(el => {
+    const req = getRequest(el.getAttribute('data-req-done'));
+    if (!req) return;
+    const txt = 'DELIVERED · ' + reqAgeStr(req);
+    if (el.textContent !== txt) el.textContent = txt;
+  });
+  const engine = window.__engine;
+  board.querySelectorAll('[data-req-eta]').forEach(el => {
+    const req = getRequest(el.getAttribute('data-req-eta'));
+    if (!req) return;
+    const m = engine && engine.missions ? engine.missions.get(req.missionId) : null;
+    const active = !!(m && m.state === 'active');
+    const txt = active ? 'ETA ' + fmtETA((m.durationS || 0) * (1 - (m.progress || 0))) : 'LAUNCHING';
+    if (el.textContent !== txt) el.textContent = txt;
+    const bar = board.querySelector('[data-req-bar="' + req.id + '"]');
+    if (bar) bar.style.width = (active ? Math.round((m.progress || 0) * 100) : 0) + '%';
+  });
+}
+
+// Renders the FLIGHT REQUESTS board (NEW / IN PROGRESS / DELIVERED inside
+// .side-requests; skeleton lives in console.html). Same rebuild-vs-patch
+// discipline as renderDockList: the signature is the ordered id:status list
+// across all three sections — while unchanged, only ages / progress bars /
+// ETAs are patched in place. Status flips, new requests and pruning all
+// change the signature and rebuild the sections.
 function renderRequestList(force){
-  const list = $('reqlist');
-  if (!list) return;
-  const pending = pendingRequests();
+  const board = $('reqboard');
+  if (!board) return;
+  const buckets = requestBuckets();
 
   const badge = $('req-count');
   if (badge){
-    const n = String(pending.length);
+    const n = String(buckets.pending.length);
     if (badge.textContent !== n) badge.textContent = n;
-    badge.hidden = !pending.length;
+    badge.hidden = !buckets.pending.length;
   }
 
-  const sig = pending.map(r => r.id).join(',');
-  if (!force && sig === reqListSig && list.children.length){
-    list.querySelectorAll('[data-req-age]').forEach(el => {
-      const req = getRequest(el.getAttribute('data-req-age'));
-      if (!req) return;
-      const txt = reqAgeStr(req);
-      if (el.textContent !== txt) el.textContent = txt;
-    });
+  const sig =
+    buckets.pending.map(r => r.id + ':' + r.status).join(',') + '|' +
+    buckets.active.map(r => r.id + ':' + r.status).join(',') + '|' +
+    buckets.done.map(r => r.id + ':' + r.status).join(',');
+  if (!force && sig === reqListSig){
+    patchRequestBoard(board);
     return;
   }
   reqListSig = sig;
 
-  if (!pending.length){
-    list.innerHTML = '<div class="lbl empty-note">NO PENDING REQUESTS &middot; GRID AT READINESS</div>';
-    return;
-  }
-  list.innerHTML = pending.map(reqRowHTML).join('');
+  const empty = !buckets.pending.length && !buckets.active.length && !buckets.done.length;
+  const emptyNote = $('req-empty');
+  if (emptyNote) emptyNote.hidden = !empty;
+
+  fillReqSection('req-sec-new', 'reqlist', buckets.pending, reqRowHTML);
+  fillReqSection('req-sec-active', 'req-active', buckets.active, reqProgressHTML);
+  fillReqSection('req-sec-done', 'req-done', buckets.done, reqDoneHTML);
 }
 
-// One delegated click listener on #reqlist: jump the map to the customer's
-// coordinates and open the request review panel. Selection stays as-is —
-// a request is not a map entity, so the review panel rides on the panel
-// registry alone (looked up fresh by id on every render).
+// One delegated click listener on the whole board (#reqboard):
+//  - NEW row: jump the map to the customer's coordinates + open the review
+//    panel (selection stays as-is — a request is not a map entity, so the
+//    review panel rides on the panel registry alone, looked up by id).
+//  - IN PROGRESS row: select the flying drone ('D-' + mission.dockId).
+//  - DELIVERED row: open the mission debrief when the mission is still
+//    reachable; declined/unreachable rows are inert.
 function wireRequestList(){
-  const list = $('reqlist');
-  if (!list) return;
-  list.addEventListener('click', (e) => {
+  const board = $('reqboard');
+  if (!board) return;
+  board.addEventListener('click', (e) => {
     const row = e.target.closest('.req-row');
-    if (!row || inCaptureMode()) return;
+    if (!row || !row.dataset.req || inCaptureMode()) return;
     const req = getRequest(row.dataset.req);
     if (!req) return;
-    if (EC2.map && Array.isArray(req.coords)) EC2.map.flyTo({ center: req.coords, zoom: 12.2 });
-    EC2.ui.setRightPanel('request', req.id);
+    if (req.status === 'pending'){
+      if (EC2.map && Array.isArray(req.coords)) EC2.map.flyTo({ center: req.coords, zoom: 12.2 });
+      EC2.ui.setRightPanel('request', req.id);
+    } else if (req.status === 'approved'){
+      const engine = window.__engine;
+      const m = engine && engine.missions ? engine.missions.get(req.missionId) : null;
+      if (!m) return; // still LAUNCHING (or mission pruned) — nothing to jump to
+      const droneId = 'D-' + m.dockId;
+      if (engine.drones && engine.drones.get(droneId)) EC2.select({ type: 'drone', id: droneId });
+    } else if (req.status === 'completed'){
+      const mission = requestMission(req);
+      if (mission) openDebrief(mission);
+    }
+    // declined rows carry no data-req and never reach here
   });
 }
 
@@ -1276,12 +1448,188 @@ function wireRequestWatch(){
       const code = ev && ev.code ? String(ev.code) : '';
       if (code !== 'FLIGHT_REQUEST' && code.indexOf('REQUEST_') !== 0) return;
       renderRequestList(true);
-      refreshViewedRequest(ev.extra && ev.extra.requestId);
+      // emit() merges extras FLAT onto the event object, so the id rides on
+      // ev.requestId directly (there is no ev.extra).
+      refreshViewedRequest(ev.requestId);
     });
     return true;
   };
   if (trySubscribe()) return;
   const iv = setInterval(() => { if (trySubscribe()) clearInterval(iv); }, 300);
+}
+
+// ---------- DETECTION TRACKS (persistent detections, T-series) ----------
+
+// Track objects live on engine.tracks (built in a parallel lane) and render
+// as amber diamonds on the map's 'tracks-icons' layer (map lane). Everything
+// here is hard-guarded against either lane being absent: no engine, no
+// tracks Map, or no map layer simply degrades to the pre-tracks behaviour.
+
+const TRACK_STATUS_CHIP = {
+  active:   { cls: 'amber', text: 'ACTIVE' },
+  tasked:   { cls: 'steel', text: 'TASKED' },
+  resolved: { cls: '',      text: 'RESOLVED' },
+  expired:  { cls: 'dim',   text: 'EXPIRED' }
+};
+
+function getTrack(id){
+  const engine = window.__engine;
+  return (engine && engine.tracks && engine.tracks.get(id)) || null;
+}
+
+function activeTrackCount(){
+  const engine = window.__engine;
+  if (!engine || !engine.tracks) return 0;
+  let n = 0;
+  for (const t of engine.tracks.values()){
+    if (t.status === 'active') n++;
+  }
+  return n;
+}
+
+// Track age as 'T+M:SS' of sim time since detection.
+function trackAgeStr(track){
+  const engine = window.__engine;
+  const now = engine ? engine.now : 0;
+  return 'T+' + fmtETA(Math.max(0, now - (track.detectedAt || 0)));
+}
+
+function trackExpiryS(track){
+  const engine = window.__engine;
+  const now = engine ? engine.now : 0;
+  return Math.max(0, (track.expiresAt || 0) - now);
+}
+
+// Fly the camera to a track and open its review panel — the one shared jump
+// used by the map diamond click and the ops-digest detection rows.
+function focusTrack(trackId){
+  const track = getTrack(trackId);
+  if (track && EC2.map && Array.isArray(track.pos)){
+    EC2.map.flyTo({ center: track.pos, zoom: 13 });
+  }
+  EC2.ui.setRightPanel('track', trackId);
+}
+
+// TRACK REVIEW right panel. data is the track ID (not the object) — every
+// render reads the current status straight off the engine, mirroring the
+// request review panel. The hidden marker records the rendered status so
+// refreshViewedTrack can detect a live status change and re-render.
+function renderTrackPanel(trackId){
+  const track = getTrack(trackId);
+  if (!track){
+    return (
+      '<div class="lbl">Detection track</div>' +
+      '<div class="rp-empty">TRACK NOT FOUND &middot; MAY HAVE EXPIRED</div>'
+    );
+  }
+  const chip = TRACK_STATUS_CHIP[track.status] || TRACK_STATUS_CHIP.active;
+  const pos = Array.isArray(track.pos) ? track.pos : [0, 0];
+  const isActive = track.status === 'active';
+  const remainS = trackExpiryS(track);
+  return (
+    '<div class="lbl">Detection track</div>' +
+    '<div class="rp-id">TRACK &middot; ' + escapeHtml(track.id) + '</div>' +
+    '<div class="rp-name">' + escapeHtml(track.label) + '</div>' +
+    '<div class="state-chip trk-chip' + (chip.cls ? ' ' + chip.cls : '') + '">' + chip.text + '</div>' +
+    '<div class="rp-kv"><span class="k">Source drone</span><span class="v">' +
+      (track.sourceDrone ? escapeHtml(track.sourceDrone) : '&mdash;') + '</span></div>' +
+    '<div class="rp-kv"><span class="k">Origin mission</span><span class="v">' +
+      (track.sourceMission ? escapeHtml(track.sourceMission) : '&mdash;') + '</span></div>' +
+    '<div class="rp-kv"><span class="k">Detected</span><span class="v" id="trk-age">' + trackAgeStr(track) + '</span></div>' +
+    (isActive
+      ? '<div class="rp-kv"><span class="k">Expiry</span><span class="v trk-expiry' + (remainS < 60 ? ' amber' : '') +
+          '" id="trk-expiry">EXPIRES IN ' + fmtETA(remainS) + '</span></div>'
+      : '') +
+    '<div class="rp-kv"><span class="k">Position</span><span class="v">' +
+      Number(pos[1]).toFixed(4) + ', ' + Number(pos[0]).toFixed(4) + '</span></div>' +
+    (track.status === 'tasked'
+      ? '<div class="trk-investigating">INVESTIGATING &middot; ' +
+          (track.missionId ? escapeHtml(track.missionId) : '&mdash;') + '</div>' +
+        '<div class="rp-actions"><button class="ghost" id="trk-view-drone">VIEW DRONE</button></div>'
+      : '') +
+    (isActive
+      ? '<div class="rp-actions">' +
+          '<button class="primary" id="trk-task">TASK NEAREST DRONE</button>' +
+          '<button class="ghost" id="trk-dismiss">DISMISS</button>' +
+        '</div>'
+      : '') +
+    '<span id="trk-panel-marker" hidden data-track="' + escapeHtml(track.id) + '" data-status="' + escapeHtml(track.status) + '"></span>'
+  );
+}
+
+// Live refresh for an open track panel: full re-render when the track's
+// status moved (tasked/resolved/expired elsewhere or via this panel's own
+// buttons), otherwise just patch the age + expiry countdown text in place —
+// same marker pattern as refreshViewedRequest, driven by the same existing
+// 2s poll plus the TRACK_* event watch (no new timers). `trackId` (optional)
+// limits the refresh to events about that track.
+function refreshViewedTrack(trackId){
+  const marker = $('trk-panel-marker');
+  if (!marker) return;
+  const id = marker.dataset.track;
+  if (trackId && trackId !== id) return;
+  const track = getTrack(id);
+  if (!track) return;
+  if (track.status !== marker.dataset.status){
+    EC2.ui.setRightPanel('track', id);
+    return;
+  }
+  const ageEl = $('trk-age');
+  if (ageEl){
+    const txt = trackAgeStr(track);
+    if (ageEl.textContent !== txt) ageEl.textContent = txt;
+  }
+  const expEl = $('trk-expiry');
+  if (expEl && track.status === 'active'){
+    const remainS = trackExpiryS(track);
+    expEl.textContent = 'EXPIRES IN ' + fmtETA(remainS);
+    expEl.classList.toggle('amber', remainS < 60);
+  }
+}
+
+// Subscribes to engine TRACK_* events (same engine-poll pattern as
+// wireRequestWatch) so an open track panel re-renders the moment its track
+// is tasked/resolved/expired/dismissed rather than waiting for the 2s poll.
+// The engine merges event extras flat onto the event, so the id is
+// ev.trackId. Tracks have no left-panel list — the map is their surface —
+// so the open right panel is all that needs refreshing here.
+function wireTrackWatch(){
+  const trySubscribe = () => {
+    if (!window.__engine || !window.__engine.onEvent) return false;
+    window.__engine.onEvent((ev) => {
+      const code = ev && ev.code ? String(ev.code) : '';
+      if (code.indexOf('TRACK_') !== 0) return;
+      refreshViewedTrack(ev.trackId);
+    });
+    return true;
+  };
+  if (trySubscribe()) return;
+  const iv = setInterval(() => { if (trySubscribe()) clearInterval(iv); }, 300);
+}
+
+// Click-through from the map's track diamonds ('tracks-icons', map lane) to
+// the review panel. The layer may not exist yet (map lane lands in parallel
+// / adds layers after style load), so wiring retries on the same short poll
+// cadence the engine watches use until the layer appears.
+function wireMapTrackInteractions(){
+  if (!EC2.map) return;
+  const tryWire = () => {
+    try {
+      if (!EC2.map.getLayer || !EC2.map.getLayer('tracks-icons')) return false;
+      EC2.map.on('click', 'tracks-icons', (e) => {
+        if (inCaptureMode()) return; // wizard/manual own map clicks exclusively
+        const f = e.features && e.features[0];
+        if (!f || !f.properties || !f.properties.id) return;
+        focusTrack(f.properties.id);
+      });
+      // Hover cursor is the map lane's job — click wiring only here.
+      return true;
+    } catch (err){
+      return true; // never retry into a throwing map — degrade silently
+    }
+  };
+  if (tryWire()) return;
+  const iv = setInterval(() => { if (tryWire()) clearInterval(iv); }, 500);
 }
 
 function wireRightPanelActions(mode, data){
@@ -1424,6 +1772,54 @@ function wireRightPanelActions(mode, data){
       renderRequestList(true);
       EC2.ui.setRightPanel('empty');
     });
+  } else if (mode === 'track' && data){
+    const trackId = data;
+
+    // TASK NEAREST DRONE: the engine picks a ready dock in range and launches
+    // the response mission (or throws, e.g. 'NO READY DOCK IN RANGE' —
+    // surfaced as a warn chip, never a crash). On success the mission counts
+    // as user-created (debrief auto-opens on completion) and the console
+    // jumps to follow the responding drone.
+    const taskBtn = $('trk-task');
+    if (taskBtn) taskBtn.addEventListener('click', () => {
+      const engine = window.__engine;
+      if (!engine || !engine.taskTrack){
+        EC2.ui.pushEvent({ level: 'warn', source: 'OPS', message: 'TRACK TASKING UNAVAILABLE · ENGINE OFFLINE' });
+        return;
+      }
+      let mission = null;
+      try {
+        mission = engine.taskTrack(trackId);
+      } catch (err){
+        EC2.ui.pushEvent({ level: 'warn', source: 'OPS',
+          message: 'TRACK TASKING FAILED · ' + (err && err.message ? String(err.message).toUpperCase() : 'UNKNOWN') });
+        EC2.ui.setRightPanel('track', trackId); // re-render current status
+        return;
+      }
+      if (!mission) return;
+      if (EC2.control && EC2.control.userMissions) EC2.control.userMissions.add(mission.id);
+      const droneId = 'D-' + mission.dockId;
+      EC2.followDroneId = droneId;
+      EC2.select({ type: 'drone', id: droneId });
+    });
+
+    const dismissBtn = $('trk-dismiss');
+    if (dismissBtn) dismissBtn.addEventListener('click', () => {
+      const engine = window.__engine;
+      if (engine && engine.dismissTrack) engine.dismissTrack(trackId);
+      EC2.ui.setRightPanel('empty');
+    });
+
+    // Tasked track: jump to the drone already investigating it.
+    const viewBtn = $('trk-view-drone');
+    if (viewBtn) viewBtn.addEventListener('click', () => {
+      const engine = window.__engine;
+      const track = getTrack(trackId);
+      const mission = track && track.missionId && engine ? engine.missions.get(track.missionId) : null;
+      if (!mission) return;
+      const droneId = 'D-' + mission.dockId;
+      if (engine.drones && engine.drones.get(droneId)) EC2.select({ type: 'drone', id: droneId });
+    });
   } else if (mode === 'debrief' && data){
     wireDebriefPanel(data);
   } else if (mode === 'media'){
@@ -1440,13 +1836,187 @@ function wireRightPanelActions(mode, data){
       const drone = window.__engine && window.__engine.drones.get(droneId);
       if (drone && drone.state !== 'docked') EC2.select({ type: 'drone', id: droneId });
     });
+
+    // LAST DETECTIONS rows that spawned a still-live track jump to it (fly
+    // the camera + open the track review panel). Same delegated-listener
+    // pattern as the missions list above — rows are re-rendered by
+    // updateOpsDigest whenever a track's status moves.
+    const detList = $('digest-detections');
+    if (detList) detList.addEventListener('click', (e) => {
+      const row = e.target.closest('.dg-det-track');
+      if (!row || inCaptureMode()) return;
+      const track = getTrack(row.dataset.track);
+      if (!track) return;
+      focusTrack(track.id);
+    });
   }
+}
+
+// ---------- topbar dropdown menus (DOCKS / FILTER / LAYERS) ----------
+
+// Replicates control.js's missions-menu pattern (build once, append to body,
+// position fixed under the button, deferred outside-mousedown + ESC to
+// close, aria-expanded on the trigger) — kept local so control.js stays
+// untouched. Only one of these menus is open at a time; opening one also
+// dismisses the MISSIONS menu via its exposed closer.
+
+const topMenus = new Map(); // name -> { btnId, el, align, onOpen, onDocDown, onKey }
+
+function topMenuOpen(name){
+  const m = topMenus.get(name);
+  return !!(m && m.el && !m.el.hidden);
+}
+
+function closeTopMenu(name){
+  const m = topMenus.get(name);
+  if (!m || m.el.hidden) return;
+  m.el.hidden = true;
+  const btn = $(m.btnId);
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  document.removeEventListener('mousedown', m.onDocDown);
+  document.removeEventListener('keydown', m.onKey);
+}
+
+function closeAllTopMenus(){
+  for (const name of topMenus.keys()) closeTopMenu(name);
+}
+
+function openTopMenu(name){
+  const m = topMenus.get(name);
+  const btn = m && $(m.btnId);
+  if (!m || !btn) return;
+  closeAllTopMenus();
+  if (EC2.control && EC2.control.closeMissionsMenu) EC2.control.closeMissionsMenu();
+  const r = btn.getBoundingClientRect();
+  m.el.style.top = (r.bottom + 6) + 'px';
+  if (m.align === 'left'){
+    m.el.style.left = Math.max(8, r.left) + 'px';
+    m.el.style.right = 'auto';
+  } else {
+    m.el.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+    m.el.style.left = 'auto';
+  }
+  m.el.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  if (m.onOpen) m.onOpen();
+  // Defer the outside-click listener so this same click doesn't close it.
+  setTimeout(() => document.addEventListener('mousedown', m.onDocDown), 0);
+  document.addEventListener('keydown', m.onKey);
+}
+
+// Builds the (hidden) dropdown element eagerly, wires its trigger button as
+// a toggle, and registers it in topMenus. Eager build keeps init-time wiring
+// (wireFilters, injectDockListControls) working against real elements.
+function registerTopMenu(name, btnId, extraClass, align, innerHTML, onOpen){
+  const el = document.createElement('div');
+  el.id = name + '-menu';
+  el.className = 'missions-menu top-menu' + (extraClass ? ' ' + extraClass : '');
+  el.setAttribute('role', 'menu');
+  el.hidden = true;
+  el.innerHTML = innerHTML;
+  document.body.appendChild(el);
+  const m = {
+    btnId: btnId, el: el, align: align, onOpen: onOpen,
+    // The trigger has child elements (<b>, .caret), so containment — not an
+    // id equality check like control.js's — decides "was this the button".
+    onDocDown: (e) => {
+      const btn = $(btnId);
+      if (!el.contains(e.target) && !(btn && btn.contains(e.target))) closeTopMenu(name);
+    },
+    onKey: (e) => { if (e.key === 'Escape') closeTopMenu(name); }
+  };
+  topMenus.set(name, m);
+  const btn = $(btnId);
+  if (btn) btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (topMenuOpen(name)) closeTopMenu(name);
+    else openTopMenu(name);
+  });
+  return el;
+}
+
+// DOCKS dropdown: the search + sort tools and the grouped dock list moved
+// here from the old .side-docklist panel — element ids (#dock-tools,
+// #docklist) are preserved so renderDockList/patchDockRows/dockListSig keep
+// working unchanged. Opening repaints immediately (the 2s poll no-ops while
+// closed — see the guard in renderDockList).
+function wireDocksMenu(){
+  registerTopMenu('docks', 'btn-docks', 'docks-menu', 'left',
+    '<div class="mm-head lbl">Dock network</div><div id="docklist"></div>',
+    () => EC2.ui.renderDockList());
+  injectDockListControls(); // inserts #dock-tools above #docklist inside the menu
+}
+
+const FILTER_KEYS = ['ALL', 'AUH', 'DXB', 'SHJ', 'AJM', 'UAQ', 'RAK', 'FUJ', 'AAN', 'FLYING', 'ALERTS'];
+
+// FILTER dropdown: the same 11 chips that used to sit in the left panel,
+// keeping #filters + .fchip markup so wireFilters works unchanged (bar the
+// label/close additions there).
+function wireFilterMenu(){
+  registerTopMenu('filter', 'btn-filter', 'filter-menu', 'right',
+    '<div class="mm-head lbl">Dock filter</div>' +
+    '<div class="filters filters-compact" id="filters">' +
+      FILTER_KEYS.map(k =>
+        '<button class="fchip' + (k === 'ALL' ? ' on' : '') + '" data-filter="' + k + '">' + k + '</button>'
+      ).join('') +
+    '</div>');
+}
+
+// Trigger label mirrors the active filter: 'FILTER ▾' at ALL, otherwise
+// 'FILTER · DXB ▾' (emirate code or FLYING/ALERTS).
+function updateFilterButtonLabel(){
+  const btn = $('btn-filter');
+  if (!btn) return;
+  btn.innerHTML = (currentFilter === 'ALL' ? 'FILTER' : 'FILTER &middot; ' + currentFilter) + ' &#9662;';
+}
+
+const LAYER_LABELS = { dark: 'DARK', light: 'LIGHT', sat: 'SATELLITE', terrain: 'TERRAIN' };
+
+function layersMenuHTML(){
+  const cur = (EC2.state && EC2.state.layer) || 'dark';
+  return '<div class="mm-head lbl">Map layers</div>' +
+    Object.keys(LAYER_LABELS).map(l =>
+      '<button class="mm-item" role="menuitemradio" aria-checked="' + (l === cur) + '" data-l="' + l + '">' +
+        '<span class="mm-label">' + LAYER_LABELS[l] + '</span>' +
+        '<span class="mm-check">' + (l === cur ? '&#10003;' : '') + '</span>' +
+      '</button>'
+    ).join('');
+}
+
+function updateLayersButtonLabel(){
+  const btn = $('btn-layers');
+  if (!btn) return;
+  const cur = (EC2.state && EC2.state.layer) || 'dark';
+  btn.innerHTML = 'LAYERS &middot; ' + (LAYER_LABELS[cur] || String(cur).toUpperCase()) + ' &#9662;';
+}
+
+// LAYERS dropdown: DARK/LIGHT/SATELLITE/TERRAIN, active one check-marked.
+// Content is re-rendered on every open so the checkmark tracks EC2.state.layer
+// even if it changed elsewhere; the click listener is delegated on the menu
+// element so it survives those re-renders. EC2.setLayer keeps setting the
+// data-maplayer hook on <html> exactly as before.
+function wireLayersMenu(){
+  const el = registerTopMenu('layers', 'btn-layers', 'layers-menu', 'right',
+    layersMenuHTML(), () => { el.innerHTML = layersMenuHTML(); });
+  el.addEventListener('click', (e) => {
+    const item = e.target.closest('.mm-item[data-l]');
+    if (!item) return;
+    EC2.setLayer(item.dataset.l);
+    updateLayersButtonLabel();
+    closeTopMenu('layers');
+  });
+}
+
+function wireTopMenus(){
+  wireDocksMenu();
+  wireFilterMenu();
+  wireLayersMenu();
 }
 
 // ---------- dock list ----------
 
 // Search input + ID/BATT/STATE sort segment, JS-injected once above
-// #docklist inside the .side-docklist panel (index.html stays untouched).
+// #docklist inside the DOCKS topbar dropdown.
 function injectDockListControls(){
   const list = $('docklist');
   if (!list || $('dock-tools')) return;
@@ -1547,6 +2117,7 @@ function buildDockRow(d, selDockId){
     } else {
       EC2.select({ type: 'dock', id: d.id });
     }
+    closeTopMenu('docks'); // picking a dock dismisses the dropdown
   });
   return row;
 }
@@ -1716,7 +2287,8 @@ EC2.ui = {
     site: renderSitePanel,
     debrief: renderDebriefPanel,
     media: renderMediaPanel,
-    request: renderRequestPanel
+    request: renderRequestPanel,
+    track: renderTrackPanel
   },
 
   setStats(o){
@@ -1740,6 +2312,14 @@ EC2.ui = {
     if (filter) currentFilter = filter;
     const list = $('docklist');
     if (!list) return;
+    // The dock list lives inside the DOCKS topbar dropdown — while it's
+    // closed, the 2s poll (and any other caller) must be a cheap no-op. A
+    // filter change arriving while closed still lands (currentFilter above)
+    // and drops the signature so the next open rebuilds fresh.
+    if (!topMenuOpen('docks')){
+      if (filter) dockListSig = null;
+      return;
+    }
     injectDockListControls();
 
     const rows = dockListRows();
@@ -1946,42 +2526,10 @@ function wireTopbar(){
     EC2.ui.setRightPanel('media');
   });
 
-  const layerSeg = $('layerseg');
-  if (layerSeg) layerSeg.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-l]');
-    if (!btn) return;
-    layerSeg.querySelectorAll('button').forEach(b => b.classList.remove('on'));
-    btn.classList.add('on');
-    EC2.setLayer(btn.dataset.l);
-  });
-
-  const timeSeg = $('timescale');
-  if (timeSeg) timeSeg.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-ts]');
-    if (!btn) return;
-    timeSeg.querySelectorAll('button').forEach(b => b.classList.remove('on'));
-    btn.classList.add('on');
-    EC2.state.timeScale = Number(btn.dataset.ts);
-    updateTimescalePill();
-  });
 }
-
-// Floating "4× SIM TIME" pill over the map whenever the sim runs faster than
-// real time — created lazily on first use, hidden again at 1× and outside
-// the console scene (wireScene keeps it honest across scene switches).
-function updateTimescalePill(){
-  let pill = $('timescale-pill');
-  if (!pill){
-    pill = document.createElement('div');
-    pill.id = 'timescale-pill';
-    pill.hidden = true;
-    document.body.appendChild(pill);
-  }
-  const ts = Number(EC2.state.timeScale) || 1;
-  const show = ts > 1 && EC2.state.scene === 'console';
-  pill.textContent = ts + '× SIM TIME';
-  pill.hidden = !show;
-}
+// (LAYERS and the removed timescale seg used to be wired here — LAYERS now
+// lives in its own topbar dropdown, see wireLayersMenu; EC2.state.timeScale
+// stays at its default 1 and main.js keeps reading it unchanged.)
 
 function wireFilters(){
   const container = $('filters');
@@ -1992,6 +2540,10 @@ function wireFilters(){
     container.querySelectorAll('.fchip').forEach(b => b.classList.remove('on'));
     btn.classList.add('on');
     EC2.ui.renderDockList(btn.dataset.filter);
+    // The chips live in the FILTER topbar dropdown now: reflect the pick on
+    // the trigger's label and dismiss the menu (single-choice semantics).
+    updateFilterButtonLabel();
+    closeTopMenu('filter');
   });
 }
 
@@ -2037,23 +2589,36 @@ function wireScene(){
                      $('side-toggle'), $('rpanel-toggle')].filter(Boolean);
   chromeEls.forEach(el => el.classList.add('chrome-in'));
 
+  let hideTimer = null;
   function setVisible(show){
     if (show){
+      // A hide scheduled by a recent setVisible(false) must not land after
+      // this show — cancel it, or the chrome vanishes despite the scene
+      // being 'console' (rapid scene flips / scripted entry).
+      if (hideTimer){ clearTimeout(hideTimer); hideTimer = null; }
       chromeEls.forEach(el => { el.hidden = false; });
-      // Double rAF: let the opacity:0 state paint before transitioning to 1.
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        chromeEls.forEach(el => { el.style.opacity = '1'; });
-      }));
+      const reveal = () => chromeEls.forEach(el => { el.style.opacity = '1'; });
+      // Double rAF lets the opacity:0 state paint before transitioning to 1;
+      // the timeout is a fallback for rAF-throttled contexts (background /
+      // embedded tabs) where those frames may never come.
+      requestAnimationFrame(() => requestAnimationFrame(reveal));
+      setTimeout(reveal, 120);
     } else {
       chromeEls.forEach(el => { el.style.opacity = '0'; });
-      setTimeout(() => { chromeEls.forEach(el => { el.hidden = true; }); }, 220);
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        hideTimer = null;
+        chromeEls.forEach(el => { el.hidden = true; });
+      }, 220);
     }
   }
 
   setVisible(EC2.state.scene === 'console');
   EC2.onSceneChange(scene => {
     setVisible(scene === 'console');
-    updateTimescalePill(); // pill only ever shows over the console map
+    // Topbar dropdowns are fixed to <body>, not the (hidden) topbar — they
+    // must never stay open over the globe scene.
+    if (scene !== 'console') closeAllTopMenus();
     // FOLLOW makes no sense once we've left the console map (globe scene).
     if (scene !== 'console'){
       if (EC2.control && EC2.control.mode === 'manual') EC2.control.exitManual();
@@ -2142,17 +2707,20 @@ EC2.initPanels = function(){
   buildDockIndex();
   buildSiteIndex();
   wireTopbar();
+  wireTopMenus(); // DOCKS / FILTER / LAYERS dropdowns (built eagerly, hidden)
   wireFilters();
   wireClock();
   wireLiveNetwork();
   wireScene();
   wirePanelToggles();
   wireMapDockInteractions();
+  wireMapTrackInteractions(); // detection-track diamonds (retries until the map lane's layer exists)
   startFollowDriver();
   startTickerDriver();
   wireDebriefWatch();
   wireRequestList();
   wireRequestWatch();
+  wireTrackWatch();
   renderRequestList(); // paints the empty state until the engine spawns requests
   EC2.ui.renderDockList('ALL');
   EC2.ui.setRightPanel('empty');
@@ -2173,6 +2741,10 @@ EC2.initPanels = function(){
     // event-driven refresh in wireRequestWatch).
     renderRequestList();
     refreshViewedRequest();
+    // An open track review panel rides the same 2s driver: age + expiry
+    // countdown patch in place, status changes re-render (safety net under
+    // the event-driven refresh in wireTrackWatch).
+    refreshViewedTrack();
     if (EC2.refreshCounts) EC2.refreshCounts(window.__engine);
   }, 2000);
 };

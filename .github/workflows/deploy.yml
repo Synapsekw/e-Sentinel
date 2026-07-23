@@ -26,7 +26,7 @@ jobs:
       - name: Stage runtime files only
         run: |
           mkdir _site
-          cp index.html _site/
+          cp index.html console.html _site/
           cp -r assets videos _site/
       - uses: actions/upload-pages-artifact@v3
         with:
