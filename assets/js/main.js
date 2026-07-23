@@ -23,12 +23,9 @@ window.EC2 = {
     }
   },
 
-  // Classifies a raw engine event into a ticker severity. Forced RTBs and
-  // dock faults are the "something needs attention now" tier; wind holds
-  // and low-battery notices are advisories; everything else is routine.
+  // Ticker severity comes straight from the engine's own level — the engine
+  // emits 'alert' for forced RTB / dock faults and 'warn' for advisories.
   eventLevel(ev){
-    if (/FORCED RTB|FAULT DETECTED/.test(ev.message)) return 'alert';
-    if (/HOLDING|BATTERY/.test(ev.message)) return 'warn';
     if (ev.level === 'alert' || ev.level === 'warn') return ev.level;
     return 'info';
   },
@@ -58,14 +55,37 @@ window.EC2 = {
 
     engine.onEvent(ev => {
       EC2.ui.pushEvent({ level: EC2.eventLevel(ev), source: ev.source, message: ev.message });
+      if (ev.code === 'MISSION_LAUNCHED' && EC2.launchPulse && ev.dockId) EC2.launchPulse(ev.dockId);
     });
 
-    let lastReal = performance.now();
+    // Sim ticking runs off setInterval + wall clock, not rAF: browsers throttle
+    // rAF in background tabs (projector handoffs froze sim time), while timers
+    // keep firing. rAF below is rendering-only and may pause harmlessly.
+    const SUB_STEP = 0.5;      // max sim seconds per engine.tick()
+    const MAX_BACKLOG = 30;    // sim seconds; excess wall time is dropped
+    let backlog = 0;
+    let lastWall = performance.now();
+    function absorbWallTime(){
+      const now = performance.now();
+      backlog = Math.min(MAX_BACKLOG, backlog + ((now - lastWall) / 1000) * EC2.state.timeScale);
+      lastWall = now;
+    }
+    setInterval(() => {
+      absorbWallTime();
+      while (backlog > 1e-4){
+        const step = Math.min(SUB_STEP, backlog);
+        engine.tick(step);
+        backlog -= step;
+      }
+    }, 250);
+    // Timers can be suspended entirely (laptop sleep); clamp the accumulated
+    // gap the moment the tab is visible again so there's no monster jump.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) absorbWallTime();
+    });
+
     let lastStatsAt = 0;
     function frame(ts){
-      const dtReal = Math.min(0.1, Math.max(0, (ts - lastReal) / 1000));
-      lastReal = ts;
-      engine.tick(dtReal * EC2.state.timeScale);
       if (EC2.updateLiveLayers) EC2.updateLiveLayers(engine);
       if (ts - lastStatsAt > 1000){
         lastStatsAt = ts;
