@@ -14,6 +14,19 @@ let currentFilter = 'ALL';
 // calls out to avoid.
 let droneTeleTimer = null;
 
+// 1 Hz live-refresh timer for the OPS DIGEST default panel — same lifecycle
+// contract as droneTeleTimer: setRightPanel() clears it unconditionally on
+// every mode switch and restarts it only while the empty/digest panel shows.
+let digestTimer = null;
+
+// Dock-list search / sort state (Task: dock list upgrade). dockListSig is the
+// last rendered signature (filter|search|sort|ordered ids) — when unchanged
+// the 2s refresh only patches battery/state text in place instead of
+// rebuilding 104 rows of DOM.
+let dockSearch = '';
+let dockSort = 'ID';
+let dockListSig = null;
+
 // Completed missions this session (newest first, capped), backing the
 // MEDIA grid. A mission lands here once via recordCompletedMission() when
 // the engine emits its 'MISSION <id> COMPLETE' event.
@@ -102,15 +115,165 @@ function nowClockStr(){
 
 // ---------- right panel renderers ----------
 
+// ---------- OPS DIGEST (default right panel) ----------
+
+// Per-type detection copy from engine.js DETECTION_MSGS, matched structurally:
+// a detection event is info-level, drone-sourced, and its message is exactly
+// '<droneId> <one of these suffixes>'. Kept as suffixes (not full-string
+// regexes) so a change to id formats can't silently break the filter.
+const DETECTION_SUFFIXES = [
+  'FLAGGED VEHICLE ON PATROL SWEEP',
+  'THERMAL ANOMALY LOGGED',
+  'SCENE ASSESSMENT UPDATED',
+  'PAYLOAD STATUS NOMINAL',
+  'SURVEY DATA CAPTURED',
+  'VEHICLE FLAGGED ON HIGHWAY SWEEP',
+  'VEGETATION STRESS ZONE FLAGGED'
+];
+
+function isDetectionEvent(ev){
+  if (!ev || ev.level !== 'info' || !/^D-/.test(ev.source || '')) return false;
+  const msg = String(ev.message || '');
+  return DETECTION_SUFFIXES.some(sfx => msg === ev.source + ' ' + sfx);
+}
+
+// ETA as M:SS (single-digit minutes allowed, unlike fmtMMSS's MM:SS).
+function fmtETA(totalS){
+  const s = Math.max(0, Math.round(totalS || 0));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+const DIGEST_MISSIONS_CAP = 8;
+
+function digestActiveMissions(){
+  const engine = window.__engine;
+  if (!engine) return [];
+  const out = [];
+  for (const m of engine.missions.values()){
+    if (m.state === 'active') out.push(m);
+  }
+  // Newest first, so a freshly launched mission surfaces at the top.
+  out.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+  return out.slice(0, DIGEST_MISSIONS_CAP);
+}
+
+function digestStatsLine(){
+  const engine = window.__engine;
+  if (!engine) return '104 DOCK STATIONS ONLINE · ALL 7 EMIRATES';
+  let ready = 0, alerts = 0, airborne = 0;
+  for (const dock of engine.docks.values()){
+    if (dock.state === 'ready') ready++;
+    else if (dock.state === 'fault' || dock.state === 'offline') alerts++;
+  }
+  for (const d of engine.drones.values()){
+    if (d.state !== 'docked') airborne++;
+  }
+  return 'AIRBORNE ' + airborne + ' · READY ' + ready + ' · ALERTS ' + alerts;
+}
+
+function digestMissionRowsHTML(missions){
+  if (!missions.length){
+    return '<div class="lbl empty-note">NO ACTIVE MISSIONS · GRID AT READINESS</div>';
+  }
+  return missions.map(m => {
+    const cfg = (typeof MISSIONS_CONFIG !== 'undefined' && MISSIONS_CONFIG[m.type]) || { label: String(m.type).toUpperCase() };
+    const pct = Math.round((m.progress || 0) * 100);
+    const eta = fmtETA((m.durationS || 0) * (1 - (m.progress || 0)));
+    return (
+      '<button class="digest-row" data-mid="' + m.id + '" data-drone="D-' + m.dockId + '">' +
+        '<span class="dg-head"><span class="dg-type">' + cfg.label + '</span>' +
+          '<span class="dg-eta" id="dge-' + m.id + '">ETA ' + eta + '</span></span>' +
+        '<span class="dg-id">' + m.id + ' · ' + m.dockId + '</span>' +
+        '<span class="dg-prog"><i id="dgp-' + m.id + '" style="width:' + pct + '%"></i></span>' +
+      '</button>'
+    );
+  }).join('');
+}
+
+function lastDetections(n){
+  const engine = window.__engine;
+  if (!engine || !Array.isArray(engine.events)) return [];
+  const out = [];
+  for (let i = engine.events.length - 1; i >= 0 && out.length < n; i--){
+    if (isDetectionEvent(engine.events[i])) out.push(engine.events[i]);
+  }
+  return out;
+}
+
+function detectionRowsHTML(dets){
+  if (!dets.length){
+    return '<div class="lbl empty-note">NO DETECTIONS LOGGED YET</div>';
+  }
+  return dets.map(ev => {
+    const msg = String(ev.message || '');
+    const body = msg.indexOf(ev.source + ' ') === 0 ? msg.slice(ev.source.length + 1) : msg;
+    return (
+      '<div class="dg-det">' +
+        '<span class="tt">T+' + fmtMMSS(ev.time) + '</span>' +
+        '<span class="src">' + escapeHtml(ev.source) + '</span>' +
+        '<span class="msg">' + escapeHtml(body) + '</span>' +
+      '</div>'
+    );
+  }).join('');
+}
+
 function renderEmptyPanel(){
+  const missions = digestActiveMissions();
+  const dets = lastDetections(3);
   return (
-    '<div class="rp-empty">' +
-      '<div class="lbl">National activity</div>' +
-      '<p style="margin-top:10px">104 dock stations online across all 7 emirates. ' +
-      'Select a dock from the list or the map to view its identity, drone status and dispatch options.</p>' +
-      '<p style="margin-top:10px">Autonomous flight operations are running. Watch the ticker below or select a drone in flight to follow it.</p>' +
+    '<div id="ops-digest">' +
+      '<div class="lbl">Ops digest · national activity</div>' +
+      '<div class="digest-stats" id="digest-stats">' + digestStatsLine() + '</div>' +
+      '<div class="lbl" style="margin-top:16px">Active missions</div>' +
+      '<div class="digest-missions" id="digest-missions" data-key="' + missions.map(m => m.id).join(',') + '">' +
+        digestMissionRowsHTML(missions) +
+      '</div>' +
+      '<div class="lbl" style="margin-top:16px">Last detections</div>' +
+      '<div class="digest-dets" id="digest-detections" data-key="' +
+        dets.map(ev => ev.time + '|' + ev.source + '|' + ev.message).join('~') + '">' +
+        detectionRowsHTML(dets) + '</div>' +
     '</div>'
   );
+}
+
+// 1 Hz refresh for the digest. Flicker-free by design: the missions list is
+// re-rendered ONLY when the set of active mission ids changes; otherwise the
+// progress bar widths / ETAs are patched in place by element id.
+function updateOpsDigest(){
+  if (!$('ops-digest')) return;
+
+  const statsEl = $('digest-stats');
+  if (statsEl){
+    const line = digestStatsLine();
+    if (statsEl.textContent !== line) statsEl.textContent = line;
+  }
+
+  const missions = digestActiveMissions();
+  const listEl = $('digest-missions');
+  if (listEl){
+    const key = missions.map(m => m.id).join(',');
+    if (listEl.dataset.key !== key){
+      listEl.dataset.key = key;
+      listEl.innerHTML = digestMissionRowsHTML(missions);
+    } else {
+      for (const m of missions){
+        const bar = $('dgp-' + m.id);
+        if (bar) bar.style.width = Math.round((m.progress || 0) * 100) + '%';
+        const eta = $('dge-' + m.id);
+        if (eta) eta.textContent = 'ETA ' + fmtETA((m.durationS || 0) * (1 - (m.progress || 0)));
+      }
+    }
+  }
+
+  const dets = lastDetections(3);
+  const detEl = $('digest-detections');
+  if (detEl){
+    const dkey = dets.map(ev => ev.time + '|' + ev.source + '|' + ev.message).join('~');
+    if (detEl.dataset.key !== dkey){
+      detEl.dataset.key = dkey;
+      detEl.innerHTML = detectionRowsHTML(dets);
+    }
+  }
 }
 
 function renderDockPanel(dock){
@@ -257,7 +420,7 @@ function fpvFrameHTML(drone){
       '<span class="fpv-hdg" id="fpv-hdg">' + padHeading(drone.heading) + '&deg;</span>' +
       '<span class="fpv-alt" id="fpv-alt">' + Math.round(drone.alt) + 'M</span>' +
       '<span class="fpv-clock" id="fpv-clock">' + nowClockStr() + '</span>' +
-      '<span class="fpv-foot">HIGGSFIELD &middot; GEN-4</span>' +
+      '<span class="fpv-foot">SENTINEL EO &middot; CH-1 &middot; SIMULATED FEED</span>' +
     '</div>'
   );
 }
@@ -435,13 +598,40 @@ function fmtMMSS(totalS){
   return String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0');
 }
 
-// camelCase -> "SPACED UPPER" for analytics field labels.
+function thousands(v){
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString('en-US') : String(v);
+}
+
+// Unit-aware label/format pairs for the analytics keys the sim actually
+// produces (missions-config.js). Anything not listed keeps the generic
+// camelCase -> "SPACED UPPER" fallback with the raw value. Used identically
+// by the debrief panel, the MEDIA cards and the exported report.
+const ANALYTICS_FORMATS = {
+  timeToSceneS: { label: 'TIME TO SCENE', fmt: v => v + 'S' },
+  etaDeltaS:    { label: 'ETA DELTA',     fmt: v => (v > 0 ? '+' : '') + v + 'S' },
+  payloadKg:    { label: 'PAYLOAD',       fmt: v => v + ' KG' },
+  areaHa:       { label: 'AREA',          fmt: v => thousands(v) + ' HA' },
+  volumeDeltaM3:{ label: 'VOLUME Δ',      fmt: v => thousands(v) + ' M³' },
+  ndviMean:     { label: 'NDVI MEAN',     fmt: v => String(v) },
+  coveragePct:  { label: 'COVERAGE',      fmt: v => v + '%' },
+  progressPct:  { label: 'PROGRESS',      fmt: v => v + '%' },
+  stressedPct:  { label: 'STRESSED',      fmt: v => v + '%' },
+  palmCount:    { label: 'PALM COUNT',    fmt: v => thousands(v) }
+};
+
+// camelCase -> "SPACED UPPER" for analytics field labels; known keys get
+// their explicit unit-aware label instead.
 function humanizeKey(key){
+  const known = ANALYTICS_FORMATS[key];
+  if (known) return known.label;
   return String(key).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toUpperCase();
 }
 
-function formatAnalyticsValue(v){
+function formatAnalyticsValue(key, v){
   if (Array.isArray(v)) return v.join(' · ');
+  const known = ANALYTICS_FORMATS[key];
+  if (known) return known.fmt(v);
   return String(v);
 }
 
@@ -452,7 +642,7 @@ function analyticsDL(mission){
   return (
     '<dl class="rp-analytics">' +
       keys.map(k =>
-        '<div class="rp-kv"><dt class="k">' + humanizeKey(k) + '</dt><dd class="v">' + formatAnalyticsValue(a[k]) + '</dd></div>'
+        '<div class="rp-kv"><dt class="k">' + humanizeKey(k) + '</dt><dd class="v">' + formatAnalyticsValue(k, a[k]) + '</dd></div>'
       ).join('') +
     '</dl>'
   );
@@ -485,12 +675,72 @@ function debriefVideoHTML(mission){
         '<canvas id="debrief-canvas"></canvas>' +
       '</div>' +
     '</div>' +
-    '<div class="debrief-video-foot lbl">HIGGSFIELD &middot; GEN-4 &middot; ' + fmtMMSS(mission.durationS) + '</div>'
+    '<div class="debrief-video-foot lbl">SENTINEL EO &middot; MISSION RECORD &middot; ' + fmtMMSS(mission.durationS) + '</div>'
+  );
+}
+
+// ---------- route snapshot (pure string-built inline SVG, no libs) ----------
+
+// Plots mission.waypoints normalized into a 240x140 box with 8% padding:
+// the flown track (polyline), dock/start (square), end (circle) and small
+// dots at each 25% of the path length. Shared between the debrief panel and
+// the exported report.
+function routeSvg(mission){
+  const wps = (mission.waypoints || []).filter(p =>
+    Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+  if (wps.length < 2) return '';
+  const W = 240, H = 140, PX = W * 0.08, PY = H * 0.08;
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of wps){
+    if (p[0] < minX) minX = p[0];
+    if (p[0] > maxX) maxX = p[0];
+    if (p[1] < minY) minY = p[1];
+    if (p[1] > maxY) maxY = p[1];
+  }
+  const spanX = maxX - minX, spanY = maxY - minY;
+  // Degenerate spans (straight N-S / E-W legs) collapse to the box center on
+  // that axis rather than dividing by zero.
+  const sx = p => spanX > 0 ? PX + ((p[0] - minX) / spanX) * (W - 2 * PX) : W / 2;
+  const sy = p => spanY > 0 ? (H - PY) - ((p[1] - minY) / spanY) * (H - 2 * PY) : H / 2;
+  const pts = wps.map(p => [sx(p), sy(p)]);
+
+  // Cumulative screen-space length, for the 25/50/75% progress dots.
+  const cum = [0];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++){
+    total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    cum.push(total);
+  }
+  let quarterDots = '';
+  if (total > 0){
+    for (const f of [0.25, 0.5, 0.75]){
+      const target = f * total;
+      let i = 1;
+      while (i < cum.length - 1 && cum[i] < target) i++;
+      const segLen = cum[i] - cum[i - 1];
+      const t = segLen > 0 ? (target - cum[i - 1]) / segLen : 0;
+      const x = pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t;
+      const y = pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t;
+      quarterDots += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="1.8" fill="#38bdf8"/>';
+    }
+  }
+
+  const start = pts[0], end = pts[pts.length - 1];
+  return (
+    '<svg class="route-svg" viewBox="0 0 240 140" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MISSION ROUTE SNAPSHOT">' +
+      '<polyline points="' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '"' +
+        ' fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>' +
+      quarterDots +
+      '<rect x="' + (start[0] - 3).toFixed(1) + '" y="' + (start[1] - 3).toFixed(1) + '" width="6" height="6" fill="#8b93a3"/>' +
+      '<circle cx="' + end[0].toFixed(1) + '" cy="' + end[1].toFixed(1) + '" r="3" fill="#e8ecf4"/>' +
+    '</svg>'
   );
 }
 
 function renderDebriefPanel(mission){
   const cfg = (typeof MISSIONS_CONFIG !== 'undefined' && MISSIONS_CONFIG[mission.type]) || { label: String(mission.type).toUpperCase() };
+  const route = routeSvg(mission);
   return (
     '<div class="lbl">Mission debrief</div>' +
     '<div class="rp-id">' + mission.id + '</div>' +
@@ -498,14 +748,77 @@ function renderDebriefPanel(mission){
     '<div class="rp-kv"><span class="k">Dock</span><span class="v">' + mission.dockId + '</span></div>' +
     '<div class="rp-kv"><span class="k">Duration</span><span class="v">' + fmtMMSS(mission.durationS) + '</span></div>' +
     '<div class="rp-kv"><span class="k">Distance</span><span class="v">' + (mission.distanceKm || 0).toFixed(1) + ' KM</span></div>' +
+    (route
+      ? '<div class="lbl" style="margin-top:16px">Route snapshot</div>' +
+        '<div class="debrief-route">' + route + '</div>'
+      : '') +
     '<div class="lbl" style="margin-top:16px">Mission analytics</div>' +
     analyticsDL(mission) +
     debriefVideoHTML(mission) +
     '<div class="rp-actions">' +
-      '<button class="ghost" id="db-export" disabled title="SIMULATED">EXPORT REPORT</button>' +
-      '<button class="ghost" id="db-share" disabled title="SIMULATED">SHARE</button>' +
+      '<button class="ghost" id="db-export">EXPORT REPORT</button>' +
     '</div>'
   );
+}
+
+// Printable report for the debrief's EXPORT REPORT button. Works from
+// file:// — a blank about:blank popup is written synchronously, then printed.
+// No external assets; the route SVG is inlined and the styling is print-first.
+function missionReportHTML(mission){
+  const cfg = (typeof MISSIONS_CONFIG !== 'undefined' && MISSIONS_CONFIG[mission.type]) || { label: String(mission.type).toUpperCase() };
+  const a = mission.analytics || {};
+  const rows = Object.keys(a).map(k =>
+    '<tr><td>' + escapeHtml(humanizeKey(k)) + '</td><td>' + escapeHtml(formatAnalyticsValue(k, a[k])) + '</td></tr>'
+  ).join('');
+  const route = routeSvg(mission);
+  return (
+    '<!doctype html><html><head><meta charset="utf-8">' +
+    '<title>SENTINEL REPORT · ' + escapeHtml(mission.id) + '</title>' +
+    '<style>' +
+      'body{font-family:ui-monospace,"SF Mono",Consolas,Menlo,monospace;color:#111;margin:40px;max-width:640px}' +
+      'h1{font-size:14px;letter-spacing:.22em;margin:0 0 4px}' +
+      '.brand{font-size:11px;letter-spacing:.18em;color:#555;margin-bottom:28px}' +
+      'h2{font-size:11px;letter-spacing:.18em;color:#555;margin:26px 0 8px;text-transform:uppercase}' +
+      'table{border-collapse:collapse;width:100%;font-size:12px}' +
+      'td{border-bottom:1px solid #ddd;padding:7px 4px;text-transform:uppercase;letter-spacing:.06em}' +
+      'td:last-child{text-align:right;font-weight:700}' +
+      // Dark plate behind the route: the track/marker colors are picked for
+      // the console's dark surfaces and must stay legible when printed.
+      // print-color-adjust: browsers strip background colors when printing by
+      // default, which would leave the pale route markers invisible on paper.
+      '.route{border:1px solid #ddd;border-radius:6px;padding:10px;background:#0a0b0e;print-color-adjust:exact;-webkit-print-color-adjust:exact}' +
+      '.foot{margin-top:32px;font-size:10px;letter-spacing:.14em;color:#888}' +
+      '@media print{body{margin:16mm}}' +
+    '</style></head><body>' +
+    '<h1>SENTINEL &middot; SIMULATED OPERATIONS REPORT</h1>' +
+    '<div class="brand">e&amp; &middot; GLOBAL COMMAND &amp; CONTROL &middot; DEMONSTRATION DATA ONLY</div>' +
+    '<h2>Mission</h2>' +
+    '<table>' +
+      '<tr><td>MISSION ID</td><td>' + escapeHtml(mission.id) + '</td></tr>' +
+      '<tr><td>TYPE</td><td>' + escapeHtml(cfg.label) + '</td></tr>' +
+      '<tr><td>DOCK</td><td>' + escapeHtml(mission.dockId) + '</td></tr>' +
+      '<tr><td>DURATION</td><td>' + fmtMMSS(mission.durationS) + '</td></tr>' +
+      '<tr><td>DISTANCE</td><td>' + (mission.distanceKm || 0).toFixed(1) + ' KM</td></tr>' +
+    '</table>' +
+    (route ? '<h2>Route snapshot</h2><div class="route">' + route + '</div>' : '') +
+    '<h2>Mission analytics</h2>' +
+    (rows ? '<table>' + rows + '</table>' : '<p>NO ANALYTICS CAPTURED</p>') +
+    '<div class="foot">GENERATED BY e&amp; SENTINEL CONSOLE &middot; ALL DATA SIMULATED</div>' +
+    '<scr' + 'ipt>window.onload=function(){window.print();};</scr' + 'ipt>' +
+    '</body></html>'
+  );
+}
+
+function exportMissionReport(mission){
+  let w = null;
+  try { w = window.open('', '_blank'); } catch (e) { w = null; }
+  if (!w){
+    EC2.ui.pushEvent({ level: 'warn', source: 'OPS', message: 'EXPORT BLOCKED · ALLOW POPUPS' });
+    return;
+  }
+  w.document.write(missionReportHTML(mission));
+  w.document.close();
+  w.focus();
 }
 
 function stopDebriefAnim(){
@@ -579,7 +892,12 @@ function startDebriefPlaceholder(canvas){
   debriefAnimId = requestAnimationFrame(frame);
 }
 
-function wireDebriefPanel(){
+function wireDebriefPanel(mission){
+  const exportBtn = $('db-export');
+  if (exportBtn && mission){
+    exportBtn.addEventListener('click', () => exportMissionReport(mission));
+  }
+
   const video = $('debrief-video');
   const canvasWrap = $('debrief-canvas-wrap');
   const canvas = $('debrief-canvas');
@@ -632,7 +950,17 @@ function analyticsSummaryLine(mission){
   const a = mission.analytics || {};
   const keys = Object.keys(a).slice(0, 2);
   if (!keys.length) return 'NO ANALYTICS';
-  return keys.map(k => humanizeKey(k) + ' ' + formatAnalyticsValue(a[k])).join(' · ');
+  return keys.map(k => humanizeKey(k) + ' ' + formatAnalyticsValue(k, a[k])).join(' · ');
+}
+
+// Poster thumbnail for a media card: first frame-ish (#t=0.8) of the FIRST
+// clip of that mission type. preload="metadata" keeps 40 cards cheap — the
+// browser only fetches enough to paint the poster frame. When the manifest
+// has no clip for the type, no element is emitted (text-only card).
+function mediaPosterHTML(type){
+  const variants = (typeof VIDEO_MANIFEST !== 'undefined' && VIDEO_MANIFEST[type]) || [];
+  if (!variants.length) return '';
+  return '<video class="media-card-poster" preload="metadata" muted src="videos/' + variants[0] + '#t=0.8"></video>';
 }
 
 function renderMediaPanel(){
@@ -642,10 +970,23 @@ function renderMediaPanel(){
       '<div class="rp-empty">NO MISSIONS RECORDED YET &middot; CREATE ONE WITH + NEW MISSION</div>'
     );
   }
+  const typesPresent = [];
+  for (const m of sessionMissions){
+    if (typesPresent.indexOf(m.type) === -1) typesPresent.push(m.type);
+  }
+  const chips =
+    '<div class="media-filters" id="media-filters">' +
+      '<button class="fchip on" data-mtype="ALL">ALL</button>' +
+      typesPresent.map(t => {
+        const cfg = (typeof MISSIONS_CONFIG !== 'undefined' && MISSIONS_CONFIG[t]) || { label: String(t).toUpperCase() };
+        return '<button class="fchip" data-mtype="' + t + '">' + cfg.label + '</button>';
+      }).join('') +
+    '</div>';
   const cards = sessionMissions.map(m => {
     const cfg = (typeof MISSIONS_CONFIG !== 'undefined' && MISSIONS_CONFIG[m.type]) || { label: String(m.type).toUpperCase() };
     return (
-      '<button class="media-card" data-mid="' + m.id + '">' +
+      '<button class="media-card" data-mid="' + m.id + '" data-mtype="' + m.type + '">' +
+        mediaPosterHTML(m.type) +
         '<div class="media-card-type lbl">' + cfg.label + '</div>' +
         '<div class="media-card-id">' + m.id + '</div>' +
         '<div class="media-card-meta">' +
@@ -658,18 +999,32 @@ function renderMediaPanel(){
   }).join('');
   return (
     '<div class="lbl">Media &middot; ' + sessionMissions.length + ' mission' + (sessionMissions.length === 1 ? '' : 's') + ' this session</div>' +
+    chips +
     '<div class="media-grid">' + cards + '</div>'
   );
 }
 
 function wireMediaPanel(){
   const grid = document.querySelector('#rpanel-body .media-grid');
-  if (!grid) return;
-  grid.addEventListener('click', (e) => {
+  if (grid) grid.addEventListener('click', (e) => {
     const card = e.target.closest('.media-card');
     if (!card) return;
     const mission = sessionMissions.find(m => m.id === card.dataset.mid);
     if (mission) openDebrief(mission);
+  });
+
+  // Type filter chips: pure client-side show/hide of the already-rendered
+  // cards (no re-render, posters keep their loaded metadata).
+  const filters = $('media-filters');
+  if (filters) filters.addEventListener('click', (e) => {
+    const chip = e.target.closest('.fchip');
+    if (!chip) return;
+    filters.querySelectorAll('.fchip').forEach(b => b.classList.remove('on'));
+    chip.classList.add('on');
+    const t = chip.dataset.mtype;
+    document.querySelectorAll('#rpanel-body .media-card').forEach(card => {
+      card.hidden = t !== 'ALL' && card.dataset.mtype !== t;
+    });
   });
 }
 
@@ -834,13 +1189,149 @@ function wireRightPanelActions(mode, data){
       }
     });
   } else if (mode === 'debrief' && data){
-    wireDebriefPanel();
+    wireDebriefPanel(data);
   } else if (mode === 'media'){
     wireMediaPanel();
+  } else {
+    // Default / 'empty' mode is the OPS DIGEST: one delegated listener on the
+    // missions list (rows are re-rendered by updateOpsDigest whenever the
+    // mission set changes, so per-row listeners would go stale).
+    const digestList = $('digest-missions');
+    if (digestList) digestList.addEventListener('click', (e) => {
+      const row = e.target.closest('.digest-row');
+      if (!row || inCaptureMode()) return;
+      const droneId = row.dataset.drone;
+      const drone = window.__engine && window.__engine.drones.get(droneId);
+      if (drone && drone.state !== 'docked') EC2.select({ type: 'drone', id: droneId });
+    });
   }
 }
 
 // ---------- dock list ----------
+
+// Search input + ID/BATT/STATE sort segment, JS-injected once above
+// #docklist inside the .side-docklist panel (index.html stays untouched).
+function injectDockListControls(){
+  const list = $('docklist');
+  if (!list || $('dock-tools')) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'dock-tools';
+  wrap.innerHTML =
+    '<input type="search" id="dock-search" class="dock-search" placeholder="SEARCH DOCKS"' +
+      ' autocomplete="off" spellcheck="false" aria-label="Search docks">' +
+    '<div class="dock-sort" id="dock-sort" role="group" aria-label="Sort docks">' +
+      '<button data-sort="ID" class="on">ID</button>' +
+      '<button data-sort="BATT">BATT</button>' +
+      '<button data-sort="STATE">STATE</button>' +
+    '</div>';
+  list.parentNode.insertBefore(wrap, list);
+
+  $('dock-search').addEventListener('input', (e) => {
+    dockSearch = String(e.target.value || '').trim().toLowerCase();
+    EC2.ui.renderDockList();
+  });
+  $('dock-sort').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-sort]');
+    if (!btn) return;
+    e.currentTarget.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    dockSort = btn.dataset.sort;
+    EC2.ui.renderDockList();
+  });
+}
+
+function dockMatchesSearch(d){
+  if (!dockSearch) return true;
+  const hay = (d.id + ' ' + d.name + ' ' + d.emirate + ' ' + (EMIRATE_NAMES[d.emirate] || '')).toLowerCase();
+  return hay.indexOf(dockSearch) !== -1;
+}
+
+// STATE sort order per spec: fault (incl. offline) first, then charging,
+// ready, and away (any flying state) last.
+function dockStateRank(state){
+  if (ALERT_STATES.includes(state)) return 0;
+  if (state === 'charging') return 1;
+  if (state === 'ready') return 2;
+  return 3; // launching / drone-away / landing — "away"
+}
+
+const EMIRATE_ORDER = Object.keys(EMIRATE_NAMES);
+
+// The current filter+search+sort applied to DATA_DOCKS, returned in final
+// render order (ID sort additionally clusters by emirate so the group
+// headers come out contiguous).
+function dockListRows(){
+  const rows = DATA_DOCKS.filter(d => {
+    if (!dockMatchesSearch(d)) return false;
+    if (currentFilter === 'ALL') return true;
+    if (currentFilter === 'FLYING') return FLYING_STATES.includes(stateFor(d));
+    if (currentFilter === 'ALERTS') return ALERT_STATES.includes(stateFor(d));
+    return d.emirate === currentFilter;
+  });
+  if (dockSort === 'BATT'){
+    // Lowest charge first — the rows an operator needs to see are the ones
+    // closest to unavailable.
+    rows.sort((a, b) => (batteryFor(a.id) - batteryFor(b.id)) || a.id.localeCompare(b.id));
+  } else if (dockSort === 'STATE'){
+    rows.sort((a, b) => (dockStateRank(stateFor(a)) - dockStateRank(stateFor(b))) || a.id.localeCompare(b.id));
+  } else {
+    rows.sort((a, b) => {
+      const ea = EMIRATE_ORDER.indexOf(a.emirate), eb = EMIRATE_ORDER.indexOf(b.emirate);
+      return (ea - eb) || a.id.localeCompare(b.id);
+    });
+  }
+  return rows;
+}
+
+function buildDockRow(d, selDockId){
+  const battery = batteryFor(d.id);
+  const live = stateFor(d);
+  const sdClass = 'sd' + (ALERT_STATES.includes(live) ? ' alert' : '');
+  const row = document.createElement('button');
+  row.className = 'dock-row' + (selDockId === d.id ? ' sel' : '');
+  row.dataset.dockId = d.id;
+  row.innerHTML =
+    '<span class="' + sdClass + '"></span>' +
+    '<span class="di"><b>' + d.id + '</b><i>' + d.name + '</i></span>' +
+    '<span class="dr"><span class="model">' + d.model + '</span><span class="batt">' + battery + '%</span></span>';
+  // A dock whose drone is airborne selects the drone (telemetry panel);
+  // otherwise (docked/charging/fault) selecting the dock itself as before.
+  row.addEventListener('click', () => {
+    // A wizard or manual-control session mid-flight owns the map/panel;
+    // switching the selection out from under it would strand or lose
+    // that in-progress state. Block the row and surface why briefly.
+    if (inCaptureMode()){
+      row.title = 'EXIT CURRENT MODE FIRST';
+      setTimeout(() => { row.title = ''; }, 2000);
+      return;
+    }
+    const drone = window.__engine && window.__engine.drones.get('D-' + d.id);
+    if (drone && drone.state !== 'docked'){
+      EC2.select({ type: 'drone', id: drone.id });
+    } else {
+      EC2.select({ type: 'dock', id: d.id });
+    }
+  });
+  return row;
+}
+
+// In-place refresh of the live cells (battery %, alert dot) for every row
+// already in the DOM — the no-rebuild path the 2s poll takes when nothing
+// structural changed. The .batt width/text change is cheap; listeners,
+// focus and scroll all survive.
+function patchDockRows(list){
+  list.querySelectorAll('.dock-row').forEach(row => {
+    const d = dockIndex.get(row.dataset.dockId);
+    if (!d) return;
+    const battEl = row.querySelector('.batt');
+    if (battEl){
+      const txt = batteryFor(d.id) + '%';
+      if (battEl.textContent !== txt) battEl.textContent = txt;
+    }
+    const sd = row.querySelector('.sd');
+    if (sd) sd.classList.toggle('alert', ALERT_STATES.includes(stateFor(d)));
+  });
+}
 
 // A drone selection still "belongs" to a dock row (D-<dockId> -> dockId),
 // so the list row stays highlighted whichever way the drone was selected.
@@ -935,6 +1426,50 @@ function startTickerDriver(){
   }, 1000);
 }
 
+// ---------- stat count-up tween (setStats) ----------
+
+// Animates a stat number to its new value over ~400ms in integer steps.
+// Finish-safe by construction: rAF can be throttled (background tab,
+// low-power mode), so every NEW tweenStat call on an element first clamps
+// any in-flight tween straight to its old target before animating again —
+// a stat can therefore never get stuck between values for more than one
+// setStats cycle. Values only animate when they actually changed.
+const statTweens = new Map(); // el -> { target, raf }
+const STAT_TWEEN_MS = 400;
+
+function tweenStat(el, value){
+  if (!el) return;
+  const goal = Math.round(Number(value));
+  if (!Number.isFinite(goal)){ el.textContent = String(value); return; }
+
+  const inFlight = statTweens.get(el);
+  if (inFlight){
+    cancelAnimationFrame(inFlight.raf);
+    statTweens.delete(el);
+    el.textContent = String(inFlight.target); // clamp to target regardless of rAF progress
+  }
+
+  const from = parseInt(el.textContent, 10);
+  if (!Number.isFinite(from) || from === goal){
+    el.textContent = String(goal);
+    return;
+  }
+
+  const start = performance.now();
+  const state = { target: goal, raf: 0 };
+  statTweens.set(el, state);
+  function step(ts){
+    const k = Math.min(1, (ts - start) / STAT_TWEEN_MS);
+    el.textContent = String(Math.round(from + (goal - from) * k));
+    if (k < 1){
+      state.raf = requestAnimationFrame(step);
+    } else {
+      statTweens.delete(el);
+    }
+  }
+  state.raf = requestAnimationFrame(step);
+}
+
 // ---------- EC2.ui ----------
 
 EC2.ui = {
@@ -948,18 +1483,18 @@ EC2.ui = {
   },
 
   setStats(o){
-    if (o.ready != null) $('st-ready').textContent = o.ready;
-    if (o.flying != null) $('st-flying').textContent = o.flying;
-    if (o.charge != null) $('st-charge').textContent = o.charge;
-    if (o.alert != null) $('st-alert').textContent = o.alert;
+    if (o.ready != null) tweenStat($('st-ready'), o.ready);
+    if (o.flying != null) tweenStat($('st-flying'), o.flying);
+    if (o.charge != null) tweenStat($('st-charge'), o.charge);
+    if (o.alert != null) tweenStat($('st-alert'), o.alert);
     if (o.airborne != null){
       const b = $('c-air').querySelector('b');
-      if (b) b.textContent = o.airborne;
+      if (b) tweenStat(b, o.airborne);
     }
     if (o.alerts != null){
       const chip = $('c-alerts');
       const b = chip.querySelector('b');
-      if (b) b.textContent = o.alerts;
+      if (b) tweenStat(b, o.alerts);
       chip.hidden = !o.alerts;
     }
   },
@@ -968,14 +1503,21 @@ EC2.ui = {
     if (filter) currentFilter = filter;
     const list = $('docklist');
     if (!list) return;
-    list.innerHTML = '';
+    injectDockListControls();
 
-    const rows = DATA_DOCKS.filter(d => {
-      if (currentFilter === 'ALL') return true;
-      if (currentFilter === 'FLYING') return FLYING_STATES.includes(stateFor(d));
-      if (currentFilter === 'ALERTS') return ALERT_STATES.includes(stateFor(d));
-      return d.emirate === currentFilter;
-    });
+    const rows = dockListRows();
+    // Signature of everything that shapes the DOM structure/order. While it's
+    // unchanged (the overwhelmingly common 2s-refresh case) only the live
+    // battery/state cells are patched in place — no DOM rebuild, listeners
+    // and scroll position survive. Any filter/search/sort/membership/order
+    // change rebuilds.
+    const sig = currentFilter + '|' + dockSearch + '|' + dockSort + '|' + rows.map(d => d.id).join(',');
+    if (sig === dockListSig && list.children.length){
+      patchDockRows(list);
+      return;
+    }
+    dockListSig = sig;
+    list.innerHTML = '';
 
     if (!rows.length){
       const note = document.createElement('div');
@@ -986,36 +1528,18 @@ EC2.ui = {
     }
 
     const selDockId = selectedDockId();
+    // Grouped by emirate (with small headers) only in ID sort; BATT/STATE
+    // render flat since their order cuts across emirates.
+    let lastEmirate = null;
     for (const d of rows){
-      const battery = batteryFor(d.id);
-      const live = stateFor(d);
-      const sdClass = 'sd' + (ALERT_STATES.includes(live) ? ' alert' : '');
-      const row = document.createElement('button');
-      row.className = 'dock-row' + (selDockId === d.id ? ' sel' : '');
-      row.dataset.dockId = d.id;
-      row.innerHTML =
-        '<span class="' + sdClass + '"></span>' +
-        '<span class="di"><b>' + d.id + '</b><i>' + d.name + '</i></span>' +
-        '<span class="dr"><span class="model">' + d.model + '</span><span class="batt">' + battery + '%</span></span>';
-      // A dock whose drone is airborne selects the drone (telemetry panel);
-      // otherwise (docked/charging/fault) selecting the dock itself as before.
-      row.addEventListener('click', () => {
-        // A wizard or manual-control session mid-flight owns the map/panel;
-        // switching the selection out from under it would strand or lose
-        // that in-progress state. Block the row and surface why briefly.
-        if (inCaptureMode()){
-          row.title = 'EXIT CURRENT MODE FIRST';
-          setTimeout(() => { row.title = ''; }, 2000);
-          return;
-        }
-        const drone = window.__engine && window.__engine.drones.get('D-' + d.id);
-        if (drone && drone.state !== 'docked'){
-          EC2.select({ type: 'drone', id: drone.id });
-        } else {
-          EC2.select({ type: 'dock', id: d.id });
-        }
-      });
-      list.appendChild(row);
+      if (dockSort === 'ID' && d.emirate !== lastEmirate){
+        lastEmirate = d.emirate;
+        const head = document.createElement('div');
+        head.className = 'lbl dock-group';
+        head.textContent = d.emirate + ' · ' + String(EMIRATE_NAMES[d.emirate] || d.emirate).toUpperCase();
+        list.appendChild(head);
+      }
+      list.appendChild(buildDockRow(d, selDockId));
     }
   },
 
@@ -1066,6 +1590,9 @@ EC2.ui = {
     // is the one place every mode switch passes through, so it's the one
     // place that can guarantee no interval pile-up.
     if (droneTeleTimer){ clearInterval(droneTeleTimer); droneTeleTimer = null; }
+    // Same for the OPS DIGEST's 1 Hz refresher — restarted below only when
+    // the empty/digest panel is actually the one showing.
+    if (digestTimer){ clearInterval(digestTimer); digestTimer = null; }
     // Same guarantee for the debrief panel's placeholder-video rAF loop —
     // it must stop the instant the panel is no longer showing it.
     stopDebriefAnim();
@@ -1084,6 +1611,11 @@ EC2.ui = {
 
     if (mode === 'drone' && data){
       droneTeleTimer = setInterval(() => updateDroneTelemetry(data.id), 500); // 2 Hz
+    } else if (!EC2.ui.panelRenderers[mode] || mode === 'empty'){
+      // OPS DIGEST live-refresh (1 Hz, flicker-free patching — see
+      // updateOpsDigest). Covers both an explicit 'empty' and any unknown
+      // mode that fell back to the empty renderer above.
+      digestTimer = setInterval(updateOpsDigest, 1000);
     }
   }
 };
@@ -1180,7 +1712,25 @@ function wireTopbar(){
     timeSeg.querySelectorAll('button').forEach(b => b.classList.remove('on'));
     btn.classList.add('on');
     EC2.state.timeScale = Number(btn.dataset.ts);
+    updateTimescalePill();
   });
+}
+
+// Floating "4× SIM TIME" pill over the map whenever the sim runs faster than
+// real time — created lazily on first use, hidden again at 1× and outside
+// the console scene (wireScene keeps it honest across scene switches).
+function updateTimescalePill(){
+  let pill = $('timescale-pill');
+  if (!pill){
+    pill = document.createElement('div');
+    pill.id = 'timescale-pill';
+    pill.hidden = true;
+    document.body.appendChild(pill);
+  }
+  const ts = Number(EC2.state.timeScale) || 1;
+  const show = ts > 1 && EC2.state.scene === 'console';
+  pill.textContent = ts + '× SIM TIME';
+  pill.hidden = !show;
 }
 
 function wireFilters(){
@@ -1253,6 +1803,7 @@ function wireScene(){
   setVisible(EC2.state.scene === 'console');
   EC2.onSceneChange(scene => {
     setVisible(scene === 'console');
+    updateTimescalePill(); // pill only ever shows over the console map
     // FOLLOW makes no sense once we've left the console map (globe scene).
     if (scene !== 'console'){
       if (EC2.control && EC2.control.mode === 'manual') EC2.control.exitManual();
