@@ -1,2 +1,5 @@
 .superpowers/
 node_modules/
+.claude/
+.mcp.json
+_frames/
