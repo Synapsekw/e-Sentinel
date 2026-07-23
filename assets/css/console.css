@@ -4,7 +4,16 @@
   --red:#ff5a5a;--redd:#BC0000;--amber:#fbbf24;--ok:#4ade80;
   --sans:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
   --mono:ui-monospace,'SF Mono','Cascadia Mono',Consolas,Menlo,monospace;
+  /* Opaque backing for chrome surfaces (topbar/ticker/side/rpanel). Dark map:
+     the .82 glass reads fine over the near-black basemap. Bright basemaps
+     (light/sat/terrain) would otherwise let the light UI text wash out, so the
+     backing deepens to near-solid — see the [data-maplayer] overrides below,
+     keyed off the attribute map.js sets on <html> when the layer changes. */
+  --chrome:rgba(10,11,14,.82);
 }
+:root[data-maplayer="light"],
+:root[data-maplayer="sat"],
+:root[data-maplayer="terrain"]{ --chrome:rgba(9,10,13,.94); }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidden}
 button{font-family:inherit;cursor:pointer}
@@ -55,7 +64,7 @@ button{font-family:inherit;cursor:pointer}
 #topbar{
   position:fixed;top:0;left:0;right:0;height:56px;z-index:900;
   display:flex;align-items:center;gap:14px;padding:0 16px;
-  background:rgba(10,11,14,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  background:var(--chrome);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
   border-bottom:1px solid var(--line);
 }
 #topbar[hidden]{display:none}
@@ -99,6 +108,17 @@ button{font-family:inherit;cursor:pointer}
 }
 #rpanel[hidden]{display:none}
 #rpanel-body{padding:14px}
+
+/* Bright-basemap legibility: #side / #rpanel are near-transparent glass by
+   design (var(--panel)) so the dark map shows through. Over the light, sat and
+   terrain basemaps that glass leaves the light UI text unreadable, so the
+   panels take an opaque dark backing there. Dark mode keeps the original look;
+   the inner translucent-white .panel/.chip/.st tiles read the same over it. */
+:root[data-maplayer="light"] #side,   :root[data-maplayer="light"] #rpanel,
+:root[data-maplayer="sat"] #side,     :root[data-maplayer="sat"] #rpanel,
+:root[data-maplayer="terrain"] #side, :root[data-maplayer="terrain"] #rpanel{
+  background:var(--chrome);
+}
 
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 .panel h4{font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--dim);margin-bottom:12px}
@@ -322,7 +342,7 @@ button{font-family:inherit;cursor:pointer}
 #ticker{
   position:fixed;left:318px;right:340px;bottom:0;height:34px;z-index:800;
   display:flex;align-items:center;gap:12px;padding:0 14px;
-  background:rgba(10,11,14,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  background:var(--chrome);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
   border-top:1px solid var(--line);overflow:hidden;
 }
 #ticker[hidden]{display:none}
