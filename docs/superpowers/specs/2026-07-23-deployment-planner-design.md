@@ -13,17 +13,18 @@ The Deployment Planner turns e& Sentinel from a pure simulation into a pre-sales
 
 ## 2. Decisions already made
 
-- **Hybrid stack** (agreed 2026-07-23): new modules are built in **React + TypeScript (Vite)**; the existing simulation stays vanilla JS at `console.html` untouched.
-- **`file://` must keep working.** The whole product remains double-clickable from a folder / USB stick.
-- Landing page (`index.html`) is live and links module 02 to `planner.html` (currently disabled/"IN DEVELOPMENT").
+- **Full React migration** (revised 2026-07-23, superseding the earlier hybrid decision): the entire product — including the existing simulation — is ported to **React + TypeScript (Vite)**. The sim port is Phase 1 and happens before any new module is built.
+- **Cloud-native first** (agreed 2026-07-23): the `file://` double-click requirement is **dropped**. The app is a normal served web app (GitHub Pages today). Containerization for private/on-prem deployment (static bundle behind nginx) is deliberately deferred as a separate small project at the very end.
+- **Code quality tooling**: strict TypeScript, ESLint (type-checked rules), Prettier, pre-commit hooks, CI gate — set up before porting begins. CI/CD stays intentionally simple (single developer).
+- Static landing page (`index.html`) is live during the transition; the React app takes over the site root when the Phase 1 port lands.
 
 ## 3. Tech stack
 
 | Concern | Choice | Rationale |
 |---|---|---|
-| Framework | React 18 + TypeScript, Vite | Agreed hybrid approach; typed domain model pays off for plans/geometry |
-| `file://` compatibility | `vite-plugin-singlefile` → emits one self-contained `planner.html` | ES module *files* are blocked on `file://`, but **inline** module scripts work; single-file build sidesteps it entirely |
-| Map | MapLibre GL (npm, bundled) | Same engine as the console → identical basemaps/look; vendor CSS+JS inlined |
+| Framework | React 18 + TypeScript, Vite | One app, one stack for all modules; typed domain model pays off for plans/geometry |
+| Routing | React Router (`/`, `/console`, `/planner`, `/telemetry`, `/compliance`) | Each module is a lazy-loaded route — standard SPA, code-split per module |
+| Map | MapLibre GL (npm) | Same engine the console already uses; shared map wrapper component across sim + planner |
 | Drawing | `terra-draw` (+ MapLibre adapter) | Maintained, MapLibre-native polygon/rect/circle/point drawing with vertex editing |
 | Geometry | `@turf/turf` (buffer, union, intersect, area, bbox) | Coverage %, overlap and auto-placement math |
 | KML/KMZ | `@tmcw/togeojson` (KML→GeoJSON) + `fflate` (unzip KMZ) | Small, battle-tested; KMZ is just a zip containing `doc.kml` |
@@ -34,19 +35,25 @@ The Deployment Planner turns e& Sentinel from a pure simulation into a pre-sales
 **Repo layout**
 
 ```
-planner/                  # Vite + React + TS project (new)
+app/                      # Vite + React + TS project — the whole product
   src/
-    domain/               # types + pure logic (plan, coverage, estimates) — unit tested
-    map/                  # MapLibre setup, layers, terra-draw integration
-    io/                   # KML/KMZ import, plan JSON import/export, KMZ export
-    ai/                   # Anthropic client, tool schema, chat state
-    ui/                   # panels, chat, summary components
-  vite.config.ts          # singlefile build, outputs ../planner.html
-planner.html              # committed build artifact (repo stays double-clickable)
+    shared/               # brand tokens, layout chrome, map wrapper, common UI
+    modules/
+      landing/            # module select screen
+      console/            # the simulation (ported from assets/js in Phase 1)
+      planner/
+        domain/           # types + pure logic (plan, coverage, estimates) — unit tested
+        map/              # planner map layers, terra-draw integration
+        io/               # KML/KMZ import, plan JSON import/export, KMZ export
+        ai/               # Anthropic client, tool schema, chat state
+        ui/               # panels, chat, summary components
+      telemetry/          # later
+      compliance/         # later
+assets/, console.html     # legacy vanilla sim — kept working during the port, deleted after
 ```
 
-- The built `planner.html` is **committed** (like the rest of the no-build repo) so `file://` users need no toolchain. CI additionally runs `npm run build` in `planner/` to verify it builds, and the Pages deploy stages `planner.html`.
-- Brand tokens (colors, mono-label idiom) are replicated in a small shared CSS/TS constants file matching `console.css` `:root` values.
+- Build artifacts are **not committed**; CI builds `app/` and the Pages deploy publishes `app/dist`.
+- Brand tokens (colors, mono-label idiom) live once in `app/src/shared/` (values taken from `console.css` `:root`).
 
 ## 4. Domain model (TypeScript)
 
@@ -120,34 +127,34 @@ interface CoverageResult {                    // derived, never stored
 - **Context given to Claude**: system prompt describing the domain (dock/drone catalog, radius rules, mission types, cycle-time constraints) + the current plan state and AOI geometry (simplified with turf to keep tokens sane; cache the static system prompt with `cache_control`).
 - Also supports **edit commands** on the existing plan ("push overlap to 30%", "swap Dock 4 to rural radius") via the same tool.
 
-## 7. `file://` constraints (explicit)
+## 7. Deployment model (cloud-native)
 
-| Constraint | Handling |
-|---|---|
-| ES module files blocked on `file://` | `vite-plugin-singlefile` inlines all JS/CSS into `planner.html` |
-| `fetch()` of local files fails | No runtime fetches of local assets; all data bundled. User files come in via File API (works) |
-| Map raster tiles need internet | Same behavior as console: tiles online; offline shows dark vector fallback styling (AOI/docks/coverage all render regardless — they're client-side layers) |
-| localStorage on `file://` | Works in Chrome/Edge (per-directory origin); treated as convenience cache only — plan JSON export is the durable store |
-| Anthropic API | Needs internet by nature; module degrades gracefully |
+- **Now:** static SPA build (`app/dist`) deployed to GitHub Pages on push to `master`. No servers, no secrets in the build. Videos and other large media are copied into the deploy alongside the bundle.
+- **Data:** all client-side for now (localStorage autosave + plan JSON export/import). When Telemetry/Compliance need real persistence, that's the point to introduce a backend — not before.
+- **Later (separate final project):** containerize for private/on-prem deployment — static bundle behind nginx, single small Dockerfile. Nothing in the architecture blocks this; it's packaging, not redesign.
+- **AI:** Anthropic API called directly from the browser with a user-supplied key (internal tool). If the app ever goes customer-facing, add a tiny key-proxy at that time.
 
 ## 8. Phased build plan
 
-1. **Phase 1 — Scaffold + AOI** (foundation): Vite/React/TS project, singlefile build → `planner.html`, brand chrome, MapLibre map, KML/KMZ upload, terra-draw AOI tools, plan JSON export/import. Landing card flips to ONLINE.
-2. **Phase 2 — Docks & coverage**: manual placement, range model port, coverage engine + gap layer, auto-placement, summary panel.
-3. **Phase 3 — Missions & exports**: mission assignments, utilization checks, KMZ export.
-4. **Phase 4 — AI co-planner**: chat panel, key settings, strict tool schema, proposal overlay + accept/discard, self-correction loop.
+0. **Phase 0 — Foundation (done first):** `app/` scaffold — Vite + React + TS (strict), ESLint (type-checked flat config), Prettier, EditorConfig, Vitest, pre-commit hook, CI job. React landing page + placeholder module routes.
+1. **Phase 1 — Simulation port:** port the vanilla sim (~7k lines: globe entry, engine, router, map, panels, manual control, mission videos, flight requests) to `app/src/modules/console/`. Engine/router stay framework-free TS (ported nearly 1:1, unit tests carried over); UI layers become React components around a shared MapLibre wrapper. Legacy `console.html` stays deployed until the port reaches feature parity, then the legacy files are deleted and the React app takes over the site root.
+2. **Phase 2 — Planner: AOI:** MapLibre planner route, KML/KMZ upload, terra-draw AOI tools, plan JSON export/import.
+3. **Phase 3 — Planner: docks & coverage:** manual placement, range model reuse (shared with the ported sim), coverage engine + gap layer, auto-placement, summary panel.
+4. **Phase 4 — Planner: missions & exports:** mission assignments, utilization checks, KMZ export.
+5. **Phase 5 — AI co-planner:** chat panel, key settings, strict tool schema, proposal overlay + accept/discard, self-correction loop.
+6. **Final (separate project):** containerization for private deployment.
 
-Each phase lands independently usable; phases 1–3 have zero external dependencies at runtime.
+Each phase lands independently usable.
 
 ## 9. Testing
 
-- Vitest unit tests for `domain/` (coverage math on known fixtures, KML/KMZ parsing fixtures, auto-placement determinism, utilization rules).
-- Existing `tests/*.test.js` (sim) unchanged; CI gains a `planner` job (install, test, build, verify `planner.html` output matches committed artifact or auto-commits it).
-- Browser smoke-check via the existing static-server preview flow.
+- Vitest unit tests for pure logic: sim engine/router (tests ported from `tests/*.test.js` during Phase 1), planner `domain/` (coverage math fixtures, KML/KMZ parsing, auto-placement determinism, utilization rules).
+- CI: one simple job — install, lint, typecheck, test, build. Legacy `node --test` sim tests keep running until the port lands, then retire with the legacy code.
+- Browser smoke-check via the dev-server preview flow.
 
 ## 10. Risks & open questions
 
-- **Committed build artifact** can drift from source — mitigated by the CI verify step. Alternative (CI-built only) would break the "copy the folder" workflow; rejected for now.
+- **Sim port regression risk** — the sim is the demo-critical asset. Mitigations: keep legacy `console.html` deployed until parity; port engine/router with their tests first; visual side-by-side checks per feature before deleting legacy code.
 - **Turf on huge AOIs** (emirate-scale MultiPolygons): simplify geometry above a vertex threshold before coverage math.
 - **AI key handling** is deliberately lightweight (internal tool). Flag before any customer-facing deployment.
 - **Open:** dock/drone catalog contents (which DJI dock+drone combos and their real radii/endurance) — currently seeded from the sim's 3/5 km model; needs product input to be proposal-grade.
