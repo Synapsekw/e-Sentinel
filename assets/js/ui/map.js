@@ -102,6 +102,7 @@ const OPERATIONAL_LAYER_IDS = [
   'docks-dots', 'docks-rings', 'coverage-fill', 'coverage-line', 'coverage-line-hi',
   'drones-layer', 'drones-labels', 'drone-leaders', 'drone-trails',
   'missions-active-line', 'missions-active-line-spot', 'fx',
+  'tracks-ping', 'tracks-icons', 'tracks-labels',
   'sites-dots', 'sites-labels', 'uae-places', 'uae-roads',
   'manual-wpts-dots', 'manual-wpts-labels',
   'wizard-preview-line', 'wizard-preview-dots', 'wizard-preview-labels'
@@ -152,6 +153,39 @@ function droneIconImage(){
   return ctx.getImageData(0, 0, size, size);
 }
 
+// Detection-track symbol: hollow rotated-square diamond (unknown/attention
+// object read) with a subtle center dot. Two variants, selected data-driven
+// by track status: amber for active detections (attention family — red stays
+// reserved for faults/alerts/brand), steel for tasked ones already being
+// handled. A dark under-stroke keeps the hollow outline legible over the
+// satellite basemap, same trick as the chevron's dark edge.
+function trackIconImage(color){
+  const size = 26;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const c = size / 2, r = c - 3;
+  ctx.clearRect(0, 0, size, size);
+  ctx.beginPath();
+  ctx.moveTo(c, c - r);   // top
+  ctx.lineTo(c + r, c);   // right
+  ctx.lineTo(c, c + r);   // bottom
+  ctx.lineTo(c - r, c);   // left
+  ctx.closePath();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#0a0b0e';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(c, c, 1.6, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  return ctx.getImageData(0, 0, size, size);
+}
+
 function buildDockFeatures(engine){
   const sel = EC2.state.selection;
   const selId = sel && sel.type === 'dock' ? sel.id : null;
@@ -194,6 +228,29 @@ function buildMissionLineFeatures(engine, spotId){
       type: 'Feature',
       properties: { id: mission.id, type: mission.type, spotlit: mission.id === spotId },
       geometry: { type: 'LineString', coordinates: mission.waypoints }
+    });
+  }
+  return { type: 'FeatureCollection', features };
+}
+
+// Detection tracks: persistent detection objects surfaced by the sim engine
+// (engine.tracks, built in a parallel lane — guarded everywhere since the
+// engine side may be momentarily absent). Only 'active' and 'tasked' tracks
+// render; resolved/expired vanish from the map. Tracks never move, so the
+// source is re-set only when the (id,status) signature changes — same
+// only-on-change discipline as the missions cache below.
+let lastTracksKey = '';
+
+function buildTrackFeatures(engine){
+  const features = [];
+  for (const track of engine.tracks.values()){
+    if (track.status !== 'active' && track.status !== 'tasked') continue;
+    const p = track.pos;
+    if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
+    features.push({
+      type: 'Feature',
+      properties: { id: track.id, label: track.label, status: track.status },
+      geometry: { type: 'Point', coordinates: p }
     });
   }
   return { type: 'FeatureCollection', features };
@@ -384,6 +441,17 @@ EC2.updateLiveLayers = function(engine){
     }
   }
 
+  const trackSrc = EC2.map.getSource('tracks');
+  if (trackSrc && engine.tracks){
+    let key = '';
+    for (const t of engine.tracks.values())
+      if (t.status === 'active' || t.status === 'tasked') key += t.id + ':' + t.status + ',';
+    if (key !== lastTracksKey){
+      lastTracksKey = key;
+      trackSrc.setData(buildTrackFeatures(engine));
+    }
+  }
+
   applyCoverageHighlight(engine);
 };
 
@@ -392,6 +460,7 @@ EC2.updateLiveLayers = function(engine){
 // (tiny fx source rebuilt only while pulses are live). Single rAF driver.
 function startPingDriver(){
   const PERIOD_MS = 1600;
+  const TRACK_PING_PERIOD_MS = 2200; // slower than the dock ping: attention, not alarm
   let fxActive = false;
   function tick(ts){
     requestAnimationFrame(tick);
@@ -402,6 +471,14 @@ function startPingDriver(){
     const cond = ['any', ['==', ['get', 'state'], 'drone-away'], ['get', 'selected']];
     EC2.map.setPaintProperty('docks-rings', 'circle-radius', ['case', cond, radius, 0]);
     EC2.map.setPaintProperty('docks-rings', 'circle-opacity', ['case', cond, opacity, 0]);
+
+    // Active-track attention pulse: paint-only, like the dock ping — the
+    // layer's own filter already restricts it to status 'active' tracks.
+    if (EC2.map.getLayer('tracks-ping')){
+      const tPhase = (ts % TRACK_PING_PERIOD_MS) / TRACK_PING_PERIOD_MS;
+      EC2.map.setPaintProperty('tracks-ping', 'circle-radius', 8 + tPhase * 14);   // 8 -> 22
+      EC2.map.setPaintProperty('tracks-ping', 'circle-stroke-opacity', 0.45 * (1 - tPhase));
+    }
 
     const fxSrc = EC2.map.getSource('fx');
     if (!fxSrc) return;
@@ -464,6 +541,7 @@ EC2.initMap = function(){
       'drone-trails':  { type: 'geojson', data: emptyFC() },
       'fx':            { type: 'geojson', data: emptyFC() },
       'missions-active': { type: 'geojson', data: emptyFC() },
+      'tracks':          { type: 'geojson', data: emptyFC() },
       'manual-wpts': { type: 'geojson', data: emptyFC() },
       'wizard-preview': { type: 'geojson', data: emptyFC() },
       'world':      { type: 'geojson', data: GEO_WORLD }
@@ -603,6 +681,46 @@ EC2.initMap = function(){
           'line-opacity': 0.9,
           'line-width': 2.5
         } },
+      // Detection tracks: drawn over the route lines (a tasked track's
+      // spotlit route reads beneath its diamond) but under docks/drones so
+      // the chevron always stays on top. Ping first so the pulse ring sits
+      // behind its own diamond. Panels lane binds click on 'tracks-icons'.
+      { id: 'tracks-ping', type: 'circle', source: 'tracks',
+        filter: ['==', ['get', 'status'], 'active'],
+        paint: {
+          'circle-radius': 8,
+          'circle-color': '#fbbf24',
+          'circle-opacity': 0,
+          'circle-stroke-color': '#fbbf24',
+          'circle-stroke-opacity': 0,
+          'circle-stroke-width': 1.5
+        } },
+      { id: 'tracks-icons', type: 'symbol', source: 'tracks',
+        layout: {
+          'icon-image': ['match', ['get', 'status'],
+            'tasked', 'track-diamond-dim',
+            'track-diamond'],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        } },
+      { id: 'tracks-labels', type: 'symbol', source: 'tracks',
+        layout: {
+          'text-field': ['concat', ['get', 'id'], ' · ', ['get', 'label']],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 9,
+          'text-letter-spacing': 0.05,
+          'text-offset': [1.4, 0],
+          'text-anchor': 'left',
+          'text-allow-overlap': false
+        },
+        paint: {
+          'text-color': ['match', ['get', 'status'],
+            'tasked', '#8b93a3',
+            '#fbbf24'],
+          'text-halo-color': '#0a0b0e',
+          'text-halo-width': 1.2
+        },
+        minzoom: 8 },
       { id: 'docks-rings', type: 'circle', source: 'docks',
         paint: {
           'circle-radius': 0,
@@ -760,6 +878,8 @@ EC2.initMap = function(){
   initBasemapLoadingChip();
   EC2.mapReady = new Promise(res => EC2.map.on('load', () => {
     if (!EC2.map.hasImage('drone-triangle')) EC2.map.addImage('drone-triangle', droneIconImage());
+    if (!EC2.map.hasImage('track-diamond')) EC2.map.addImage('track-diamond', trackIconImage('#fbbf24'));
+    if (!EC2.map.hasImage('track-diamond-dim')) EC2.map.addImage('track-diamond-dim', trackIconImage('#8b93a3'));
     EC2.mapLoaded = true;
     startPingDriver();
     // Orbital declutter (Task 10.5): subscribe once, then immediately apply
@@ -773,6 +893,20 @@ EC2.initMap = function(){
     applyBasemap();
     res();
   }));
+
+  // Detection tracks are clickable: pointer cursor on hover signals it. The
+  // click handler itself lives in the panels lane (map.on('click',
+  // 'tracks-icons', ...)); only the affordance is owned here. Suppressed
+  // outside normal mode — in manual/wizard capture modes map clicks queue
+  // waypoints, so a pointer cursor over a diamond would lie. mouseleave
+  // resets unconditionally (clearing the cursor is always safe).
+  EC2.map.on('mouseenter', 'tracks-icons', () => {
+    if (EC2.control && EC2.control.mode === 'normal')
+      EC2.map.getCanvas().style.cursor = 'pointer';
+  });
+  EC2.map.on('mouseleave', 'tracks-icons', () => {
+    EC2.map.getCanvas().style.cursor = '';
+  });
 
   let tileErrors = 0, offlineTimer = null;
   EC2.map.on('error', (e) => {

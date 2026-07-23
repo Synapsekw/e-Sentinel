@@ -29,6 +29,22 @@ const DETECTION_MSGS = {
   parks:        id => id + ' VEGETATION STRESS ZONE FLAGGED'
 };
 
+// ---------- detection tracks (contracts T-1/T-2) ----------
+// A detection on an eligible mission type can crystallize into a persistent
+// world object the operator may task a drone against (sense->decide->act).
+// Only types whose detection noun names a place-anchored finding spawn one;
+// delivery/construction/emergency detections are status chatter, not targets.
+const TRACK_LABELS = {
+  security: 'FLAGGED VEHICLE',
+  highway:  'FLAGGED VEHICLE',
+  infra:    'THERMAL ANOMALY',
+  parks:    'VEGETATION STRESS ZONE'
+};
+const TRACK_SPAWN_P = 0.4;       // per eligible detection
+const TRACK_TTL_S = 600;         // active tracks expire after 10 min untouched
+const TRACK_ACTIVE_MAX = 8;      // spawn gate: never more than 8 awaiting a decision
+const TRACKS_KEEP = 20;          // map bound; finished tracks evicted oldest-first
+
 // ---------- customer flight requests (contracts R-1..R-3) ----------
 // Inbound tasking cadence: first request ~15s into the sim, then a seeded
 // 45-90s interval, gated on the pending backlog so the operator is never
@@ -217,6 +233,7 @@ function create(opts){
     drones: new Map(),
     missions: new Map(),
     requests: new Map(),
+    tracks: new Map(),
     events: [],
     roads: roads,
     rand: mulberry32(42),
@@ -227,6 +244,8 @@ function create(opts){
     _missionSeq: 0,
     // R-1: seq starts at 100 so the first inbound task reads REQ-101.
     _requestSeq: 100,
+    // T-1: seq starts at 200 so the first detection track reads TRK-201.
+    _trackSeq: 200,
     _requestAcc: 0,
     _requestNextS: REQUEST_FIRST_S,
     _subscribers: []
@@ -321,6 +340,17 @@ function create(opts){
           'REQUEST_FULFILLED', { requestId: req.id });
       }
     }
+    // T-2 resolution linkage: an investigation mission born from taskTrack
+    // closes its track here. Guarded on the track still existing (pruning)
+    // and still 'tasked' so a re-entrant finalize can't double-resolve.
+    if (mission.trackId){
+      const track = engine.tracks.get(mission.trackId);
+      if (track && track.status === 'tasked'){
+        track.status = 'resolved';
+        emit('info', 'OPS', 'TRACK ' + track.id + ' RESOLVED · ' + track.label,
+          'TRACK_RESOLVED', { trackId: track.id });
+      }
+    }
     pruneFinishedMissions();
   }
 
@@ -382,10 +412,49 @@ function create(opts){
     }
   }
 
+  function activeTrackCount(){
+    let n = 0;
+    for (const t of engine.tracks.values()) if (t.status === 'active') n++;
+    return n;
+  }
+
+  // T-1 spawning: an eligible detection has a TRACK_SPAWN_P chance (gated on
+  // the active backlog) of pinning a persistent track at the drone's current
+  // position. Every detection now carries code 'DETECTION'; the spawning one
+  // additionally carries the trackId, followed by a warn-level TRACK_NEW so
+  // the ticker/map can escalate the new world object.
   function emitDetection(mission, drone){
     const fn = DETECTION_MSGS[mission.type];
     if (!fn) return;
-    emit('info', drone.id, fn(drone.id));
+    let track = null;
+    if (TRACK_LABELS[mission.type] && engine.rand() < TRACK_SPAWN_P &&
+        activeTrackCount() < TRACK_ACTIVE_MAX){
+      engine._trackSeq += 1;
+      track = {
+        id: 'TRK-' + engine._trackSeq,
+        label: TRACK_LABELS[mission.type],
+        missionType: mission.type,
+        pos: drone.pos.slice(),
+        sourceDrone: drone.id,
+        sourceMission: mission.id,
+        detectedAt: engine.now,
+        expiresAt: engine.now + TRACK_TTL_S,
+        status: 'active',
+        missionId: null,
+        dockId: null,
+        // Dock of the detecting drone, fixed at spawn — keeps taskability
+        // computable (and the track attributable) even after that drone
+        // lands or flies something else.
+        homeDockId: drone.dockId
+      };
+      engine.tracks.set(track.id, track);
+    }
+    emit('info', drone.id, fn(drone.id), 'DETECTION', track ? { trackId: track.id } : undefined);
+    if (track){
+      emit('warn', 'OPS',
+        'NEW TRACK ' + track.id + ' · ' + track.label + ' · ' + track.sourceDrone,
+        'TRACK_NEW', { trackId: track.id });
+    }
   }
 
   function updateDrone(drone, dt){
@@ -869,6 +938,173 @@ function create(opts){
     return true;
   };
 
+  // ---- detection tracks (contracts T-1/T-2) ----
+
+  // T-1 pruning: the map keeps at most TRACKS_KEEP tracks. Finished ones
+  // (resolved/expired) are evicted oldest-first by detection time; active
+  // and tasked tracks are never touched — the operator must always get to
+  // rule on what they can see, and a tasked track has a live mission on it.
+  function pruneTracks(){
+    let excess = engine.tracks.size - TRACKS_KEEP;
+    if (excess <= 0) return;
+    const finished = [];
+    for (const t of engine.tracks.values()){
+      if (t.status === 'resolved' || t.status === 'expired') finished.push(t);
+    }
+    finished.sort((a, b) => (a.detectedAt || 0) - (b.detectedAt || 0));
+    for (const t of finished){
+      if (excess <= 0) break;
+      engine.tracks.delete(t.id);
+      excess--;
+    }
+  }
+
+  // Cheap per-tick lifecycle pass (<=TRACKS_KEEP entries): untouched active
+  // tracks age out after TRACK_TTL_S, then the map bound is enforced.
+  function tickTracks(){
+    for (const t of engine.tracks.values()){
+      if (t.status === 'active' && engine.now >= t.expiresAt){
+        t.status = 'expired';
+        emit('info', 'OPS', 'TRACK ' + t.id + ' EXPIRED · NO ACTION TAKEN',
+          'TRACK_EXPIRED', { trackId: t.id });
+      }
+    }
+    pruneTracks();
+  }
+
+  // T-2: operator tasks a drone against an active track -> an investigation
+  // mission (same type as the origin mission) orbits the track point. Dock
+  // selection mirrors approveRequest's re-plan: nearest eligible dock whose
+  // coverage holds the point with 0.9x margin, skipping docks reserved by
+  // pending customer requests. NOT a flight request — engine.requests is
+  // never touched.
+  engine.taskTrack = function(id){
+    const track = engine.tracks.get(id);
+    if (!track || track.status !== 'active') throw new Error('Track not active');
+
+    const reserved = reservedDockIds();
+    let best = null, bestD = Infinity;
+    for (const d of engine.docks.values()){
+      if (!dockEligible(d) || reserved.has(d.id)) continue;
+      const dist = R.distM(d.coords, track.pos);
+      if (dist <= dockRangeM(d) * 0.9 && dist < bestD){ bestD = dist; best = d; }
+    }
+    // No ready dock covers the track — divert the nearest airborne drone
+    // instead. Tracks spawn along flight paths, so the drone that saw the
+    // target (or a neighbor) is usually still up and in range while its home
+    // dock sits empty; without this fallback, remote-emirate tracks are
+    // untaskable most of the time. Only ambient/auto missions are divertable:
+    // a drone serving a customer request or another track keeps its job.
+    if (!best){
+      let bestDrone = null, bestDroneD = Infinity;
+      for (const drone of engine.drones.values()){
+        if (drone.state !== 'transit' && drone.state !== 'on-task') continue;
+        if (drone.battery < RTB_BATTERY_PCT + 15) continue;
+        const m = drone.missionId ? engine.missions.get(drone.missionId) : null;
+        if (m && (m.requestId || m.trackId)) continue;
+        const home = engine.docks.get(drone.dockId);
+        if (!home) continue;
+        if (R.distM(home.coords, track.pos) > dockRangeM(home) * 0.9) continue;
+        const dist = R.distM(drone.pos, track.pos);
+        if (dist < bestDroneD){ bestDroneD = dist; bestDrone = drone; }
+      }
+      if (!bestDrone) throw new Error('NO READY DOCK IN RANGE');
+      return divertToTrack(bestDrone, track);
+    }
+
+    const rangeM = dockRangeM(best);
+    // Orbit radius capped by the slack between the track point and the
+    // coverage ring (0.97x target like planRequestRoute) so the circle fits
+    // without the clamp having to bite; clampToRange still hard-guarantees
+    // containment, so createMission (tolerance 1.05x) always accepts.
+    const marginM = Math.max(120, rangeM * 0.97 - bestD);
+    const r = Math.min(300 + engine.rand() * 150, marginM);
+    const waypoints = clampToRange(R.orbit(track.pos, r, 16), best.coords, rangeM);
+
+    const config = MISSIONS_CONFIG[track.missionType];
+    const mission = engine.createMission({
+      type: track.missionType,
+      dockId: best.id,
+      waypoints: waypoints,
+      params: { altM: config.defaults.altM, speedMs: config.defaults.speedMs }
+    });
+    // Stamped on the mission so finalizeMission can resolve the track.
+    mission.trackId = track.id;
+    track.status = 'tasked';
+    track.missionId = mission.id;
+    track.dockId = best.id;
+    emit('info', 'OPS',
+      'TRACK ' + track.id + ' TASKED · ' + best.drone.id + ' INVESTIGATING',
+      'TRACK_TASKED', { trackId: track.id, dockId: best.id });
+    return mission;
+  };
+
+  // Mid-air retask: wraps up the drone's current (ambient) mission where it
+  // stands, then hands it a fresh investigation mission flown from its
+  // present position — bypassing createMission's docked-drone requirement,
+  // which exists for ground launches. The orbit is clamped to the drone's
+  // OWN dock ring, so the coverage promise holds through the divert.
+  function divertToTrack(drone, track){
+    const dock = engine.docks.get(drone.dockId);
+    const oldMission = drone.missionId ? engine.missions.get(drone.missionId) : null;
+    if (oldMission) finalizeMission(oldMission, drone);
+
+    const rangeM = dockRangeM(dock);
+    const trackD = R.distM(dock.coords, track.pos);
+    const marginM = Math.max(120, rangeM * 0.97 - trackD);
+    const r = Math.min(300 + engine.rand() * 150, marginM);
+    const waypoints = clampToRange(R.orbit(track.pos, r, 16), dock.coords, rangeM);
+    const config = MISSIONS_CONFIG[track.missionType];
+    const params = { altM: config.defaults.altM, speedMs: config.defaults.speedMs };
+
+    const distanceKm = R.pathLengthKm(waypoints);
+    engine._missionSeq += 1;
+    const mission = {
+      id: 'M-' + dock.id + '-' + engine._missionSeq,
+      type: track.missionType,
+      dockId: dock.id,
+      waypoints: waypoints,
+      params: params,
+      progress: 0,
+      state: 'active',
+      analytics: null,
+      startedAt: engine.now,
+      distanceKm: distanceKm,
+      durationS: Math.round((distanceKm * 1000) / params.speedMs),
+      trackId: track.id,
+      _milestones: {}
+    };
+    engine.missions.set(mission.id, mission);
+
+    drone.missionId = mission.id;
+    drone.speedMs = params.speedMs;
+    drone.alt = params.altM;
+    drone.state = 'transit';
+    drone._holdUntil = 0;
+    drone._preHoldState = null;
+    drone._leg = [drone.pos.slice(), waypoints[0]];
+    drone._legDistKm = R.pathLengthKm(drone._leg) || 0.0001;
+    drone._legProgress = 0;
+
+    track.status = 'tasked';
+    track.missionId = mission.id;
+    track.dockId = dock.id;
+    emit('info', 'OPS',
+      'TRACK ' + track.id + ' TASKED · ' + drone.id + ' DIVERTED TO INVESTIGATE',
+      'TRACK_TASKED', { trackId: track.id, dockId: dock.id });
+    return mission;
+  }
+
+  // Operator waves an active track off without flying it.
+  engine.dismissTrack = function(id){
+    const track = engine.tracks.get(id);
+    if (!track || track.status !== 'active') return false;
+    track.status = 'resolved';
+    emit('info', 'OPS', 'TRACK ' + track.id + ' DISMISSED · OPERATOR',
+      'TRACK_DISMISSED', { trackId: track.id });
+    return true;
+  };
+
   // ---- manual operator commands (Task 10) ----
 
   // Sends an in-flight drone home immediately. Valid while it's actually
@@ -1102,6 +1338,7 @@ function create(opts){
     }
 
     tickFaults(dt);
+    tickTracks();
 
     for (const drone of engine.drones.values()) updateDrone(drone, dt);
 
