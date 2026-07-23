@@ -13,6 +13,10 @@ const CHARGE_PCT_PER_S = DRAIN_PCT_PER_S * 3;
 const RTB_BATTERY_PCT = 25;
 const SCHED_MIN_BATTERY = 60;
 const EVENTS_CAP = 200;
+// Contract C-1: user-supplied waypoints may exceed the dock's coverage
+// radius by at most 5% (slack for the lon/lat-vs-meters approximation and
+// clicks landing right on the drawn ring) before createMission rejects them.
+const RANGE_TOLERANCE = 1.05;
 const LON_MIN = 51.02, LON_MAX = 56.68, LAT_MIN = 22.42, LAT_MAX = 26.38;
 
 const DETECTION_MSGS = {
@@ -86,16 +90,17 @@ function dockRangeM(dock){
 // per-pattern sizing below keeps routes comfortably inside so the clamp
 // rarely has to bite and shapes stay natural. Target 0.97·range leaves slack
 // for the lon/lat-vs-meters approximation used throughout.
+function pullToRange(pt, center, rangeM){
+  const R = (typeof window !== 'undefined' ? window : globalThis).SimRouter;
+  const d = R.distM(center, pt);
+  if (d <= rangeM) return pt;
+  const t = (rangeM * 0.97) / d;
+  return [center[0] + (pt[0] - center[0]) * t, center[1] + (pt[1] - center[1]) * t];
+}
+
 function clampToRange(route, center, rangeM){
   if (!Array.isArray(route)) return route;
-  const R = (typeof window !== 'undefined' ? window : globalThis).SimRouter;
-  return route.map(pt => {
-    if (!isFiniteXY(pt)) return pt;
-    const d = R.distM(center, pt);
-    if (d <= rangeM) return pt;
-    const t = (rangeM * 0.97) / d;
-    return [center[0] + (pt[0] - center[0]) * t, center[1] + (pt[1] - center[1]) * t];
-  });
+  return route.map(pt => (isFiniteXY(pt) ? pullToRange(pt, center, rangeM) : pt));
 }
 
 // Builds a road-following corridor centered on the road's closest approach to
@@ -248,9 +253,14 @@ function create(opts){
   // release from any other event that happens to mention "RELEASED" in its
   // copy) — decoupling that matching from ticker wording so the message
   // string can be edited freely without silently breaking the UI seam.
-  function emit(level, source, message, code){
+  // extra (optional, contract C-2) is a bag of structured fields merged onto
+  // the event object (e.g. { dockId } on MISSION_LAUNCHED) so subscribers can
+  // act on identifiers without parsing the ticker copy. Existing 3/4-arg emit
+  // calls are unaffected.
+  function emit(level, source, message, code, extra){
     const ev = { time: engine.now, level: level, source: source, message: message };
     if (code) ev.code = code;
+    if (extra) Object.assign(ev, extra);
     engine.events.push(ev);
     if (engine.events.length > EVENTS_CAP) engine.events.shift();
     for (const cb of engine._subscribers){
@@ -304,7 +314,9 @@ function create(opts){
     drone._legDistKm = R.pathLengthKm(leg) || 0.0001;
     drone._legProgress = 0;
     if (forced){
-      emit('warn', drone.id, drone.id + ' BATTERY ' + Math.round(drone.battery) + '% · FORCED RTB');
+      // Battery-floor RTB is a safety intervention, not an advisory — alert
+      // level so the UI can escalate it (main.js trusts ev.level directly).
+      emit('alert', drone.id, drone.id + ' BATTERY ' + Math.round(drone.battery) + '% · FORCED RTB');
     }
   }
 
@@ -375,7 +387,7 @@ function create(opts){
         drone._manualQueue = [];
         drone._preManualState = null;
         drone._manualSpeed = 0;
-        emit('warn', drone.id, 'BATTERY FLOOR · MANUAL RELEASED · RTB', 'MANUAL_RELEASED');
+        emit('alert', drone.id, 'BATTERY FLOOR · MANUAL RELEASED · RTB', 'MANUAL_RELEASED');
         beginRtb(drone, dock, mission, false);
       } else {
         beginRtb(drone, dock, mission, true);
@@ -504,6 +516,15 @@ function create(opts){
     if (!Array.isArray(waypoints) || waypoints.length < 2 || !waypoints.every(isFiniteXY)){
       throw new Error('Invalid waypoints for mission');
     }
+    // Contract C-1: every waypoint must sit inside the dock's coverage ring
+    // (plus tolerance). Auto-generated routes are pre-clamped to 0.97×range
+    // by clampToRange, so only user-supplied routes can ever trip this.
+    const rangeM = dockRangeM(dock);
+    for (const wp of waypoints){
+      if (R.distM(dock.coords, wp) > rangeM * RANGE_TOLERANCE){
+        throw new Error('WAYPOINT OUTSIDE COVERAGE');
+      }
+    }
     const params = Object.assign({}, config.defaults, spec.params || {});
     if (!Number.isFinite(params.speedMs) || params.speedMs <= 0) params.speedMs = config.defaults.speedMs;
     if (!Number.isFinite(params.altM) || params.altM <= 0) params.altM = config.defaults.altM;
@@ -539,7 +560,9 @@ function create(opts){
     drone._legProgress = 0;
     dock.state = 'launching';
 
-    emit('info', drone.id, drone.id + ' LAUNCHED · ' + config.label + ' FROM ' + String(dock.name).toUpperCase());
+    emit('info', drone.id,
+      drone.id + ' LAUNCHED · ' + config.label + ' FROM ' + String(dock.name).toUpperCase(),
+      'MISSION_LAUNCHED', { dockId: dock.id });
     return mission;
   };
 
@@ -677,11 +700,22 @@ function create(opts){
     return true;
   };
 
+  // Manual click-to-fly targets get the same containment guarantee as
+  // auto-generated routes: a click outside the home dock's coverage ring is
+  // pulled back onto it (0.97×range along the dock→click line) rather than
+  // accepted raw — the command still succeeds, just clamped.
+  function manualTarget(drone, lonlat){
+    const pt = clampPos(lonlat);
+    const dock = engine.docks.get(drone.dockId);
+    if (!dock) return pt;
+    return pullToRange(pt, dock.coords, dockRangeM(dock));
+  }
+
   // Replaces the queue with a single destination (click-to-go).
   engine.manualGoto = function(id, lonlat){
     const drone = engine.drones.get(id);
     if (!drone || drone.state !== 'manual' || !isFiniteXY(lonlat)) return false;
-    drone._manualQueue = [clampPos(lonlat)];
+    drone._manualQueue = [manualTarget(drone, lonlat)];
     return true;
   };
 
@@ -690,7 +724,7 @@ function create(opts){
     const drone = engine.drones.get(id);
     if (!drone || drone.state !== 'manual' || !isFiniteXY(lonlat)) return false;
     if (!drone._manualQueue) drone._manualQueue = [];
-    drone._manualQueue.push(clampPos(lonlat));
+    drone._manualQueue.push(manualTarget(drone, lonlat));
     return true;
   };
 

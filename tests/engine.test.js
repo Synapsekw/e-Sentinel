@@ -23,9 +23,10 @@ test('scheduler reaches airborne target', () => {
 });
 test('mission lifecycle completes and yields analytics', () => {
   const e = mk();
+  // In-range route (createMission now rejects waypoints outside the dock's
+  // coverage ring, contract C-1) — DXB-001 is urban, 3 km radius.
   const m = e.createMission({ type:'highway', dockId:'DXB-001',
-    waypoints: globalThis.SimRouter.corridor(
-      globalThis.GEO_UAE.roads.features[1].geometry.coordinates, 0.1, 8),
+    waypoints: globalThis.SimRouter.perimeter([55.263,25.185], 2500, 8),
     params:{ altM:100, speedMs:15 } });
   let done=false; e.onEvent(ev=>{ if(ev.message.includes(m.id)&&ev.message.includes('COMPLETE')) done=true; });
   for (let i=0;i<7200 && m.state!=='complete'; i++) e.tick(1);
@@ -35,7 +36,7 @@ test('mission lifecycle completes and yields analytics', () => {
 test('battery floor forces RTB', () => {
   const e = mk();
   const m = e.createMission({ type:'security', dockId:'AUH-001',
-    waypoints: globalThis.SimRouter.perimeter([54.35,24.47], 3000, 8),
+    waypoints: globalThis.SimRouter.perimeter([54.349,24.477], 2800, 8),
     params:{ altM:80, speedMs:10 } });
   const d = [...e.drones.values()].find(x=>x.missionId===m.id);
   d.battery = 26;
@@ -55,7 +56,7 @@ test('drones never leave UAE bbox', () => {
 test('commandRTB from on-task ends in docked eventually', () => {
   const e = mk();
   const m = e.createMission({ type:'security', dockId:'AUH-001',
-    waypoints: globalThis.SimRouter.perimeter([54.35,24.47], 3000, 8),
+    waypoints: globalThis.SimRouter.perimeter([54.349,24.477], 2800, 8),
     params:{ altM:80, speedMs:10 } });
   const d = [...e.drones.values()].find(x=>x.missionId===m.id);
   for (let i=0;i<600 && d.state !== 'on-task'; i++) e.tick(1);
@@ -98,7 +99,7 @@ test('commandHold freezes progress while battery drains, resume continues', () =
 test('setManual engages from on-task, flies to a click-to-go target, then hovers on arrival', () => {
   const e = mk();
   const m = e.createMission({ type:'security', dockId:'AUH-001',
-    waypoints: globalThis.SimRouter.perimeter([54.35,24.47], 3000, 8),
+    waypoints: globalThis.SimRouter.perimeter([54.349,24.477], 2800, 8),
     params:{ altM:80, speedMs:10 } });
   const d = [...e.drones.values()].find(x=>x.missionId===m.id);
   for (let i=0;i<600 && d.state !== 'on-task'; i++) e.tick(1);
@@ -108,7 +109,10 @@ test('setManual engages from on-task, flies to a click-to-go target, then hovers
   assert.strictEqual(d.state, 'manual');
   assert.strictEqual(d.speedMs, 0, 'should start hovering with an empty queue');
 
-  const target = [d.pos[0] + 0.01, d.pos[1] + 0.01];
+  // Target halfway back toward the home dock — guaranteed inside the
+  // coverage ring, so the new manualGoto range clamp leaves it untouched.
+  const dock = e.docks.get(d.dockId);
+  const target = [(d.pos[0] + dock.coords[0]) / 2, (d.pos[1] + dock.coords[1]) / 2];
   assert.ok(e.manualGoto(d.id, target));
 
   let sawMovement = false;

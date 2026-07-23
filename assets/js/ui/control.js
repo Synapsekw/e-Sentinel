@@ -141,6 +141,13 @@ control.enterManual = function(droneId){
   control.activeId = droneId;
   showBanner(droneId);
   setCursor('crosshair');
+  // Contract C-4: spotlight the home dock's coverage ring while the operator
+  // flies — manual targets are clamped to it by the engine. Guarded: Lane B
+  // lands setRangeHighlight concurrently.
+  if (EC2.setRangeHighlight){
+    const md = window.__engine.drones.get(droneId);
+    EC2.setRangeHighlight(md ? md.dockId : null);
+  }
   updateNewMissionButtonState();
 
   if (EC2.followDroneId !== droneId){
@@ -169,6 +176,7 @@ function cleanupUI(){
   setCursor('');
   stopWpPoll();
   clearWaypointLayer();
+  if (EC2.setRangeHighlight) EC2.setRangeHighlight(null); // guarded: Lane B
   if (control._followWasAuto) EC2.followDroneId = null;
   control._followWasAuto = false;
   updateNewMissionButtonState();
@@ -387,6 +395,7 @@ function renderWizardStep2(w){
       '<div class="lbl">NEW MISSION &middot; STEP 2 OF 3 &middot; ROUTE</div>' +
       '<div class="wz-type-hdr">' + cfg.label + ' &middot; ' + w.dockId + '</div>' +
       '<p class="wz-hint">' + hint + '</p>' +
+      (w.rangeWarning ? '<div class="wz-range-warn">' + w.rangeWarning + '</div>' : '') +
       spacingField +
       '<div class="stats wz-stats">' +
         '<div class="st"><div class="n" id="wz-count">' + countVal + '</div><div class="c">' + countLabel + '</div></div>' +
@@ -483,6 +492,7 @@ function cleanupWizardUI(){
   control.wizard = null;
   setCursor('');
   clearWizardPreview();
+  if (EC2.setRangeHighlight) EC2.setRangeHighlight(null); // guarded: Lane B
   updateNewMissionButtonState();
 }
 
@@ -502,7 +512,8 @@ control.enterWizard = function(prefillDockId){
     spacingM: 150,
     altM: null,
     speedMs: null,
-    error: null
+    error: null,
+    rangeWarning: null
   };
   updateNewMissionButtonState();
   renderWizard();
@@ -517,15 +528,45 @@ control.exitWizard = function(){
   EC2.ui.setRightPanel('empty');
 };
 
+// Step-2 clicks (waypoints AND lawnmower corners) must land inside the
+// launch dock's coverage ring (same 1.05 tolerance as the engine's
+// createMission validation, contract C-1). An out-of-range click is refused
+// with an inline amber warning instead of queueing a doomed launch.
+function wizardClickOutsideRange(w, lonlat){
+  if (!window.__engine || !window.DOCK_RANGE || typeof SimRouter === 'undefined') return false;
+  const dock = window.__engine.docks.get(w.dockId);
+  if (!dock) return false;
+  const rangeKm = window.DOCK_RANGE.dockRangeKm(dock);
+  if (SimRouter.distM(dock.coords, lonlat) <= rangeKm * 1000 * 1.05) return false;
+  w.rangeWarning = 'OUTSIDE COVERAGE · ' + rangeKm.toFixed(1) + ' KM MAX';
+  return true;
+}
+
 function handleWizardMapClick(lonlat){
   const w = control.wizard;
   if (!w || w.step !== 2) return;
+  if (wizardClickOutsideRange(w, lonlat)){
+    renderWizard(); // show the warning; the point is NOT added
+    return;
+  }
   if (isLawnmowerType(w.type)){
+    // The serpentine covers the axis-aligned box, whose two DERIVED corners
+    // can sit up to √2× farther out than the clicked ones — range-check them
+    // too, or a pair of individually-valid clicks still fails at launch.
+    if (w.points.length === 1){
+      const [c1] = w.points;
+      const derived = [[c1[0], lonlat[1]], [lonlat[0], c1[1]]];
+      if (derived.some(p => wizardClickOutsideRange(w, p))){
+        renderWizard();
+        return;
+      }
+    }
     if (w.points.length >= 2) w.points = [];
     w.points.push(lonlat);
   } else {
     w.points.push(lonlat);
   }
+  w.rangeWarning = null;
   refreshWizardPreview();
   renderWizard();
 }
@@ -563,7 +604,14 @@ control.wireWizardPanel = function(w){
       w.step = 2;
       w.points = [];
       w.error = null;
+      w.rangeWarning = null;
       setCursor('crosshair');
+      // Contract C-4: spotlight the launch dock's coverage ring while the
+      // route is captured. Guarded — Lane B lands setRangeHighlight
+      // concurrently; the wizard must not crash if it isn't there yet.
+      // Re-entered here on every step1->step2 NEXT, so a dock changed via
+      // BACK gets its own ring highlighted.
+      if (EC2.setRangeHighlight) EC2.setRangeHighlight(w.dockId);
       renderWizard();
     });
   } else if (w.step === 2){
@@ -571,13 +619,16 @@ control.wireWizardPanel = function(w){
     if (backBtn) backBtn.addEventListener('click', () => {
       w.step = 1;
       w.points = [];
+      w.rangeWarning = null;
       setCursor('');
       clearWizardPreview();
+      if (EC2.setRangeHighlight) EC2.setRangeHighlight(null);
       renderWizard();
     });
     const undoBtn = $('wz-undo');
     if (undoBtn) undoBtn.addEventListener('click', () => {
       w.points.pop();
+      w.rangeWarning = null;
       refreshWizardPreview();
       renderWizard();
     });
@@ -596,6 +647,7 @@ control.wireWizardPanel = function(w){
       if (!wizardStep2Valid(w)) return;
       const cfg = MISSIONS_CONFIG[w.type];
       w.step = 3;
+      w.rangeWarning = null;
       if (w.altM == null) w.altM = cfg.defaults.altM;
       if (w.speedMs == null) w.speedMs = cfg.defaults.speedMs;
       setCursor('');
@@ -607,6 +659,8 @@ control.wireWizardPanel = function(w){
       w.step = 2;
       w.error = null;
       setCursor('crosshair');
+      // keep the coverage ring highlighted while editing the route again
+      if (EC2.setRangeHighlight) EC2.setRangeHighlight(w.dockId);
       renderWizard();
     });
     const altSlider = $('wz-alt');
