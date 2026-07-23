@@ -29,6 +29,28 @@ const DETECTION_MSGS = {
   parks:        id => id + ' VEGETATION STRESS ZONE FLAGGED'
 };
 
+// ---------- customer flight requests (contracts R-1..R-3) ----------
+// Inbound tasking cadence: first request ~15s into the sim, then a seeded
+// 45-90s interval, gated on the pending backlog so the operator is never
+// buried (<=4 awaiting review) and the map stays bounded (<=20 kept).
+const REQUEST_FIRST_S = 15;
+const REQUEST_MIN_INTERVAL_S = 45;
+const REQUEST_MAX_INTERVAL_S = 90;
+const REQUEST_PENDING_MAX = 4;
+const REQUESTS_KEEP = 20;
+
+// Per-mission-type customer archetypes: [shortCode, fullName]. Short codes
+// surface in the ticker/request rows; full names in the review panel.
+const REQUEST_CUSTOMERS = {
+  security:     [['ADP', 'ABU DHABI POLICE'], ['DXP', 'DUBAI POLICE']],
+  infra:        [['DEWA', 'DUBAI ELECTRICITY & WATER'], ['ADNOC', 'ADNOC GROUP']],
+  emergency:    [['NCEMA', 'NATIONAL EMERGENCY AUTHORITY'], ['DCD', 'DUBAI CIVIL DEFENCE']],
+  delivery:     [['EMPOST', 'EMIRATES POST'], ['SEHA', 'ABU DHABI HEALTH SERVICES']],
+  construction: [['EMAAR', 'EMAAR PROPERTIES'], ['ALDAR', 'ALDAR PROPERTIES']],
+  highway:      [['RTA', 'ROADS & TRANSPORT AUTHORITY'], ['ITC', 'INTEGRATED TRANSPORT CENTRE']],
+  parks:        [['DMT', 'DEPT OF MUNICIPALITIES & TRANSPORT'], ['DM', 'DUBAI MUNICIPALITY']]
+};
+
 // ---------- prng ----------
 function mulberry32(seed){
   let a = seed >>> 0;
@@ -194,6 +216,7 @@ function create(opts){
     docks: new Map(),
     drones: new Map(),
     missions: new Map(),
+    requests: new Map(),
     events: [],
     roads: roads,
     rand: mulberry32(42),
@@ -202,6 +225,10 @@ function create(opts){
     _ambientAcc: 0,
     _ambientIdx: 0,
     _missionSeq: 0,
+    // R-1: seq starts at 100 so the first inbound task reads REQ-101.
+    _requestSeq: 100,
+    _requestAcc: 0,
+    _requestNextS: REQUEST_FIRST_S,
     _subscribers: []
   };
 
@@ -282,6 +309,18 @@ function create(opts){
       mission.analytics = {};
     }
     emit('info', drone.id, 'MISSION ' + mission.id + ' COMPLETE');
+    // R-3 completion linkage: a mission born from a customer request closes
+    // the loop here. Guarded on the request still existing (pruning may have
+    // dropped it) and still 'approved' so a re-entrant finalize can't
+    // double-fulfill.
+    if (mission.requestId){
+      const req = engine.requests.get(mission.requestId);
+      if (req && req.status === 'approved'){
+        req.status = 'completed';
+        emit('info', 'OPS', 'REQUEST ' + req.id + ' FULFILLED · ' + req.customer,
+          'REQUEST_FULFILLED', { requestId: req.id });
+      }
+    }
     pruneFinishedMissions();
   }
 
@@ -577,16 +616,19 @@ function create(opts){
     const config = MISSIONS_CONFIG && MISSIONS_CONFIG[type];
     if (!config) throw new Error('Unknown mission type: ' + type);
 
-    // Candidate docks: ready, charged, with a docked drone.
+    // Candidate docks: ready, charged, with a docked drone, and not reserved
+    // for a pending customer request (an explicit opts.dockId overrides the
+    // reservation — the operator asked for that dock by name).
     let candidates;
     if (opts.dockId){
       const forced = engine.docks.get(opts.dockId);
       candidates = forced ? [forced] : [];
     } else {
+      const reserved = reservedDockIds();
       candidates = [];
       for (const dock of engine.docks.values()){
         if (dock.state === 'ready' && dock.battery >= SCHED_MIN_BATTERY &&
-            dock.drone && dock.drone.state === 'docked'){
+            dock.drone && dock.drone.state === 'docked' && !reserved.has(dock.id)){
           candidates.push(dock);
         }
       }
@@ -619,6 +661,212 @@ function create(opts){
       }
     }
     throw lastErr || new Error('Could not generate a route for ' + type);
+  };
+
+  // ---- customer flight requests (contracts R-1..R-3) ----
+
+  // Plans a route for a request, centered on the REQUEST point (not the dock
+  // like generateRoute) so the flight visibly serves the customer's location.
+  // Pattern sizing leans on the margin left between the request point and the
+  // dock's coverage ring; clampToRange then hard-guarantees every waypoint
+  // sits at <=0.97x range, so createMission (tolerance 1.05x) always accepts.
+  function planRequestRoute(request, dock){
+    const config = MISSIONS_CONFIG && MISSIONS_CONFIG[request.type];
+    if (!config) return null;
+    const rangeM = dockRangeM(dock);
+    // Meters of slack between the request point and the coverage ring —
+    // pattern radii are capped by it so shapes rarely need the clamp to bite.
+    const marginM = Math.max(150, rangeM * 0.97 - R.distM(dock.coords, request.coords));
+    let route = null;
+    switch (config.pattern){
+      case 'perimeter': {
+        const r = Math.min(600 + engine.rand() * 600, marginM);
+        route = R.perimeter(request.coords, r, 10);
+        break;
+      }
+      case 'orbit': {
+        const r = Math.min(450, Math.max(150, marginM));
+        route = R.orbit(request.coords, r, 16);
+        break;
+      }
+      case 'lawnmower': {
+        // ~0.8-1.2km survey box over the request area; half-diagonal capped
+        // by the remaining margin so the far corners stay inside coverage.
+        const maxSideKm = Math.max(0.4, (marginM * 2) / 1000 / 1.5);
+        const sideKm = Math.min(0.8 + engine.rand() * 0.4, maxSideKm);
+        route = R.lawnmower(request.coords, sideKm, sideKm, 150, engine.rand() * 360);
+        break;
+      }
+      case 'corridor': {
+        const road = nearestRoad(roads, request.coords);
+        if (road){
+          const lengthKm = Math.min(2 + engine.rand() * 2, (rangeM / 1000) * 1.5);
+          route = corridorNearDock(R, road, request.coords, lengthKm);
+        }
+        // No road nearby (or degenerate slice): inspect the area's perimeter
+        // instead so the request is still serviceable.
+        if (!route || route.length < 2){
+          route = R.perimeter(request.coords, Math.min(600 + engine.rand() * 600, marginM), 10);
+        }
+        break;
+      }
+      case 'atob': {
+        route = R.atob(dock.coords.slice(), request.coords.slice());
+        break;
+      }
+      default:
+        return null;
+    }
+    route = clampToRange(route, dock.coords, rangeM);
+    if (!Array.isArray(route) || route.length < 2 || !route.every(isFiniteXY)) return null;
+    if (!(R.pathLengthKm(route) > 0)) return null;
+    return route;
+  }
+
+  // R-2 pruning: the map keeps at most REQUESTS_KEEP requests. Resolved
+  // (non-pending) requests are evicted oldest-first; pending ones are never
+  // touched — an operator must always get to rule on what they can see.
+  // Dock ids currently spoken for by pending customer requests. The ambient
+  // scheduler and dock-agnostic preset launches treat these as off-limits so
+  // the drone a request was planned around is still docked when the operator
+  // hits APPROVE (remote areas often have exactly one dock in range).
+  function reservedDockIds(){
+    const ids = new Set();
+    for (const r of engine.requests.values()){
+      if (r.status === 'pending' && r.dockId) ids.add(r.dockId);
+    }
+    return ids;
+  }
+
+  function pruneRequests(){
+    let excess = engine.requests.size - REQUESTS_KEEP;
+    if (excess <= 0) return;
+    const resolved = [];
+    for (const r of engine.requests.values()){
+      if (r.status !== 'pending') resolved.push(r);
+    }
+    resolved.sort((a, b) => (a.requestedAt || 0) - (b.requestedAt || 0));
+    for (const r of resolved){
+      if (excess <= 0) break;
+      engine.requests.delete(r.id);
+      excess--;
+    }
+  }
+
+  // One spawn attempt per accumulator firing. Silent skips (no eligible dock,
+  // failed planning) are fine — the next firing retries with fresh picks.
+  function runRequestPass(){
+    let pending = 0;
+    for (const r of engine.requests.values()) if (r.status === 'pending') pending++;
+    if (pending >= REQUEST_PENDING_MAX) return;
+
+    const candidates = [];
+    for (const dock of engine.docks.values()){
+      if (dock.drone && dock.drone.state === 'docked') candidates.push(dock);
+    }
+    if (!candidates.length) return;
+
+    const dock = pick(engine.rand, candidates);
+    const type = pick(engine.rand, Object.keys(MISSIONS_CONFIG));
+    const config = MISSIONS_CONFIG[type];
+    const rangeM = dockRangeM(dock);
+    // 0.15-0.55x range from the dock: far enough out to be a real tasking,
+    // close enough that every route pattern fits around the point.
+    const coords = randomOffsetPoint(engine.rand, dock.coords, rangeM * 0.55, rangeM * 0.15);
+    const customer = pick(engine.rand, REQUEST_CUSTOMERS[type] || [['OPS', 'OPERATIONS']]);
+    const priority = type === 'emergency' ? 'URGENT'
+      : (engine.rand() < 0.3 ? 'PRIORITY' : 'ROUTINE');
+    const altM = Math.round(Math.min(120, Math.max(40,
+      config.defaults.altM + (engine.rand() * 2 - 1) * 20)));
+    const speedMs = Math.round(Math.min(21, Math.max(5,
+      config.defaults.speedMs + (engine.rand() * 2 - 1) * 2)) * 10) / 10;
+
+    const request = {
+      id: null,
+      customer: customer[0],
+      customerFull: customer[1],
+      type: type,
+      place: String(dock.name).toUpperCase(),
+      coords: coords,
+      priority: priority,
+      params: { altM: altM, speedMs: speedMs },
+      requestedAt: engine.now,
+      status: 'pending',
+      dockId: dock.id,
+      waypoints: null,
+      missionId: null
+    };
+    const waypoints = planRequestRoute(request, dock);
+    if (!waypoints) return; // silent skip; next pass retries
+    request.waypoints = waypoints;
+
+    engine._requestSeq += 1;
+    request.id = 'REQ-' + engine._requestSeq;
+    engine.requests.set(request.id, request);
+    emit('warn', 'OPS',
+      'FLIGHT REQUEST · ' + request.customer + ' · ' + config.label + ' · ' + request.place,
+      'FLIGHT_REQUEST', { requestId: request.id });
+    pruneRequests();
+  }
+
+  // Ready-to-launch: same eligibility bar the scheduler and launchPreset use.
+  function dockEligible(dock){
+    return !!(dock && dock.state === 'ready' && dock.battery >= SCHED_MIN_BATTERY &&
+      dock.drone && dock.drone.state === 'docked');
+  }
+
+  // R-3: operator approves a pending request -> mission is created and the
+  // drone launches. If the pre-assigned dock is no longer ready, the request
+  // is re-planned from the nearest eligible dock that can cover the point
+  // (0.9x range margin; planRequestRoute's clamp keeps the pattern inside
+  // coverage regardless); with none available the approval fails loudly so
+  // the UI can surface it.
+  engine.approveRequest = function(id){
+    const request = engine.requests.get(id);
+    if (!request || request.status !== 'pending') throw new Error('Request not pending');
+
+    let dock = engine.docks.get(request.dockId);
+    let waypoints = request.waypoints;
+    if (!dockEligible(dock)){
+      let best = null, bestD = Infinity;
+      for (const d of engine.docks.values()){
+        if (!dockEligible(d)) continue;
+        const dist = R.distM(d.coords, request.coords);
+        if (dist <= dockRangeM(d) * 0.9 && dist < bestD){ bestD = dist; best = d; }
+      }
+      const replanned = best ? planRequestRoute(request, best) : null;
+      if (!replanned) throw new Error('NO READY DOCK IN RANGE');
+      dock = best;
+      waypoints = replanned;
+    }
+
+    const mission = engine.createMission({
+      type: request.type,
+      dockId: dock.id,
+      waypoints: waypoints,
+      params: { altM: request.params.altM, speedMs: request.params.speedMs }
+    });
+    // Stamped on the mission (not just the request) so debrief/UI copy like
+    // 'REQUESTED BY · DMT' survives request pruning without a lookup.
+    mission.requestId = request.id;
+    mission.requestedBy = request.customer;
+    request.dockId = dock.id;
+    request.waypoints = waypoints;
+    request.missionId = mission.id;
+    request.status = 'approved';
+    emit('info', 'OPS',
+      'REQUEST ' + request.id + ' APPROVED · LAUNCHING ' + dock.drone.id,
+      'REQUEST_APPROVED', { requestId: request.id, dockId: dock.id });
+    return mission;
+  };
+
+  engine.declineRequest = function(id){
+    const request = engine.requests.get(id);
+    if (!request || request.status !== 'pending') return false;
+    request.status = 'declined';
+    emit('info', 'OPS', 'REQUEST ' + request.id + ' DECLINED · ' + request.customer,
+      'REQUEST_DECLINED', { requestId: request.id });
+    return true;
   };
 
   // ---- manual operator commands (Task 10) ----
@@ -773,9 +1021,14 @@ function create(opts){
     for (const d of engine.drones.values()) if (d.state !== 'docked') airborne++;
     if (airborne >= engine.airborneTarget) return;
 
+    // Docks assigned to pending customer requests are reserved: the ambient
+    // scheduler must never take the drone a request is waiting on, or the
+    // operator's APPROVE can fail through no fault of their own (remote
+    // request areas often have exactly one dock in range).
+    const reserved = reservedDockIds();
     const eligible = [];
     for (const dock of engine.docks.values()){
-      if (dock.state === 'ready' && dock.battery >= SCHED_MIN_BATTERY && dock.drone && dock.drone.state === 'docked'){
+      if (dock.state === 'ready' && dock.battery >= SCHED_MIN_BATTERY && dock.drone && dock.drone.state === 'docked' && !reserved.has(dock.id)){
         eligible.push(dock);
       }
     }
@@ -835,6 +1088,17 @@ function create(opts){
     while (engine._ambientAcc >= AMBIENT_INTERVAL_S){
       engine._ambientAcc -= AMBIENT_INTERVAL_S;
       runAmbientPass();
+    }
+
+    // R-2: inbound customer tasking — first at ~15s, then a seeded 45-90s
+    // cadence. The interval is re-rolled per firing (accumulator style, like
+    // the scheduler) so a large dt catch-up can fire more than once.
+    engine._requestAcc += dt;
+    while (engine._requestAcc >= engine._requestNextS){
+      engine._requestAcc -= engine._requestNextS;
+      engine._requestNextS = REQUEST_MIN_INTERVAL_S +
+        engine.rand() * (REQUEST_MAX_INTERVAL_S - REQUEST_MIN_INTERVAL_S);
+      runRequestPass();
     }
 
     tickFaults(dt);
