@@ -143,15 +143,43 @@ const SITE_STATUS_CHIP = {
   replace: { cls: 'red', text: 'NEEDS REPLACEMENT' }
 };
 
+// Closest dock to an arbitrary point — powers the site card's NEAREST DOCK
+// action and its coverage read-out. Uses SimRouter's metric distance when
+// available, falling back to a cheap planar metric so the card never breaks.
+function nearestDockTo(coords){
+  const R = window.SimRouter;
+  let best = null, bestKm = Infinity;
+  for (const d of DATA_DOCKS){
+    const m = R ? R.distM(coords, d.coords)
+                : Math.hypot(coords[0] - d.coords[0], coords[1] - d.coords[1]) * 111000;
+    if (m < bestKm){ bestKm = m; best = d; }
+  }
+  return best ? { dock: best, km: bestKm / 1000 } : null;
+}
+
 function renderSitePanel(site){
   const chip = SITE_STATUS_CHIP[site.status] || SITE_STATUS_CHIP.installed;
   const [lon, lat] = site.coords;
+  // A planned (not-yet-installed) site reads as a pre-deployment SURVEY;
+  // installed / needs-replacement towers get an INSPECTION.
+  const dispatchLabel = site.status === 'not-installed' ? 'SURVEY SITE' : 'DISPATCH INSPECTION';
+  const near = nearestDockTo(site.coords);
+  const nearLine = near
+    ? '<div class="rp-kv"><span class="k">Nearest dock</span><span class="v">' +
+        near.dock.name + ' · ' + near.km.toFixed(1) + ' KM</span></div>'
+    : '';
   return (
     '<div class="rp-id">' + site.id + '</div>' +
     '<div class="rp-name">' + site.name + '</div>' +
     '<div class="rp-kv"><span class="k">Coordinates</span><span class="v">' + lat.toFixed(5) + ', ' + lon.toFixed(5) + '</span></div>' +
+    nearLine +
     '<div class="state-chip' + (chip.cls ? ' ' + chip.cls : '') + '">' + chip.text + '</div>' +
-    '<div class="lbl" style="margin-top:14px">E&amp; TOWER SITE · LIVE NETWORK</div>'
+    '<div class="lbl" style="margin-top:14px">E&amp; TOWER SITE · LIVE NETWORK</div>' +
+    '<div class="rp-actions">' +
+      '<button class="primary" id="rp-site-dispatch">' + dispatchLabel + '</button>' +
+      '<button class="ghost" id="rp-site-locate">LOCATE</button>' +
+      '<button class="ghost" id="rp-site-dock">NEAREST DOCK</button>' +
+    '</div>'
   );
 }
 
@@ -187,9 +215,42 @@ function teleCell(key, label, value, battLevelAttr){
   );
 }
 
+// Live downlink clips for a flying drone: the mission-type's video segments
+// (see VIDEO_MANIFEST). Only a drone actually on a mission has a feed; a
+// docked/idle drone shows the standby frame with no video.
+function fpvSources(drone){
+  const engine = window.__engine;
+  const mission = drone && drone.missionId && engine ? engine.missions.get(drone.missionId) : null;
+  if (!mission) return [];
+  const variants = (typeof VIDEO_MANIFEST !== 'undefined' && VIDEO_MANIFEST[mission.type]) || [];
+  return variants.map(f => 'videos/' + f);
+}
+
+// The live downlink only runs once the drone is actually cruising over the
+// area (transit/on-task and the mid-air states), matching the aerial patrol
+// footage — NOT during takeoff from the dock or the final landing descent,
+// where the frame shows an "acquiring feed" standby instead.
+const FPV_LIVE_STATES = ['transit', 'on-task', 'rtb', 'hold', 'manual'];
+function fpvCruising(drone){ return !!drone && FPV_LIVE_STATES.indexOf(drone.state) !== -1; }
+
+function fpvVideoTag(sources){
+  // One clip loops natively; multiple clips are chained (and looped) by
+  // wireFpvFeed on 'ended' — so 'loop' is omitted there since it would
+  // suppress the 'ended' event the chain relies on.
+  return '<video class="fpv-video" id="fpv-video" autoplay muted playsinline preload="auto"' +
+    (sources.length > 1 ? '' : ' loop') +
+    ' src="' + sources[0] + '" data-playlist="' + sources.join(',') + '"></video>';
+}
+
 function fpvFrameHTML(drone){
+  const sources = fpvSources(drone);
+  const live = fpvCruising(drone) && sources.length > 0;
   return (
-    '<div class="fpv-frame">' +
+    // data-playlist stays on the frame so syncFpvFeed can spin the video up
+    // the moment the drone transitions into a cruising state mid-flight.
+    '<div class="fpv-frame' + (live ? ' live' : '') + '" id="fpv-frame" data-playlist="' + sources.join(',') + '">' +
+      (live ? fpvVideoTag(sources) : '') +
+      '<span class="fpv-standby" id="fpv-standby"' + (live ? ' hidden' : '') + '>ACQUIRING DOWNLINK</span>' +
       '<span class="fpv-rec"><i></i>REC</span>' +
       '<span class="fpv-eo">EO 1X</span>' +
       '<div class="fpv-reticle"><span class="cross h"></span><span class="cross v"></span></div>' +
@@ -199,6 +260,53 @@ function fpvFrameHTML(drone){
       '<span class="fpv-foot">HIGGSFIELD &middot; GEN-4</span>' +
     '</div>'
   );
+}
+
+// Called on every telemetry tick: brings the feed up when the drone starts
+// cruising and tears it down (back to standby) when it lands/docks, so the
+// footage is only ever on-screen while the drone is over the area.
+function syncFpvFeed(drone){
+  const frame = $('fpv-frame');
+  if (!frame) return;
+  const playlist = (frame.getAttribute('data-playlist') || '').split(',').filter(Boolean);
+  const standby = $('fpv-standby');
+  const existing = $('fpv-video');
+  const shouldPlay = fpvCruising(drone) && playlist.length > 0;
+
+  if (shouldPlay && !existing){
+    frame.insertAdjacentHTML('afterbegin', fpvVideoTag(playlist));
+    frame.classList.add('live');
+    if (standby) standby.hidden = true;
+    wireFpvFeed();
+    const v = $('fpv-video');
+    if (v) v.play().catch(() => {});
+  } else if (!shouldPlay && existing){
+    existing.pause();
+    existing.remove();
+    frame.classList.remove('live');
+    if (standby) standby.hidden = false;
+  }
+}
+
+// Chains the FPV feed's clips (advance on 'ended', loop back to the first) so
+// a multi-segment mission video plays as one continuous live downlink. Robust
+// to a missing clip: skips to the next source on error.
+function wireFpvFeed(){
+  const v = $('fpv-video');
+  if (!v) return;
+  const playlist = (v.getAttribute('data-playlist') || '').split(',').filter(Boolean);
+  if (playlist.length < 2) return; // single clip loops via the 'loop' attr
+  let idx = 0;
+  v.addEventListener('ended', () => {
+    idx = (idx + 1) % playlist.length;
+    v.src = playlist[idx];
+    v.play().catch(() => {});
+  });
+  v.addEventListener('error', () => {
+    idx = (idx + 1) % playlist.length;
+    v.src = playlist[idx];
+    v.play().catch(() => {});
+  });
 }
 
 function renderDronePanel(drone){
@@ -279,6 +387,7 @@ function updateDroneTelemetry(droneId){
   const fpvHdg = $('fpv-hdg'); if (fpvHdg) fpvHdg.textContent = padHeading(drone.heading) + '°';
   const fpvAlt = $('fpv-alt'); if (fpvAlt) fpvAlt.textContent = Math.round(drone.alt) + 'M';
   const fpvClock = $('fpv-clock'); if (fpvClock) fpvClock.textContent = nowClockStr();
+  syncFpvFeed(drone); // bring the live feed up/down as the drone starts/stops cruising
 
   const rtbBtn = $('rp-rtb');
   if (rtbBtn) rtbBtn.disabled = !['transit', 'on-task', 'hold'].includes(drone.state);
@@ -349,20 +458,30 @@ function analyticsDL(mission){
   );
 }
 
-function debriefVideoSrc(mission){
+// The full ordered list of clips for a mission type. A multi-clip type (e.g.
+// security's eight aerial-downlink segments) plays back-to-back as one
+// continuous mission video; a single-clip type is a one-item list.
+function debriefVideoSources(mission){
   const variants = (typeof VIDEO_MANIFEST !== 'undefined' && VIDEO_MANIFEST[mission.type]) || [];
-  if (!variants.length) return null;
-  const idx = Number.isInteger(mission._videoVariant) ? mission._videoVariant : 0;
-  return 'videos/' + variants[idx % variants.length];
+  return variants.map(f => 'videos/' + f);
 }
 
 function debriefVideoHTML(mission){
-  const src = debriefVideoSrc(mission);
+  const sources = debriefVideoSources(mission);
+  const first = sources[0] || '';
+  // The ordered playlist rides along on the element so wireDebriefPanel can
+  // advance through it on 'ended' without re-deriving from the mission.
+  const playlistAttr = sources.length
+    ? ' data-playlist="' + sources.join(',') + '"'
+    : '';
   return (
     '<div class="lbl" style="margin-top:16px">Mission video</div>' +
     '<div class="debrief-video">' +
-      (src ? '<video id="debrief-video" controls preload="metadata" src="' + src + '"></video>' : '') +
-      '<div class="debrief-canvas-wrap" id="debrief-canvas-wrap"' + (src ? ' hidden' : '') + '>' +
+      // autoplay + muted + playsinline so the mission video starts on its own
+      // when the debrief opens (browsers only allow autoplay while muted); the
+      // operator still has controls to pause or unmute.
+      (sources.length ? '<video id="debrief-video" controls autoplay muted playsinline preload="auto" src="' + first + '"' + playlistAttr + '></video>' : '') +
+      '<div class="debrief-canvas-wrap" id="debrief-canvas-wrap"' + (sources.length ? ' hidden' : '') + '>' +
         '<canvas id="debrief-canvas"></canvas>' +
       '</div>' +
     '</div>' +
@@ -465,14 +584,38 @@ function wireDebriefPanel(){
   const canvasWrap = $('debrief-canvas-wrap');
   const canvas = $('debrief-canvas');
   if (video){
-    // Swallow the load failure — every manifest entry 404s until real
-    // footage is dropped into videos/, and that must never surface a
-    // console error or a broken player.
+    // Ordered clip list for this mission (see debriefVideoHTML). Multi-clip
+    // types play back-to-back as one continuous mission video.
+    const playlist = (video.getAttribute('data-playlist') || '').split(',').filter(Boolean);
+    let idx = 0;
+
+    // When one segment ends, roll into the next; loop back to the first after
+    // the last so the debrief keeps playing the full patrol during a demo.
+    if (playlist.length > 1){
+      video.addEventListener('ended', () => {
+        idx = (idx + 1) % playlist.length;
+        video.src = playlist[idx];
+        video.play().catch(() => {}); // autoplay may be blocked; controls remain
+      });
+    }
+
+    // A clip that fails to load must never surface a console error or a broken
+    // player. With a playlist, skip past the missing segment; only fall back
+    // to the animated placeholder once nothing in the list is playable (every
+    // manifest entry 404s until real footage is dropped into videos/).
+    let failures = 0;
     video.addEventListener('error', () => {
+      failures++;
+      if (playlist.length > 1 && failures < playlist.length){
+        idx = (idx + 1) % playlist.length;
+        video.src = playlist[idx];
+        video.play().catch(() => {});
+        return;
+      }
       video.hidden = true;
       if (canvasWrap) canvasWrap.hidden = false;
       startDebriefPlaceholder(canvas);
-    }, { once: true });
+    });
   } else if (canvasWrap){
     canvasWrap.hidden = false;
     startDebriefPlaceholder(canvas);
@@ -606,6 +749,8 @@ function wireRightPanelActions(mode, data){
   } else if (mode === 'drone' && data){
     const droneId = data.id;
 
+    wireFpvFeed(); // start/chain the live mission downlink in the FPV frame
+
     const followBtn = $('rp-follow');
     if (followBtn) followBtn.addEventListener('click', () => {
       const turningOn = EC2.followDroneId !== droneId;
@@ -648,6 +793,46 @@ function wireRightPanelActions(mode, data){
     if (altUp) altUp.addEventListener('click', () => {
       if (window.__engine) window.__engine.nudgeAlt(droneId, 10);
     });
+  } else if (mode === 'site' && data){
+    const site = data;
+
+    const locate = $('rp-site-locate');
+    if (locate) locate.addEventListener('click', () => {
+      if (EC2.map) EC2.map.flyTo({ center: site.coords, zoom: 14 });
+    });
+
+    const nearestBtn = $('rp-site-dock');
+    if (nearestBtn) nearestBtn.addEventListener('click', () => {
+      const near = nearestDockTo(site.coords);
+      if (near) EC2.select({ type: 'dock', id: near.dock.id });
+    });
+
+    // Dispatch a live infrastructure inspection toward this tower from the
+    // nearest AVAILABLE dock (launchPreset picks a ready, charged dock biased
+    // to site.coords and flies an in-range 'infra' route). On success we jump
+    // to and follow the launched drone so the operator watches it go; on
+    // failure (no ready dock / no route) we surface a ticker advisory rather
+    // than failing silently.
+    const dispatch = $('rp-site-dispatch');
+    if (dispatch) dispatch.addEventListener('click', () => {
+      const engine = window.__engine;
+      if (!engine || !engine.launchPreset){
+        EC2.ui.pushEvent({ level: 'warn', source: site.id, message: 'INSPECTION UNAVAILABLE · ENGINE OFFLINE' });
+        return;
+      }
+      try {
+        const mission = engine.launchPreset('infra', { near: site.coords });
+        EC2.ui.pushEvent({ level: 'info', source: site.id,
+          message: 'INSPECTION DISPATCHED · ' + site.id + ' · FROM ' + mission.dockId });
+        const droneId = 'D-' + mission.dockId;
+        if (engine.drones.get(droneId)){
+          EC2.followDroneId = droneId;
+          EC2.select({ type: 'drone', id: droneId });
+        }
+      } catch (e){
+        EC2.ui.pushEvent({ level: 'warn', source: site.id, message: 'NO DRONE AVAILABLE FOR INSPECTION' });
+      }
+    });
   } else if (mode === 'debrief' && data){
     wireDebriefPanel();
   } else if (mode === 'media'){
@@ -674,6 +859,80 @@ function updateRowSelection(){
   list.querySelectorAll('.dock-row').forEach(row => {
     row.classList.toggle('sel', !!dockId && row.dataset.dockId === dockId);
   });
+}
+
+// ---------- event ribbon (ticker) behaviour ----------
+
+// Horizontal gap between ticker chips — mirrors #tickstream's CSS `gap` so
+// prepend compensation (below) keeps a hovered/scrolled view from jumping when
+// a new event arrives at the left edge.
+const TICK_GAP = 22;
+
+// True when an event's source names a live drone entity in the engine. Drone
+// events carry ev.source === the drone id ('D-<dockId>'); dock/OPS/site events
+// don't, so they stay non-interactive in the ribbon.
+function eventDroneId(source){
+  return (source && window.__engine && window.__engine.drones && window.__engine.drones.has(source))
+    ? source : null;
+}
+
+// Click-through from a ticker chip to its drone: only navigates when that drone
+// is still airborne (state !== 'docked'); a landed/past drone does nothing, per
+// spec. Yields to an in-progress wizard/manual session so it can't yank the map.
+function focusDroneFromEvent(droneId){
+  if (inCaptureMode()) return;
+  const engine = window.__engine;
+  const drone = engine && engine.drones.get(droneId);
+  if (!drone || drone.state === 'docked') return;
+  EC2.followDroneId = droneId;
+  EC2.select({ type: 'drone', id: droneId });
+  if (EC2.map && Array.isArray(drone.pos)){
+    EC2.map.easeTo({ center: drone.pos, zoom: 12.5, duration: 600 });
+  }
+}
+
+// Re-tags one drone chip as live (is-active, colorized + clickable) or past
+// (is-past, dimmed) from the drone's CURRENT state — so as drones launch and
+// land the ribbon's colors track reality, not just the moment each line fired.
+function applyDroneActivity(el){
+  const id = el.dataset.drone;
+  if (!id) return;
+  const engine = window.__engine;
+  const drone = engine && engine.drones.get(id);
+  const active = !!(drone && drone.state !== 'docked');
+  el.classList.toggle('is-active', active);
+  el.classList.toggle('is-past', !active);
+}
+
+// Continuous auto-scroll for the event ribbon + periodic recolor. The drift
+// gives the "always alive" ticker feel; hovering pauses it so a line can be
+// read/clicked. Loops back to the newest (scrollLeft 0) at the end.
+let tickerDriverStarted = false;
+function startTickerDriver(){
+  if (tickerDriverStarted) return;
+  const stream = $('tickstream');
+  if (!stream) return;
+  tickerDriverStarted = true;
+
+  let paused = false;
+  stream.addEventListener('mouseenter', () => { paused = true; });
+  stream.addEventListener('mouseleave', () => { paused = false; });
+
+  const SPEED = 0.35; // px/frame — a calm national-grid crawl, not a stock ticker
+  function frame(){
+    requestAnimationFrame(frame);
+    if (paused) return;
+    const max = stream.scrollWidth - stream.clientWidth;
+    if (max <= 4) return;
+    stream.scrollLeft += SPEED;
+    if (stream.scrollLeft >= max - 1) stream.scrollLeft = 0;
+  }
+  requestAnimationFrame(frame);
+
+  setInterval(() => {
+    const chips = stream.querySelectorAll('.tick-ev[data-drone]');
+    for (const el of chips) applyDroneActivity(el);
+  }, 1000);
 }
 
 // ---------- EC2.ui ----------
@@ -768,14 +1027,25 @@ EC2.ui = {
     if (!stream) return;
     const level = ev.level === 'warn' ? ' warn' : ev.level === 'alert' ? ' alert' : '';
     const time = ev.time || nowClockStr();
+    // A drone-sourced event gets a data-drone tag so it can be recolored (live
+    // vs past) and click-through to that drone. An explicit ev.onClick (e.g. a
+    // debrief chip) still takes precedence over the drone jump.
+    const droneId = eventDroneId(ev.source);
     const el = document.createElement('span');
-    el.className = 'tick-ev' + level + (ev.onClick ? ' clickable' : '');
+    el.className = 'tick-ev' + level + (ev.onClick ? ' clickable' : '') + (droneId ? ' drone-ev' : '');
+    if (droneId) el.dataset.drone = droneId;
     el.innerHTML =
       '<span class="tt">' + time + '</span>' +
       '<span class="src">' + escapeHtml(ev.source) + '</span>' +
       '<span class="msg">' + escapeHtml(ev.message) + '</span>';
     if (typeof ev.onClick === 'function') el.addEventListener('click', ev.onClick);
+    else if (droneId) el.addEventListener('click', () => focusDroneFromEvent(droneId));
     stream.insertBefore(el, stream.firstChild);
+    if (droneId) applyDroneActivity(el); // colorize immediately from current state
+    // Keep a scrolled/hovered view steady: a chip added at the left edge would
+    // otherwise shift everything right under the reader. Only compensate when
+    // not parked at the newest end (scrollLeft 0), so the live newest stays put.
+    if (stream.scrollLeft > 0) stream.scrollLeft += el.offsetWidth + TICK_GAP;
     while (stream.children.length > 30) stream.removeChild(stream.lastChild);
   },
 
@@ -1032,6 +1302,34 @@ function wireMapDockInteractions(){
   });
   EC2.map.on('mouseenter', 'sites-dots', () => { if (!inCaptureMode()) EC2.map.getCanvas().style.cursor = 'pointer'; });
   EC2.map.on('mouseleave', 'sites-dots', () => { if (!inCaptureMode()) EC2.map.getCanvas().style.cursor = ''; });
+
+  // Coverage rings as a big, forgiving click target. A dock/site dot is only
+  // a few px wide — hard to hit on a projector — so a click anywhere inside a
+  // location's coverage circle selects that location too. The precise dot /
+  // drone handlers above still win when the click actually lands on one (we
+  // bail here if any of them is under the cursor), so this only ever fills in
+  // the empty area of a ring. When rings overlap, a site ring (smaller, more
+  // specific) is preferred over a dock ring beneath it.
+  const DOT_LAYERS = ['docks-dots', 'sites-dots', 'drones-layer'];
+  EC2.map.on('click', 'coverage-fill', (e) => {
+    if (inCaptureMode()) return;
+    const onDot = EC2.map.queryRenderedFeatures(e.point,
+      { layers: DOT_LAYERS.filter(id => EC2.map.getLayer(id)) });
+    if (onDot && onDot.length) return; // let the precise dot handler take it
+    const feats = e.features || [];
+    const pick = feats.find(f => f.properties && f.properties.kind === 'site') || feats[0];
+    if (!pick || !pick.properties) return;
+    if (pick.properties.kind === 'site') EC2.select({ type: 'site', id: pick.properties.id });
+    else EC2.select({ type: 'dock', id: pick.properties.id });
+  });
+  EC2.map.on('mousemove', 'coverage-fill', (e) => {
+    if (inCaptureMode()) return;
+    // Don't fight the dot handlers' pointer; only assert it over open ring area.
+    const onDot = EC2.map.queryRenderedFeatures(e.point,
+      { layers: DOT_LAYERS.filter(id => EC2.map.getLayer(id)) });
+    if (!onDot || !onDot.length) EC2.map.getCanvas().style.cursor = 'pointer';
+  });
+  EC2.map.on('mouseleave', 'coverage-fill', () => { if (!inCaptureMode()) EC2.map.getCanvas().style.cursor = ''; });
 }
 
 // Public API (Task 13 contract): jump straight to a mission's debrief and
@@ -1050,6 +1348,7 @@ EC2.initPanels = function(){
   wirePanelToggles();
   wireMapDockInteractions();
   startFollowDriver();
+  startTickerDriver();
   wireDebriefWatch();
   EC2.ui.renderDockList('ALL');
   EC2.ui.setRightPanel('empty');

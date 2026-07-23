@@ -21,8 +21,8 @@ const RASTER_ATTRIBUTION = {
 
 // CARTO's anonymous vector tiles (OpenMapTiles schema). The dark raster is
 // fully desaturated, so water and green spaces read as undifferentiated
-// gray; these tiles feed the dark-water/dark-greens/dark-parks overlay
-// fills below, giving exact coastlines and park outlines at every zoom.
+// gray; these tiles feed the dark-water/dark-greens overlay fills below,
+// giving exact coastlines and green land cover at every zoom.
 // Attribution string matches the CARTO rasters so the control dedupes it.
 const VECTOR_TILES = [
   'https://tiles-a.basemaps.cartocdn.com/vectortiles/carto.streets/v1/{z}/{x}/{y}.mvt',
@@ -32,7 +32,7 @@ const VECTOR_TILES = [
 ];
 
 // Water/green tint layers shown only while the dark basemap is active.
-const DARK_OVERLAY_IDS = ['dark-water', 'dark-greens', 'dark-parks'];
+const DARK_OVERLAY_IDS = ['dark-water', 'dark-greens'];
 
 // Local glyph vendoring (Task 14 fix): MapLibre's demotiles.maplibre.org
 // glyph host is unreachable on a cold offline/file:// boot, so uae-places /
@@ -64,6 +64,32 @@ EC2.siteFeatures = function(){
   })) };
 };
 
+// Coverage rings for every ground location — drone docks AND live tower
+// sites — at their operational radius (urban 3 km / rural 5 km, from
+// DOCK_RANGE in docks.js). Real-geography circle polygons (not pixel-radius
+// circles) so a ring stays a true 3/5 km on the ground at every zoom;
+// SimRouter.orbit returns a closed [lon,lat] ring at a metric radius, which
+// we wrap as a Polygon. `active` marks live coverage (all docks, plus sites
+// with status 'installed'); planned / needs-replacement sites ride along with
+// active:false so the layers can render them as a fainter outline-only ring.
+EC2.coverageFeatures = function(){
+  const DR = window.DOCK_RANGE;
+  const orbit = window.SimRouter && window.SimRouter.orbit;
+  if (!DR || !orbit) return { type:'FeatureCollection', features: [] };
+  const ringFor = (item, kind, active) => {
+    const rangeKm = DR.dockRangeKm(item);
+    return {
+      type:'Feature',
+      properties:{ id:item.id, kind:kind, rangeKm:rangeKm, urban:DR.isUrbanDock(item), active:active },
+      geometry:{ type:'Polygon', coordinates:[ orbit(item.coords, rangeKm * 1000, 64) ] }
+    };
+  };
+  const feats = [];
+  for (const d of DATA_DOCKS) feats.push(ringFor(d, 'dock', true));
+  for (const s of DATA_SITES) feats.push(ringFor(s, 'site', s.status === 'installed'));
+  return { type:'FeatureCollection', features: feats };
+};
+
 // ---------- orbital declutter (Task 10.5) ----------
 // Layers that only make sense once the operator has dived into the theater;
 // hidden while in the orbital 'globe' scene so only the single UAE beacon
@@ -71,7 +97,8 @@ EC2.siteFeatures = function(){
 // the same initMap() style build and callers may run before the style has
 // fully attached them.
 const OPERATIONAL_LAYER_IDS = [
-  'docks-dots', 'docks-rings', 'drones-layer', 'missions-active-line',
+  'docks-dots', 'docks-rings', 'coverage-fill', 'coverage-line',
+  'drones-layer', 'missions-active-line',
   'sites-dots', 'sites-labels', 'uae-places', 'uae-roads',
   'manual-wpts-dots', 'manual-wpts-labels',
   'wizard-preview-line', 'wizard-preview-dots', 'wizard-preview-labels'
@@ -230,6 +257,7 @@ EC2.initMap = function(){
       'uae-roads':  { type: 'geojson', data: GEO_UAE.roads },
       'uae-places': { type: 'geojson', data: GEO_UAE.places },
       'docks':      { type: 'geojson', data: EC2.dockFeatures() },
+      'coverage':   { type: 'geojson', data: EC2.coverageFeatures() },
       'sites':      { type: 'geojson', data: EC2.siteFeatures() },
       'drones':     { type: 'geojson', data: emptyFC() },
       'missions-active': { type: 'geojson', data: emptyFC() },
@@ -251,28 +279,63 @@ EC2.initMap = function(){
       { id: 'raster-terrain', type: 'raster', source: 'raster-terrain',
         layout: { visibility: 'none' } },
       // Dark-basemap tint overlays: the desaturated dark raster renders sea
-      // and parks as flat gray, so translucent fills restore a deep-navy
-      // water tone and muted green for parks/grass/wood. Kept translucent so
-      // the raster's own labels and texture still show through.
+      // and vegetation as flat gray, so translucent fills restore a deep-navy
+      // water tone and a muted green for actual green land cover. Kept
+      // translucent so the raster's own labels and texture still show through.
+      //
+      // Green tint = landcover grass/wood ONLY (real vegetation on land).
+      // The vector 'park' source-layer is deliberately NOT tinted: it carries
+      // administrative *protected areas*, which in this region are desert
+      // reserves (e.g. Arabian Oryx Sanctuary) and — the reported bug — large
+      // *marine* reserves (Marawah, Butinah) whose polygons sit over open sea.
+      // At country zoom the ocean water polygon is heavily generalized and
+      // often absent over those marine reserves, so it can't mask them; the
+      // only reliable fix is to not paint protected areas green at all.
+      // 'wetland' is likewise excluded: mangroves/tidal flats straddle the
+      // waterline. grass/wood are genuine land cover and stay.
+      //
+      // Greens are drawn first, then water on top: where a water polygon does
+      // exist (typically higher zoom), it masks any grass/wood that spills
+      // past the shoreline — keeping the green tint on land only.
+      { id: 'dark-greens', type: 'fill', source: 'carto-streets',
+        'source-layer': 'landcover',
+        filter: ['in', ['get', 'class'], ['literal', ['grass', 'wood']]],
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#2e7d4f', 'fill-opacity': 0.3 } },
       { id: 'dark-water', type: 'fill', source: 'carto-streets',
         'source-layer': 'water',
         layout: { visibility: 'none' },
         paint: { 'fill-color': '#1c4d75', 'fill-opacity': 0.45 } },
-      { id: 'dark-greens', type: 'fill', source: 'carto-streets',
-        'source-layer': 'landcover',
-        filter: ['in', ['get', 'class'], ['literal', ['grass', 'wood', 'wetland']]],
-        layout: { visibility: 'none' },
-        paint: { 'fill-color': '#2e7d4f', 'fill-opacity': 0.3 } },
-      { id: 'dark-parks', type: 'fill', source: 'carto-streets',
-        'source-layer': 'park',
-        layout: { visibility: 'none' },
-        paint: { 'fill-color': '#2e7d4f', 'fill-opacity': 0.3 } },
       { id: 'world-land-fill', type: 'fill', source: 'world',
         layout: { visibility: 'none' },
         paint: { 'fill-color': '#14171c' } },
       { id: 'world-land-line', type: 'line', source: 'world',
         layout: { visibility: 'none' },
         paint: { 'line-color': 'rgba(255,255,255,.14)', 'line-width': 0.6 } },
+      // Coverage rings (docks + tower sites; urban 3 km / rural 5 km). Cool
+      // cyan reads as "sensor reach" and deliberately avoids brand red
+      // (reserved for brand + alert). Drawn low in the stack so borders,
+      // roads, labels, drones and dots all render on top; the fill is kept
+      // very translucent because rings overlap heavily in the metros and
+      // compounded alpha would blot out the map. A slightly denser urban fill
+      // nudges dense-city coverage to read as more saturated without a second
+      // color. Non-active rings (planned / needs-replacement sites) drop the
+      // fill entirely and keep only a fainter dashed outline — "planned
+      // coverage" — so live vs planned reads at a glance.
+      { id: 'coverage-fill', type: 'fill', source: 'coverage',
+        paint: {
+          'fill-color': '#38bdf8',
+          'fill-opacity': ['case', ['get', 'active'],
+            ['case', ['get', 'urban'], 0.06, 0.045],
+            0]
+        } },
+      { id: 'coverage-line', type: 'line', source: 'coverage',
+        paint: {
+          'line-color': '#38bdf8',
+          'line-opacity': ['case', ['get', 'active'], 0.3, 0.18],
+          'line-width': 1,
+          'line-dasharray': [3, 3]
+        } },
       { id: 'uae-border-line', type: 'line', source: 'uae',
         paint: {
           'line-color': '#ff5a5a',

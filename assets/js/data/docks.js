@@ -1,4 +1,56 @@
 (function(g){
+
+// ---------- coverage range classification ----------
+// Operational reach of a dock's drone, driven by where it sits: inside a
+// dense city a drone is held to a tighter 3 km radius (RF congestion, tighter
+// airspace, line-of-sight), out in open desert / highways / mountains it gets
+// 5 km. This single source of truth feeds BOTH the map coverage rings and the
+// simulation's route generator, so what the presenter sees (the ring) always
+// matches where the drones are allowed to fly.
+const URBAN_RANGE_KM = 3;
+const RURAL_RANGE_KM = 5;
+
+// Generous circles over each built-up conurbation. A dock inside any of these
+// reads as "urban". Tuned by eye against the dock list; they intentionally
+// overlap where cities merge (Sharjah–Ajman–UAQ). To fix a single station the
+// circle guesses wrong, set `urban:true|false` on that dock below — the
+// explicit flag always wins over geography (see isUrbanDock).
+const URBAN_CENTERS = [
+  { name:'Abu Dhabi',          lon:54.45, lat:24.45, rKm:30 },
+  { name:'Dubai',              lon:55.25, lat:25.15, rKm:32 },
+  { name:'Sharjah-Ajman-UAQ',  lon:55.47, lat:25.40, rKm:22 },
+  { name:'Al Ain',             lon:55.74, lat:24.22, rKm:20 },
+  { name:'Ras Al Khaimah',     lon:55.95, lat:25.75, rKm:16 },
+  { name:'Fujairah',           lon:56.34, lat:25.15, rKm:14 }
+];
+
+// Self-contained great-circle distance in km (docks.js loads before the
+// SimRouter helpers, so it can't depend on them).
+function distKm(a, b){
+  const R = 6371, D2R = Math.PI / 180;
+  const dLat = (b[1] - a[1]) * D2R;
+  const dLon = (b[0] - a[0]) * D2R;
+  const s = Math.sin(dLat / 2) ** 2 +
+            Math.cos(a[1] * D2R) * Math.cos(b[1] * D2R) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+function isUrbanDock(dock){
+  if (dock && typeof dock.urban === 'boolean') return dock.urban; // explicit override
+  const c = dock && dock.coords;
+  if (!Array.isArray(c)) return false;
+  return URBAN_CENTERS.some(u => distKm(c, [u.lon, u.lat]) <= u.rKm);
+}
+
+function dockRangeKm(dock){
+  return isUrbanDock(dock) ? URBAN_RANGE_KM : RURAL_RANGE_KM;
+}
+
+g.DOCK_RANGE = {
+  URBAN_RANGE_KM, RURAL_RANGE_KM, URBAN_CENTERS,
+  isUrbanDock, dockRangeKm
+};
+
 g.DATA_DOCKS = [
   // ===== AUH — Abu Dhabi (28): city/island, industrial, west region =====
   { id:'AUH-001', name:'Corniche', emirate:'AUH', coords:[54.349,24.477], model:'M4TD' },

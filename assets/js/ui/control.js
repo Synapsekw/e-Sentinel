@@ -55,16 +55,31 @@ function setCursor(css){
 // explanatory title the moment either capture mode takes the map.
 function updateNewMissionButtonState(){
   const btn = $('btn-newmission');
-  if (!btn) return;
-  if (control.mode === 'manual'){
-    btn.disabled = true;
-    btn.title = 'UNAVAILABLE DURING MANUAL CONTROL';
-  } else if (control.mode === 'wizard'){
-    btn.disabled = true;
-    btn.title = 'MISSION WIZARD ACTIVE';
-  } else {
-    btn.disabled = false;
-    btn.title = 'CREATE A NEW MISSION';
+  if (btn){
+    if (control.mode === 'manual'){
+      btn.disabled = true;
+      btn.title = 'UNAVAILABLE DURING MANUAL CONTROL';
+    } else if (control.mode === 'wizard'){
+      btn.disabled = true;
+      btn.title = 'MISSION WIZARD ACTIVE';
+    } else {
+      btn.disabled = false;
+      btn.title = 'CREATE A NEW MISSION';
+    }
+  }
+  // The predefined-mission menu launches through the same 'normal'-only path,
+  // so it's unavailable during either capture mode. Reflect that on the button
+  // and dismiss the dropdown if it happened to be open when a mode took over.
+  const mBtn = $('btn-missions');
+  if (mBtn){
+    if (control.mode !== 'normal'){
+      mBtn.disabled = true;
+      mBtn.title = control.mode === 'manual' ? 'UNAVAILABLE DURING MANUAL CONTROL' : 'MISSION WIZARD ACTIVE';
+      if (control.closeMissionsMenu) control.closeMissionsMenu();
+    } else {
+      mBtn.disabled = false;
+      mBtn.title = 'LAUNCH A PREDEFINED MISSION';
+    }
   }
 }
 
@@ -662,10 +677,126 @@ function wireEngineWatch(){
   const iv = setInterval(() => { if (trySubscribe()) clearInterval(iv); }, 300);
 }
 
+// ---------- predefined mission menu (one-click launch) ----------
+
+// Optional geographic bias per preset so a launched mission lands in a
+// recognizable city rather than a random emirate. [lon, lat]; types without
+// an entry launch from any eligible ready dock.
+const PRESET_NEAR = {
+  security:     [55.14, 25.08], // Dubai Marina
+  infra:        [54.37, 24.48], // Abu Dhabi
+  emergency:    [55.27, 25.20], // Downtown Dubai
+  delivery:     [55.38, 25.13], // Dubai
+  construction: [54.43, 24.42], // Abu Dhabi
+  highway:      [55.53, 24.98], // E11 corridor
+  parks:        [55.30, 25.23]  // Dubai
+};
+
+// Fires a preset the same way the wizard's LAUNCH does: mark it a user
+// mission (so its debrief — and Higgsfield video — auto-opens on completion),
+// follow the drone, and pan to the launching dock so the operator sees it go.
+control.launchPreset = function(type, opts){
+  if (control.mode !== 'normal' || !window.__engine || !window.__engine.launchPreset) return null;
+  let mission;
+  try {
+    mission = window.__engine.launchPreset(type, opts || {});
+  } catch (err){
+    if (EC2.ui && EC2.ui.pushEvent){
+      EC2.ui.pushEvent({ level: 'warn', source: 'SENTINEL', message: 'MISSION LAUNCH FAILED · ' + ((err && err.message) || String(err)) });
+    }
+    return null;
+  }
+  control.userMissions.add(mission.id);
+  const droneId = 'D-' + mission.dockId;
+  EC2.followDroneId = droneId;
+  EC2.select({ type: 'drone', id: droneId });
+  const dock = window.__engine.docks.get(mission.dockId);
+  if (dock && EC2.map) EC2.map.flyTo({ center: dock.coords, zoom: 12.2 });
+  return mission;
+};
+
+let missionsMenuEl = null;
+
+function buildMissionsMenu(){
+  if (missionsMenuEl) return missionsMenuEl;
+  const cfg = (typeof MISSIONS_CONFIG !== 'undefined' && MISSIONS_CONFIG) || {};
+  const order = ['security', 'infra', 'emergency', 'delivery', 'construction', 'highway', 'parks'];
+  const types = order.filter(t => cfg[t]).concat(Object.keys(cfg).filter(t => order.indexOf(t) === -1));
+
+  const menu = document.createElement('div');
+  menu.id = 'missions-menu';
+  menu.className = 'missions-menu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+  menu.innerHTML =
+    '<div class="mm-head lbl">Launch predefined mission</div>' +
+    types.map(t =>
+      '<button class="mm-item" role="menuitem" data-type="' + t + '">' +
+        '<span class="mm-label">' + ((cfg[t] && cfg[t].label) || t.toUpperCase()) + '</span>' +
+        '<span class="mm-pat lbl">' + ((cfg[t] && cfg[t].pattern) || '') + '</span>' +
+      '</button>'
+    ).join('');
+  document.body.appendChild(menu);
+
+  menu.addEventListener('click', (e) => {
+    const item = e.target.closest('.mm-item');
+    if (!item) return;
+    closeMissionsMenu();
+    const near = PRESET_NEAR[item.dataset.type];
+    control.launchPreset(item.dataset.type, near ? { near: near } : {});
+  });
+
+  missionsMenuEl = menu;
+  return menu;
+}
+
+function onMissionsMenuDocDown(e){
+  if (missionsMenuEl && !missionsMenuEl.contains(e.target) && e.target.id !== 'btn-missions'){
+    closeMissionsMenu();
+  }
+}
+function onMissionsMenuKey(e){ if (e.key === 'Escape') closeMissionsMenu(); }
+
+function openMissionsMenu(){
+  const btn = $('btn-missions');
+  if (!btn || control.mode !== 'normal') return; // blocked during capture modes
+  const menu = buildMissionsMenu();
+  const r = btn.getBoundingClientRect();
+  menu.style.top = (r.bottom + 6) + 'px';
+  menu.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+  menu.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  // Defer the outside-click listener so this same click doesn't close it.
+  setTimeout(() => document.addEventListener('mousedown', onMissionsMenuDocDown), 0);
+  document.addEventListener('keydown', onMissionsMenuKey);
+}
+
+function closeMissionsMenu(){
+  if (!missionsMenuEl || missionsMenuEl.hidden) return;
+  missionsMenuEl.hidden = true;
+  const btn = $('btn-missions');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  document.removeEventListener('mousedown', onMissionsMenuDocDown);
+  document.removeEventListener('keydown', onMissionsMenuKey);
+}
+// Exposed so mode transitions (entering manual/wizard) can dismiss the menu.
+control.closeMissionsMenu = closeMissionsMenu;
+
+function wireMissionsMenu(){
+  const btn = $('btn-missions');
+  if (!btn) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (missionsMenuEl && !missionsMenuEl.hidden) closeMissionsMenu();
+    else openMissionsMenu();
+  });
+}
+
 EC2.initControl = function(){
   wireMapClicks();
   wireKeys();
   wireEngineWatch();
+  wireMissionsMenu();
   updateNewMissionButtonState();
 };
 })();

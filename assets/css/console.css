@@ -255,6 +255,19 @@ body.rpanel-collapsed #rpanel-toggle i{transform:translateX(1px) rotate(135deg)}
   position:relative;margin-top:14px;aspect-ratio:16/9;border-radius:9px;overflow:hidden;
   background:linear-gradient(165deg,#0e1013,#07080a);border:1px solid var(--line);
 }
+/* Live mission downlink fills the frame beneath the HUD overlay spans. */
+.fpv-video{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;
+  background:#07080a;
+}
+.fpv-frame.live{ border-color:rgba(255,90,90,.35); }
+/* Standby state shown before the drone reaches its cruising area. */
+.fpv-standby{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-family:var(--mono);font-size:9px;letter-spacing:.24em;text-transform:uppercase;
+  color:rgba(255,255,255,.4);white-space:nowrap;animation:blink 1.8s infinite;z-index:1;
+}
+.fpv-frame.live .fpv-standby{ display:none; }
 .fpv-reticle{
   position:absolute;top:50%;left:50%;width:58px;height:58px;
   transform:translate(-50%,-50%);border:1px solid rgba(255,90,90,.35);border-radius:2px;
@@ -398,6 +411,14 @@ body.rpanel-collapsed #ticker{right:0}
 .tick-ev.alert{color:var(--red)}
 .tick-ev.clickable{cursor:pointer}
 .tick-ev.clickable:hover .msg{color:#fff;text-decoration:underline}
+/* Drone-sourced events (see panels.js startTickerDriver): a live/airborne
+   drone reads green + is clickable (jumps to that drone); once it has landed
+   the line dims to read as history. Only the source id is tinted so warn/alert
+   message colors above still show through. */
+.tick-ev.is-active{cursor:pointer}
+.tick-ev.is-active .src{color:var(--green,#4ade80)}
+.tick-ev.is-active:hover .msg{color:#fff;text-decoration:underline}
+.tick-ev.drone-ev.is-past{opacity:.5}
 
 /* ---------- map attribution control (Task 14 fix) ----------
    MapLibre's default compact control is a bright white pill — restyled here

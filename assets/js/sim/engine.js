@@ -71,50 +71,109 @@ function nearestRoad(roads, coords){
   return best;
 }
 
+// Operational reach of a dock in meters, from the shared classification in
+// docks.js (urban 3 km, rural 5 km). Falls back to 5 km if that data module
+// isn't loaded, so the engine still runs standalone.
+function dockRangeM(dock){
+  const DR = (typeof window !== 'undefined' ? window : globalThis).DOCK_RANGE;
+  const km = DR && typeof DR.dockRangeKm === 'function' ? DR.dockRangeKm(dock) : 5;
+  return km * 1000;
+}
+
+// Pulls any waypoint that sits beyond `rangeM` back onto (just inside) the
+// coverage circle, along the line from the dock. This is the hard guarantee
+// that no autonomous drone flies outside the ring the presenter sees; the
+// per-pattern sizing below keeps routes comfortably inside so the clamp
+// rarely has to bite and shapes stay natural. Target 0.97·range leaves slack
+// for the lon/lat-vs-meters approximation used throughout.
+function clampToRange(route, center, rangeM){
+  if (!Array.isArray(route)) return route;
+  const R = (typeof window !== 'undefined' ? window : globalThis).SimRouter;
+  return route.map(pt => {
+    if (!isFiniteXY(pt)) return pt;
+    const d = R.distM(center, pt);
+    if (d <= rangeM) return pt;
+    const t = (rangeM * 0.97) / d;
+    return [center[0] + (pt[0] - center[0]) * t, center[1] + (pt[1] - center[1]) * t];
+  });
+}
+
+// Builds a road-following corridor centered on the road's closest approach to
+// the dock, so a highway/infra inspection hugs the nearby road rather than
+// starting at a random fraction that could be far outside range.
+function corridorNearDock(R, road, dockCoords, lengthKm){
+  const line = road.geometry.coordinates;
+  if (!Array.isArray(line) || line.length < 2) return null;
+  let total = 0; const cum = [0];
+  for (let i = 1; i < line.length; i++){ total += R.distM(line[i - 1], line[i]) / 1000; cum.push(total); }
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < line.length; i++){
+    const d = R.distM(dockCoords, line[i]);
+    if (d < bd){ bd = d; bi = i; }
+  }
+  const startKm = Math.max(0, cum[bi] - lengthKm / 2);
+  const startFrac = total > 0 ? Math.min(0.99, startKm / total) : 0;
+  return R.corridor(line, startFrac, lengthKm);
+}
+
 function generateRoute(R, roads, rnd, pattern, dock, type){
+  const rangeM = dockRangeM(dock);
+  let route = null;
   switch (pattern){
     case 'perimeter': {
-      const r = 1500 + rnd() * (4000 - 1500);
-      return R.perimeter(dock.coords, r, 10);
+      // Patrol ring around the dock, 55–90% of the coverage radius.
+      const r = rangeM * (0.55 + rnd() * 0.35);
+      route = R.perimeter(dock.coords, r, 10);
+      break;
     }
     case 'orbit': {
-      const center = randomOffsetPoint(rnd, dock.coords, 3000);
-      const r = 300 + rnd() * (800 - 300);
-      return R.orbit(center, r, 16);
+      // Small orbit whose center offset plus radius stays inside coverage.
+      const r = Math.min(300 + rnd() * 500, rangeM * 0.45);
+      const center = randomOffsetPoint(rnd, dock.coords, Math.max(0, rangeM * 0.45 - r));
+      route = R.orbit(center, r, 16);
+      break;
     }
     case 'lawnmower': {
-      const center = randomOffsetPoint(rnd, dock.coords, 4000);
-      const widthKm = 1 + rnd() * 1.5;
-      const heightKm = 1 + rnd() * 1.5;
-      return R.lawnmower(center, widthKm, heightKm, 150, rnd() * 360);
+      // Survey box centered near the dock; box + offset kept within range so
+      // the far corners don't punch through the coverage ring.
+      const maxSideKm = (rangeM / 1000) * 0.85;
+      const widthKm = Math.min(1 + rnd() * 1.5, maxSideKm);
+      const heightKm = Math.min(1 + rnd() * 1.5, maxSideKm);
+      const center = randomOffsetPoint(rnd, dock.coords, rangeM * 0.2);
+      route = R.lawnmower(center, widthKm, heightKm, 150, rnd() * 360);
+      break;
     }
     case 'corridor': {
       const road = nearestRoad(roads, dock.coords);
       if (!road) return null;
-      const startFrac = rnd() * 0.6;
-      const lengthKm = 6 + rnd() * 12;
-      return R.corridor(road.geometry.coordinates, startFrac, lengthKm);
+      // Corridor length capped to ~1.7× range and centered on the dock's
+      // nearest road point, so both ends stay inside coverage after clamping.
+      const lengthKm = Math.min(3 + rnd() * 6, (rangeM / 1000) * 1.7);
+      route = corridorNearDock(R, road, dock.coords, lengthKm);
+      break;
     }
     case 'atob': {
       if (type === 'delivery'){
-        const candidates = [];
+        // Deliver to the nearest OTHER dock that's actually within range;
+        // otherwise a point-to-point run to a spot inside coverage.
+        let target = null, bestD = Infinity;
         for (const d of (dock._allDocks || [])){
           if (d.id === dock.id) continue;
-          if (R.distM(dock.coords, d.coords) <= 40000) candidates.push(d);
+          const dist = R.distM(dock.coords, d.coords);
+          if (dist <= rangeM * 0.9 && dist < bestD){ bestD = dist; target = d.coords; }
         }
-        if (candidates.length){
-          const target = pick(rnd, candidates);
-          return R.atob(dock.coords, target.coords);
-        }
-        const fallback = randomOffsetPoint(rnd, dock.coords, 12000, 2000);
-        return R.atob(dock.coords, fallback);
+        if (!target) target = randomOffsetPoint(rnd, dock.coords, rangeM * 0.9, rangeM * 0.3);
+        route = R.atob(dock.coords, target);
+        break;
       }
-      const target = randomOffsetPoint(rnd, dock.coords, 12000);
-      return R.atob(dock.coords, target);
+      // First-response dash to a point inside coverage.
+      route = R.atob(dock.coords, randomOffsetPoint(rnd, dock.coords, rangeM * 0.9, rangeM * 0.3));
+      break;
     }
     default:
       return null;
   }
+  return clampToRange(route, dock.coords, rangeM);
 }
 
 // ---------- engine factory ----------
@@ -168,6 +227,9 @@ function create(opts){
       name: src.name || src.id,
       emirate: src.emirate || '',
       coords: src.coords.slice(),
+      // Carried through so dockRangeM() can honor an explicit per-dock
+      // override; when absent, range falls back to coords-based geography.
+      urban: (typeof src.urban === 'boolean' ? src.urban : undefined),
       battery: 100,
       state: 'ready',
       drone: drone,
@@ -479,6 +541,61 @@ function create(opts){
 
     emit('info', drone.id, drone.id + ' LAUNCHED · ' + config.label + ' FROM ' + String(dock.name).toUpperCase());
     return mission;
+  };
+
+  // Launch a ready-made mission of a given type without hand-placing
+  // waypoints — the same route generator + createMission path the scheduler
+  // uses, exposed so the UI's predefined-mission menu can fire one in a
+  // single click. opts.dockId forces a specific dock; opts.near ([lon,lat])
+  // biases dock choice toward that point; otherwise picks any eligible ready
+  // dock. Returns the launched mission, or throws if nothing is available.
+  engine.launchPreset = function(type, opts){
+    opts = opts || {};
+    const config = MISSIONS_CONFIG && MISSIONS_CONFIG[type];
+    if (!config) throw new Error('Unknown mission type: ' + type);
+
+    // Candidate docks: ready, charged, with a docked drone.
+    let candidates;
+    if (opts.dockId){
+      const forced = engine.docks.get(opts.dockId);
+      candidates = forced ? [forced] : [];
+    } else {
+      candidates = [];
+      for (const dock of engine.docks.values()){
+        if (dock.state === 'ready' && dock.battery >= SCHED_MIN_BATTERY &&
+            dock.drone && dock.drone.state === 'docked'){
+          candidates.push(dock);
+        }
+      }
+    }
+    if (!candidates.length) throw new Error('No ready dock available');
+
+    // Prefer the eligible dock nearest opts.near, so a preset can land in a
+    // recognizable city rather than a random emirate. Otherwise keep the
+    // natural (insertion) order and try each until a route generates.
+    if (opts.near && isFiniteXY(opts.near)){
+      candidates = candidates.slice().sort((a, b) =>
+        R.distM(a.coords, opts.near) - R.distM(b.coords, opts.near));
+    }
+
+    let lastErr = null;
+    for (const dock of candidates){
+      // generateRoute is stochastic (corridor/atob can miss); give each dock
+      // a few attempts before moving on to the next candidate.
+      for (let attempt = 0; attempt < 4; attempt++){
+        const waypoints = generateRoute(R, roads, engine.rand, config.pattern, dock, type);
+        if (!waypoints || waypoints.length < 2) continue;
+        try {
+          return engine.createMission({
+            type: type,
+            dockId: dock.id,
+            waypoints: waypoints,
+            params: { altM: config.defaults.altM, speedMs: config.defaults.speedMs }
+          });
+        } catch (e) { lastErr = e; }
+      }
+    }
+    throw lastErr || new Error('Could not generate a route for ' + type);
   };
 
   // ---- manual operator commands (Task 10) ----
