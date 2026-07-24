@@ -130,3 +130,20 @@ export interface SimEvent {
   requestId?: string
   trackId?: string
 }
+
+// Raw site input as it appears in DATA_SITES (data/sites.js entries).
+export interface Site {
+  id: string
+  name: string
+  coords: LonLat
+  status: 'installed' | 'not-installed' | 'replace'
+}
+
+// Per-mission-type configuration as it appears in MISSIONS_CONFIG
+// (data/missions-config.js entries).
+export interface MissionConfig {
+  label: string
+  pattern: 'perimeter' | 'corridor' | 'atob' | 'lawnmower'
+  defaults: { altM: number; speedMs: number }
+  analytics: (mission: Mission, rand: () => number) => Record<string, unknown>
+}
