@@ -10,6 +10,13 @@
 // `scene` (hidden exactly when scene==='console'), so this component
 // derives its own hidden state from the store instead of needing a
 // `visible`/`hidden` prop from the caller.
+//
+// The `.g-logo` brand image (deferred from Task 4 to Task 5, which vendors
+// the asset) is sourced from `import.meta.env.BASE_URL` rather than a
+// hardcoded `/assets/...` path so it resolves under both the dev root (`/`)
+// and the GitHub Pages base path (`/e-Sentinel/`); the file itself is
+// copied verbatim from `assets/img/eand-logo-white.png` into
+// `app/public/assets/img/`, not modified.
 
 import type { MutableRefObject } from 'react'
 import { useAppStore } from '@/shared/store'
@@ -38,6 +45,11 @@ export default function GlobeOverlay({ tagRef, altRef, enterBtnRef, onEnter }: G
   return (
     <div id="globe-ui" hidden={scene !== 'globe'}>
       <div className="g-brand">
+        <img
+          className="g-logo"
+          src={`${import.meta.env.BASE_URL}assets/img/eand-logo-white.png`}
+          alt="e&"
+        />
         <div>
           <b>SENTINEL</b>
           <span className="lbl">GLOBAL COMMAND &amp; CONTROL · ORBITAL VIEW</span>
