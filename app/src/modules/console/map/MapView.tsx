@@ -13,7 +13,7 @@
 // checking mapRef.current first so a second map is never built while a
 // first one is still live.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -77,10 +77,12 @@ export default function MapView({ children }: MapViewProps) {
   }, [])
 
   useBasemap(mapRef, ready)
-  useOffline(mapRef, ready)
+  useOffline(mapRef)
+
+  const contextValue = useMemo(() => ({ mapRef, ready }), [ready])
 
   return (
-    <MapContext.Provider value={{ mapRef, ready }}>
+    <MapContext.Provider value={contextValue}>
       <div id="map" ref={containerRef} />
       {ready ? children : null}
     </MapContext.Provider>

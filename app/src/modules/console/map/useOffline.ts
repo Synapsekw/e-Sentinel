@@ -30,9 +30,14 @@ function rasterSourceId(e: MapLibreErrorEvent): string | undefined {
   return typeof sourceId === 'string' ? sourceId : undefined
 }
 
-export function useOffline(mapRef: MutableRefObject<maplibregl.Map | null>, ready: boolean): void {
+// Attaches the error listener as soon as the map instance exists — not
+// gated on `ready` (the 'load' event) — since legacy attaches its counter
+// (map.js:912) immediately after construction, well before 'load', so
+// tile-fetch failures in that pre-load window count toward the offline
+// threshold too. The imperative layer-visibility toggles below stay guarded
+// with getLayer() since they can run before the style has finished loading.
+export function useOffline(mapRef: MutableRefObject<maplibregl.Map | null>): void {
   useEffect(() => {
-    if (!ready) return
     const map = mapRef.current
     if (!map) return
 
@@ -99,5 +104,5 @@ export function useOffline(mapRef: MutableRefObject<maplibregl.Map | null>, read
       stopRecoveryProbe()
       unsubscribe()
     }
-  }, [mapRef, ready])
+  }, [mapRef])
 }

@@ -45,9 +45,11 @@ function applyBasemap(map: maplibregl.Map): void {
 
 // Applies the current scene/layer/offline selection to the map's basemap
 // rasters, dark-basemap overlays, place-label theme, and operational-layer
-// visibility — once when the map becomes ready, and again on every
-// subsequent store change (mirrors legacy's onSceneChange + layer-chip
-// click handlers, all funneled through one subscription here).
+// visibility — once when the map becomes ready, and again whenever scene,
+// layer, or offline change (mirrors legacy's onSceneChange + layer-chip
+// click handlers, all funneled through one subscription here). The
+// subscription is narrowed to those three fields so unrelated store writes
+// (e.g. future phases' fields) don't needlessly re-apply the basemap.
 export function useBasemap(mapRef: MutableRefObject<maplibregl.Map | null>, ready: boolean): void {
   useEffect(() => {
     if (!ready) return
@@ -60,7 +62,18 @@ export function useBasemap(mapRef: MutableRefObject<maplibregl.Map | null>, read
     }
 
     apply()
-    const unsubscribe = useAppStore.subscribe(apply)
+
+    let prev = useAppStore.getState()
+    const unsubscribe = useAppStore.subscribe((state) => {
+      if (
+        state.scene !== prev.scene ||
+        state.layer !== prev.layer ||
+        state.offline !== prev.offline
+      ) {
+        prev = state
+        apply()
+      }
+    })
     return unsubscribe
   }, [mapRef, ready])
 }

@@ -1,10 +1,12 @@
 /* Ported (Phase 1B / Task 3) verbatim from assets/css/console.css:
    #map (line 25), #basemap-loading + [hidden] (lines 453-463, minus the
    #side-collapsed left-shift rule, which belongs to Task 5's console
-   chrome), and .maplibregl-ctrl-attrib / its link + button states
-   (lines 421-429). Only the selectors relevant to MapView + BasemapChip are
-   transcribed here; everything else in console.css stays with its owning
-   task. */
+   chrome), and .maplibregl-ctrl-bottom-right / .maplibregl-ctrl-attrib /
+   its link + button states (lines 420-429), all one block in legacy so the
+   attribution control's stacking order (z-index:750) is carried over
+   alongside its restyling. Only the selectors relevant to MapView +
+   BasemapChip are transcribed here; everything else in console.css stays
+   with its owning task. */
 
 #map {
   position: fixed;
@@ -35,6 +37,9 @@
   display: none;
 }
 
+.maplibregl-ctrl-bottom-right {
+  z-index: 750;
+}
 .maplibregl-ctrl-attrib {
   background: rgba(10, 11, 14, 0.7) !important;
   color: var(--dim) !important;
