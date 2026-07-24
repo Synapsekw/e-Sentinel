@@ -33,6 +33,12 @@ function applyPlaceLabelTheme(map: maplibregl.Map, eff: string | null): void {
 function applyBasemap(map: maplibregl.Map): void {
   const { scene, layer, offline } = useAppStore.getState()
   const eff: string | null = offline ? null : effectiveLayer(scene, layer)
+  // Legacy EC2.setLayer (assets/js/ui/map.js:997) stamps the SELECTED layer
+  // (not the effective one) onto the root element so CSS can adapt chrome to
+  // the basemap (console.css:18-20 keys --chrome off
+  // :root[data-maplayer=...]); mirrored here so the stamp stays correct even
+  // while the orbital globe scene is forcing the effective raster to 'sat'.
+  document.documentElement.dataset.maplayer = layer
   for (const k of ['dark', 'light', 'sat', 'terrain'] as const) {
     map.setLayoutProperty(`raster-${k}`, 'visibility', k === eff ? 'visible' : 'none')
   }

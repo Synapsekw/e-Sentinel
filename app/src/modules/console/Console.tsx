@@ -13,7 +13,7 @@
 // matching the shape of Task 3/4's verification scaffold in App.tsx (which
 // this component replaces).
 
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'
 import MapView from './map/MapView'
 import BasemapChip from './map/BasemapChip'
@@ -93,6 +93,20 @@ function ConsoleScene() {
 }
 
 export default function Console() {
+  // The Zustand store persists across route unmount/remount (it's a module
+  // singleton, not React state), so a prior visit's ENTER THEATER can leave
+  // scene==='console' sitting in the store after Console unmounts. On a
+  // fresh mount, always reset to the orbital boot scene — matching legacy,
+  // which always initialized state.scene = 'globe' on page load. Mount-only
+  // (empty deps) and independent of map readiness, so it always wins the
+  // race against useGlobe's ready-gated boot effect below: on first visit
+  // scene is already 'globe' (no-op); on remount-after-theater it correctly
+  // restores the orbital boot instead of booting the globe intro camera
+  // under console chrome/layers.
+  useEffect(() => {
+    useAppStore.getState().setScene('globe')
+  }, [])
+
   return (
     <MapView>
       <ConsoleScene />

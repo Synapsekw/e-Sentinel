@@ -9,12 +9,7 @@
 // here via `emptyFC()`; Task 3 (imperative map lifecycle) is responsible
 // for calling `map.getSource(id).setData(...)` as the sim drives them.
 
-import type {
-  ExpressionSpecification,
-  LayerSpecification,
-  SourceSpecification,
-  StyleSpecification,
-} from 'maplibre-gl'
+import type { ExpressionSpecification, SourceSpecification, StyleSpecification } from 'maplibre-gl'
 import type { FeatureCollection } from 'geojson'
 import { GEO_UAE, GEO_WORLD } from '@/modules/console/domain'
 import { RASTERS, RASTER_ATTRIBUTION, VECTOR_TILES, SITE_STATUS_COLOR, glyphsUrl } from './basemap'
@@ -39,7 +34,7 @@ function buildRasterSources(): Record<string, SourceSpecification> {
 
 // The full MapLibre style: rasters + carto-streets vector overlay + UAE
 // borders/roads/places + docks/sites/coverage (seeded from features.ts) +
-// live-empty sim sources + the world landmass fallback, and ~36 layers
+// live-empty sim sources + the world landmass fallback, and 34 layers
 // rendering all of it. Called fresh each time (matching the legacy
 // EC2.initMap, which rebuilds `style` on every map (re)creation).
 export function buildStyle(): StyleSpecification {
@@ -523,6 +518,6 @@ export function buildStyle(): StyleSpecification {
         },
         paint: { 'text-color': '#fbbf24' },
       },
-    ] as LayerSpecification[],
+    ],
   }
 }
