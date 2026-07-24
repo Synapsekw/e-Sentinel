@@ -19,6 +19,9 @@ describe('geo', () => {
 
   it('roads inside UAE bbox', () => {
     for (const f of GEO_UAE.roads.features) {
+      // TS narrowing guard only: Geometry is a union and GeometryCollection
+      // has no .coordinates. All 6 road features are LineStrings, so this
+      // never skips anything — not a behavioral change from the legacy test.
       if (f.geometry.type !== 'LineString') continue
       for (const [lon, lat] of f.geometry.coordinates) {
         expect(lon > 51 && lon < 56.6).toBeTruthy()
