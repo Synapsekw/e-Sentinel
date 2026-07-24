@@ -8,13 +8,19 @@
 // (:298-326). Only the module wiring changed: legacy's module-level `let`
 // variables (dragging, resumeAt, diving, diveDir, lastTs, ...) become one
 // mutable ref object so they survive across renders without retriggering
-// effects; the DOM lookups for #uae-beacon-tag/#g-alt become the tagRef/
-// altRef passed in by the caller (GlobeOverlay owns the actual elements);
-// EC2.state.scene/EC2.onSceneChange become the Zustand store; and
-// EC2.enterTheater/EC2.exitToOrbit become this hook's returned callbacks.
-// The persistent ENTER THEATER button (buildEnterButton, :247-257) is
-// dropped here — GlobeOverlay renders it directly as JSX, visible
-// declaratively whenever scene === 'globe'.
+// effects; the DOM lookups for #uae-beacon-tag/#g-alt/#globe-enter-btn
+// become the tagRef/altRef/enterBtnRef passed in by the caller (GlobeOverlay
+// owns the actual elements); EC2.state.scene/EC2.onSceneChange become the
+// Zustand store; and EC2.enterTheater/EC2.exitToOrbit become this hook's
+// returned callbacks. The persistent ENTER THEATER button (buildEnterButton,
+// :247-257) is rendered by GlobeOverlay directly as JSX (declaratively
+// hidden whenever scene !== 'globe', via the #globe-ui wrapper), but is also
+// hidden imperatively here for the dive-in flight itself: legacy's
+// enterTheater (:263) sets `enterBtn.hidden = true` synchronously at dive
+// start (the button stays visible/clickable the whole ~2.6s flyTo
+// otherwise, since `scene` only flips at moveend), and legacy's
+// onSceneChange subscriber (:323) restores it once back in the 'globe'
+// scene — both mirrored below via enterBtnRef.
 
 import { useCallback, useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
@@ -40,6 +46,7 @@ import {
 export interface UseGlobeOptions {
   tagRef: MutableRefObject<HTMLElement | null>
   altRef: MutableRefObject<HTMLElement | null>
+  enterBtnRef: MutableRefObject<HTMLElement | null>
 }
 
 export interface UseGlobeResult {
@@ -72,13 +79,19 @@ function measureGlobeRadiusPx(map: maplibregl.Map): number {
   return maxD
 }
 
-function fitOrbitZoom(map: maplibregl.Map): number {
+// `seedZoom` mirrors legacy's `let z = ORBIT.zoom` (globe.js:71): ORBIT.zoom
+// is a mutable module value there, overwritten by every successful fit, so
+// each re-fit's 6-iteration loop starts from the last converged zoom rather
+// than the frozen initial constant. Callers pass the live `rt.current
+// .orbitZoom` on re-fits and the `ORBIT.zoom` constant only for the very
+// first boot call (matching legacy's fresh-module-load state).
+function fitOrbitZoom(map: maplibregl.Map, seedZoom: number): number {
   const cont = map.getContainer()
   const w = cont.clientWidth || window.innerWidth || 1280
   const h = cont.clientHeight || window.innerHeight || 800
   const targetR = GLOBE_FIT_FRACTION * 0.5 * Math.min(w, h)
   const restoreZoom = map.getZoom()
-  let z = ORBIT.zoom
+  let z = seedZoom
   for (let i = 0; i < 6; i++) {
     map.setZoom(z)
     const r = measureGlobeRadiusPx(map)
@@ -118,7 +131,7 @@ function beaconVisible(map: maplibregl.Map): {
 // Runs the orbital globe: viewport-fitted orbit zoom, homing rotation,
 // beacon ping/tag, alt readout, and the dive-to-theater / return-to-orbit
 // transitions. Must be called from a component rendered inside <MapView>.
-export function useGlobe({ tagRef, altRef }: UseGlobeOptions): UseGlobeResult {
+export function useGlobe({ tagRef, altRef, enterBtnRef }: UseGlobeOptions): UseGlobeResult {
   const { mapRef, ready } = useMap()
 
   const rt = useRef<GlobeRuntimeState>({
@@ -158,6 +171,9 @@ export function useGlobe({ tagRef, altRef }: UseGlobeOptions): UseGlobeResult {
     s.diving = true
     s.diveDir = 'in'
     if (tagRef.current) tagRef.current.hidden = true
+    // Legacy globe.js:263 hides the persistent ENTER THEATER button
+    // synchronously at dive start, for the whole flight.
+    if (enterBtnRef.current) enterBtnRef.current.hidden = true
     map.flyTo({ center: THEATER.center, zoom: THEATER.zoom, duration: DIVE_MS, curve: DIVE_CURVE })
     // `once(type, listener)` always returns `this` at runtime, never the
     // Promise from its listener-less overload; `void` discards the union
@@ -167,7 +183,7 @@ export function useGlobe({ tagRef, altRef }: UseGlobeOptions): UseGlobeResult {
       s.diveDir = null
       useAppStore.getState().setScene('console')
     })
-  }, [mapRef, tagRef])
+  }, [mapRef, tagRef, enterBtnRef])
 
   const exitToOrbit = useCallback(() => {
     const map = mapRef.current
@@ -177,7 +193,7 @@ export function useGlobe({ tagRef, altRef }: UseGlobeOptions): UseGlobeResult {
     s.diveDir = 'out'
     s.resumeAt = 0 // stay paused for the duration of the return flight
     if (s.orbitFitDirty) {
-      s.orbitZoom = fitOrbitZoom(map)
+      s.orbitZoom = fitOrbitZoom(map, s.orbitZoom)
       s.orbitFitDirty = false
     }
     map.flyTo({ center: ORBIT.center, zoom: s.orbitZoom, duration: DIVE_MS, curve: DIVE_CURVE })
@@ -200,7 +216,7 @@ export function useGlobe({ tagRef, altRef }: UseGlobeOptions): UseGlobeResult {
       if (!map) return
       map.resize() // canvas may lag the container
       if (useAppStore.getState().scene === 'globe' && !s.diving) {
-        s.orbitZoom = fitOrbitZoom(map)
+        s.orbitZoom = fitOrbitZoom(map, s.orbitZoom)
         map.setZoom(s.orbitZoom)
         s.orbitFitDirty = false
       } else {
@@ -330,7 +346,7 @@ export function useGlobe({ tagRef, altRef }: UseGlobeOptions): UseGlobeResult {
 
     // ---- boot (globe.js:298-326) ----
     map.resize() // sync canvas to container before any fit math
-    s.orbitZoom = fitOrbitZoom(map)
+    s.orbitZoom = fitOrbitZoom(map, ORBIT.zoom)
     // Boot with the center meridian east of the UAE: the opening shot
     // rotates westward until the beacon settles front-and-center.
     map.jumpTo({ center: [BEACON[0] + INTRO_LNG_OFFSET, ORBIT.center[1]], zoom: s.orbitZoom })
@@ -356,6 +372,9 @@ export function useGlobe({ tagRef, altRef }: UseGlobeOptions): UseGlobeResult {
       if (state.scene !== prevScene) {
         prevScene = state.scene
         setBeaconVisible(state.scene !== 'console')
+        // Mirrors legacy's onSceneChange subscriber (globe.js:323): the
+        // button is shown again only once back in the orbital scene.
+        if (enterBtnRef.current) enterBtnRef.current.hidden = state.scene !== 'globe'
       }
     })
 
@@ -371,7 +390,7 @@ export function useGlobe({ tagRef, altRef }: UseGlobeOptions): UseGlobeResult {
       tagEl?.removeEventListener('click', onTagClick)
       unsubscribe()
     }
-  }, [ready, mapRef, tagRef, altRef, enterTheater, updateAltReadout])
+  }, [ready, mapRef, tagRef, altRef, enterBtnRef, enterTheater, updateAltReadout])
 
   return { enterTheater, exitToOrbit }
 }

@@ -20,11 +20,19 @@ export interface GlobeOverlayProps {
   tagRef: MutableRefObject<HTMLButtonElement | null>
   /** Ref to the ALT ... KM readout; text updated each frame by useGlobe while diving. */
   altRef: MutableRefObject<HTMLDivElement | null>
+  /**
+   * Ref to the persistent ENTER THEATER button; useGlobe hides it
+   * imperatively (and synchronously) at dive start, and restores it once
+   * back in the 'globe' scene — matching legacy's enterBtn.hidden toggling
+   * (globe.js:263, :323), which the declarative `scene` prop alone can't
+   * express since `scene` only flips at flight moveend.
+   */
+  enterBtnRef: MutableRefObject<HTMLButtonElement | null>
   /** Invoked when the operator clicks the beacon tag or the ENTER THEATER button. */
   onEnter: () => void
 }
 
-export default function GlobeOverlay({ tagRef, altRef, onEnter }: GlobeOverlayProps) {
+export default function GlobeOverlay({ tagRef, altRef, enterBtnRef, onEnter }: GlobeOverlayProps) {
   const scene = useAppStore((s) => s.scene)
 
   return (
@@ -48,7 +56,7 @@ export default function GlobeOverlay({ tagRef, altRef, onEnter }: GlobeOverlayPr
       <div ref={altRef} className="g-alt lbl" id="g-alt">
         ALT 12742 KM · ORBITAL
       </div>
-      <button id="globe-enter-btn" type="button" onClick={onEnter}>
+      <button ref={enterBtnRef} id="globe-enter-btn" type="button" onClick={onEnter}>
         ENTER THEATER
       </button>
     </div>

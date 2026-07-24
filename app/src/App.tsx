@@ -23,14 +23,20 @@ const LAYERS: MapLayer[] = ['dark', 'light', 'sat', 'terrain']
 function GlobeScene() {
   const tagRef = useRef<HTMLButtonElement | null>(null)
   const altRef = useRef<HTMLDivElement | null>(null)
-  const { enterTheater, exitToOrbit } = useGlobe({ tagRef, altRef })
+  const enterBtnRef = useRef<HTMLButtonElement | null>(null)
+  const { enterTheater, exitToOrbit } = useGlobe({ tagRef, altRef, enterBtnRef })
   const scene = useAppStore((s) => s.scene)
   const setLayer = useAppStore((s) => s.setLayer)
   const layer = useAppStore((s) => s.layer)
 
   return (
     <>
-      <GlobeOverlay tagRef={tagRef} altRef={altRef} onEnter={enterTheater} />
+      <GlobeOverlay
+        tagRef={tagRef}
+        altRef={altRef}
+        enterBtnRef={enterBtnRef}
+        onEnter={enterTheater}
+      />
       {scene === 'console' ? (
         <>
           <BasemapChip />
