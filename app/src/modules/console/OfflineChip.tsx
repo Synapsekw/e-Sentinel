@@ -39,7 +39,7 @@ export default function OfflineChip() {
         whiteSpace: 'nowrap',
       }}
     >
-      OFFLINE &middot; CACHED VIEW
+      OFFLINE MODE · VECTOR MAP
     </div>
   )
 }

@@ -57,6 +57,12 @@ export function usePingDriver(): void {
 
   useEffect(() => {
     if (!ready) return
+    // Captured once per effect run (not re-read from mapRef.current every
+    // frame like legacy re-reads the EC2.map global): intentional
+    // divergence — MapView never replaces a live map instance out from
+    // under a mounted tree, and this effect's cleanup cancels the rAF
+    // whenever mapRef's identity would change (dep array below), so a
+    // stale closed-over `map` can't outlive its own tick loop.
     const map = mapRef.current
     if (!map) return
 
