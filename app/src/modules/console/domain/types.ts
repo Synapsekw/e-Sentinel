@@ -50,11 +50,20 @@ export interface Drone {
   battery: number
   state: DroneState
   missionId: string | null
-  _leg: unknown
+  // Refined from `unknown` (Task 5): the engine only ever stores a route
+  // (LonLat[]) or null on this private leg field, and reads it back through
+  // SimRouter.pointAlong / pathLengthKm which require LonLat[].
+  _leg: LonLat[] | null
   _legDistKm: number
   _legProgress: number
   _timer: number
   _holdUntil: number
+  // Private accumulators added lazily by the engine's manual-control paths
+  // (Task 10/11). Absent on a freshly-booted docked drone, hence optional.
+  _preHoldState?: DroneState | null
+  _manualQueue?: LonLat[]
+  _preManualState?: DroneState | null
+  _manualSpeed?: number
 }
 
 export interface Dock {
@@ -84,6 +93,8 @@ export interface Mission {
   durationS: number
   completedAt?: number
   requestId?: string
+  // Stamped by approveRequest so debrief copy survives request pruning.
+  requestedBy?: string
   trackId?: string
   _milestones: Record<string, unknown>
 }
@@ -143,7 +154,11 @@ export interface Site {
 // (data/missions-config.js entries).
 export interface MissionConfig {
   label: string
-  pattern: 'perimeter' | 'corridor' | 'atob' | 'lawnmower'
+  // 'orbit' is included because the engine's route generators switch over
+  // this value and carry an 'orbit' branch (unused by the shipped configs,
+  // but transcribed faithfully in Task 5); widening keeps those switches
+  // type-checkable without changing MISSIONS_CONFIG's data.
+  pattern: 'perimeter' | 'corridor' | 'atob' | 'lawnmower' | 'orbit'
   defaults: { altM: number; speedMs: number }
   analytics: (mission: Mission, rand: () => number) => Record<string, unknown>
 }
