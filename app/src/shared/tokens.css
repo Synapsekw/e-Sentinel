@@ -1,0 +1,14 @@
+:root {
+  --bg: #0a0b0e;
+  --panel: rgba(255, 255, 255, 0.035);
+  --panel2: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.09);
+  --txt: #c9cfda;
+  --dim: #7d8697;
+  --red: #ff5a5a;
+  --redd: #bc0000;
+  --amber: #fbbf24;
+  --ok: #4ade80;
+  --sans: 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, Menlo, monospace;
+}
