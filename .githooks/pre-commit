@@ -2,4 +2,5 @@
 # Lints/format-fixes only staged files under app/. The legacy vanilla sim is
 # not covered here. Enable once per clone: git config core.hooksPath .githooks
 cd app || exit 0
+[ -d node_modules ] || { echo "pre-commit: app/node_modules missing, skipping lint-staged (run: cd app && npm install)"; exit 0; }
 npx --no-install lint-staged
