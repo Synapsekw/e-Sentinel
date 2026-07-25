@@ -139,7 +139,14 @@ function PlannerShell() {
   }
 
   async function handleImportPlanFile(file: File) {
-    const text = await file.text()
+    let text: string
+    try {
+      text = await file.text()
+    } catch (err) {
+      console.error('[planner] could not read plan file', err)
+      setImportMessage({ level: 'error', text: 'COULD NOT READ FILE' })
+      return
+    }
     const result = parsePlan(text)
     if (!result.ok) {
       setImportMessage({ level: 'error', text: result.message })

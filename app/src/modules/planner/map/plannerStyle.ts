@@ -93,6 +93,19 @@ export function buildPlannerStyle(): StyleSpecification {
         type: 'fill',
         source: PLANNER_SOURCES.gaps,
         // Red is reserved for brand and alerts: an uncovered gap qualifies.
+        //
+        // The design doc originally called this layer "hatched." That was a
+        // deliberate tradeoff, not an oversight: a real hatch pattern needs a
+        // runtime pattern image (map.addImage, generated on a canvas or
+        // loaded as an asset) registered before this layer can reference it
+        // via 'fill-pattern', which means threading another async readiness
+        // gate through the same isMapUsable/MapView ready-latch plumbing
+        // useAoiDraw and useDockPlacement already depend on -- for a purely
+        // cosmetic difference from a translucent fill. That cost was judged
+        // disproportionate to the payoff, so this stayed a plain fill. The
+        // design doc has been updated to match; if hatching is ever wanted,
+        // it is a self-contained follow-up here plus a style rebuild, not a
+        // change to any of the coverage math.
         paint: { 'fill-color': '#ff5a5a', 'fill-opacity': 0.18 },
       },
       {

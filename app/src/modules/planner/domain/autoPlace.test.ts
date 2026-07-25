@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   suggestLayout,
   MAX_DOCKS,
-  MIN_MARGINAL_GAIN_FRACTION_OF_FOOTPRINT,
+  MIN_MARGINAL_GAIN_SAMPLES,
+  SAMPLE_SPACING_DIVISOR,
   MAX_CANDIDATES,
   MAX_REFINEMENTS,
 } from './autoPlace'
@@ -141,12 +142,49 @@ describe('suggestLayout', () => {
     // ~78.5km^2 footprint falls below that floor for any AOI over roughly
     // 31,400km^2, so the greedy loop rejected its very first candidate and
     // suggestLayout silently returned zero docks (see the "places docks on
-    // a very large AOI" test below for the measured regression). The floor
-    // is now expressed relative to one dock's own footprint instead, so it
-    // no longer depends on total AOI size at all.
-    expect(MIN_MARGINAL_GAIN_FRACTION_OF_FOOTPRINT).toBe(0.02)
+    // a very large AOI" test below for the measured regression). A later
+    // review found that the fraction-of-footprint framing that replaced it
+    // was itself misleading -- see MIN_MARGINAL_GAIN_SAMPLES' definition in
+    // autoPlace.ts -- so the floor is now a plain sample-cell count instead.
+    expect(MIN_MARGINAL_GAIN_SAMPLES).toBe(2)
     expect(MAX_CANDIDATES).toBe(2000)
     expect(MAX_REFINEMENTS).toBe(3)
+  })
+
+  it('pins the dock-footprint-in-samples relationship that made the old fraction-of-footprint framing misleading', () => {
+    // dockFootprintSamples = (pi * r^2) / (r / SAMPLE_SPACING_DIVISOR)^2
+    //                      = pi * SAMPLE_SPACING_DIVISOR^2
+    // The r cancels entirely, so a dock's own footprint, measured in sample
+    // cells, is a near-constant ~50.3 regardless of AOI size or dock radius
+    // -- it depends only on SAMPLE_SPACING_DIVISOR. This is exactly why the
+    // gain floor is now named directly in sample cells (MIN_MARGINAL_GAIN_
+    // SAMPLES) instead of as a fraction of footprint: the fraction added no
+    // real scale-sensitivity beyond what this constant already fixes. If
+    // SAMPLE_SPACING_DIVISOR ever changes, this test fails, forcing a
+    // conscious check of what MIN_MARGINAL_GAIN_SAMPLES now means in km^2.
+    expect(SAMPLE_SPACING_DIVISOR).toBe(4)
+    for (const r of [1, 5, 12.87, 200]) {
+      const dockFootprintSamples = (Math.PI * r * r) / (r / SAMPLE_SPACING_DIVISOR) ** 2
+      expect(dockFootprintSamples).toBeCloseTo(Math.PI * SAMPLE_SPACING_DIVISOR ** 2, 9)
+      expect(dockFootprintSamples).toBeCloseTo(50.265, 3)
+    }
+  })
+
+  it('pins the real-world ground area MIN_MARGINAL_GAIN_SAMPLES corresponds to at the rural radius, pre-widening', () => {
+    // Sample spacing is radiusKm / SAMPLE_SPACING_DIVISOR, so each sample
+    // cell's area is that spacing squared. For the 5km rural radius, before
+    // any MAX_SAMPLE_POINTS-driven widening, that is (5/4)^2 = 1.5625km^2 per
+    // cell, so MIN_MARGINAL_GAIN_SAMPLES=2 floors a candidate's minimum
+    // useful marginal gain at roughly 3.125km^2 of newly covered ground at
+    // this resolution. A change to SAMPLE_SPACING_DIVISOR changes this real
+    // area even though MIN_MARGINAL_GAIN_SAMPLES itself would not move --
+    // this test exists so that change is caught, not silent.
+    const ruralRadiusKm = 5
+    const sampleSpacingKm = ruralRadiusKm / SAMPLE_SPACING_DIVISOR
+    expect(sampleSpacingKm).toBe(1.25)
+    const cellAreaKm2 = sampleSpacingKm * sampleSpacingKm
+    expect(cellAreaKm2).toBeCloseTo(1.5625, 6)
+    expect(MIN_MARGINAL_GAIN_SAMPLES * cellAreaKm2).toBeCloseTo(3.125, 6)
   })
 
   it('returns no docks when there is no AOI', () => {
@@ -224,8 +262,8 @@ describe('suggestLayout', () => {
     // AOI area), even the single best candidate site's entire footprint
     // covered under 0.25% of this AOI's area, so the greedy loop refused the
     // very first candidate and returned zero docks with stoppedBy: 'gain'
-    // (this was Finding 2's exact scenario). With the floor now expressed as
-    // a fraction of one dock's own footprint instead of total area, the
+    // (this was Finding 2's exact scenario). With the floor now a fixed
+    // sample-cell count instead of a fraction of total area, the
     // first candidate's near-full-footprint gain clears it easily, and the
     // loop places docks all the way up to MAX_DOCKS -- this AOI needs far
     // more than 40 docks to blanket at a tight 20% overlap, so the cap is
@@ -275,12 +313,12 @@ describe('suggestLayout', () => {
     // A real 'gain' scenario under the new, scale-invariant floor: pushing
     // the 20km box to a near-total 99.9% target with a loose 50% overlap
     // means the last docks the coarse lattice can offer each add only a
-    // sliver of new ground -- genuinely under 2% of one dock's own
-    // footprint -- while candidates remain on the table and the cap is
-    // nowhere close. This is the same honest-labelling contract as before
-    // (see the design doc section 8): 'gain' still means "the next dock
-    // was not worth it", it is just no longer confused with "this AOI is
-    // too big for the floor to ever clear".
+    // sliver of new ground -- genuinely under MIN_MARGINAL_GAIN_SAMPLES (2)
+    // sample cells of newly covered ground -- while candidates remain on
+    // the table and the cap is nowhere close. This is the same
+    // honest-labelling contract as before (see the design doc section 8):
+    // 'gain' still means "the next dock was not worth it", it is just no
+    // longer confused with "this AOI is too big for the floor to ever clear".
     const plan = addAoi(createPlan(), squareAoi())
     const params = { ...plan, params: { targetOverlapPct: 50, requiredCoveragePct: 99.9 } }
     const r = suggestLayout(params)

@@ -16,19 +16,38 @@ export const MAX_DOCKS = 40
 // entire footprint is already below 0.25% of the total area -- the loop
 // rejected its first candidate and returned zero docks with no explanation
 // (see the design doc section 8 and the "places docks on a very large AOI"
-// test below for the measured failure). The fix expresses the floor
-// relative to what one dock can actually contribute -- a dock that would
-// add less than some small fraction of its own unobstructed footprint of
-// genuinely new ground is not worth placing, regardless of how large the
-// AOI around it is.
+// test below for the measured failure).
 //
-// 0.02 (2% of one dock's own footprint) is calibrated, not arbitrary: it is
-// the value that reproduces the 20km-box fixture's pre-existing, already-
-// validated quality (11 docks, 97.63% coverage, stoppedBy 'target' -- see
-// the "covers a 20km box"/"reaches the default required coverage" tests)
-// while also being a fixed, AOI-size-independent quantity, so it no longer
-// blows up on a large AOI the way the old percent-of-total-area floor did.
-export const MIN_MARGINAL_GAIN_FRACTION_OF_FOOTPRINT = 0.02
+// The replacement floor is a plain count of sample-grid cells, not a
+// percentage of anything. Why not "a fraction of one dock's own footprint,"
+// which is what an earlier revision of this fix used: the sample grid's own
+// resolution (sampleSpacingKm = radiusKm / SAMPLE_SPACING_DIVISOR) is
+// derived from that same radiusKm, so radiusKm cancels out of "one dock's
+// footprint, expressed in sample cells":
+//
+//   dockFootprintSamples = (pi * radiusKm^2) / (radiusKm / SAMPLE_SPACING_DIVISOR)^2
+//                        = pi * SAMPLE_SPACING_DIVISOR^2
+//
+// which is a near-constant ~50.3 cells at the current SAMPLE_SPACING_DIVISOR
+// (4), independent of AOI size or dock radius (see the "pins the dock-
+// footprint-in-samples relationship" test in autoPlace.test.ts, which pins
+// this exact algebra so a change to SAMPLE_SPACING_DIVISOR cannot silently
+// change what this constant means). A "2% of footprint" framing on top of
+// that near-constant was never actually scale-sensitive; it always reduced
+// to "reject a candidate whose best gain is 0 or 1 sample cell," just dressed
+// up as a percentage that suggested more rigor than the rule has. Naming the
+// floor directly in the unit the greedy loop already scores gain in --
+// sample cells -- is honest about that: a candidate must cover at least this
+// many still-uncovered sample cells to be worth placing. This is not free of
+// SAMPLE_SPACING_DIVISOR either: one sample cell's ground area is
+// sampleSpacingKm^2, so a coarser divisor makes each cell (and so this floor,
+// in real km^2) larger. 2 is the value that reproduces the 20km-box
+// fixture's pre-existing, already-validated quality (11 docks, 97.63%
+// coverage, stoppedBy 'target' -- see the "covers a 20km box"/"reaches the
+// default required coverage" tests) while remaining a fixed,
+// AOI-size-independent quantity, so it no longer blows up on a large AOI the
+// way the old percent-of-total-area floor did.
+export const MIN_MARGINAL_GAIN_SAMPLES = 2
 export const SAMPLE_SPACING_DIVISOR = 4
 export const MAX_SAMPLE_POINTS = 20000
 export const MAX_CANDIDATES = 2000
@@ -162,14 +181,10 @@ export function suggestLayout(
   let refinements = 0
   const total = samples.length
 
-  // One dock's own unobstructed footprint, expressed in sample-grid cells at
-  // this run's (possibly widened, see the resampling loop above) sample
-  // spacing -- fixed for the remainder of this run since sampleSpacingKm
-  // itself does not change again after this point (only the candidate
-  // lattice densifies). Scale-invariant: it depends on radiusKm and the
-  // sample resolution, never on total AOI area.
-  const dockFootprintSamples = (Math.PI * radiusKm * radiusKm) / (sampleSpacingKm * sampleSpacingKm)
-  const minGainSamples = MIN_MARGINAL_GAIN_FRACTION_OF_FOOTPRINT * dockFootprintSamples
+  // A candidate must cover at least this many still-uncovered sample cells
+  // to be worth placing -- see MIN_MARGINAL_GAIN_SAMPLES' definition above
+  // for why this is a plain cell count, not a percentage of anything.
+  const minGainSamples = MIN_MARGINAL_GAIN_SAMPLES
 
   for (;;) {
     if (chosen.length >= MAX_DOCKS) {

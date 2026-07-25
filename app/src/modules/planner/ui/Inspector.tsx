@@ -31,6 +31,17 @@ function DockInspector({ dockId }: { dockId: string }) {
 
   const breakdown = effectiveRadius(dock)
   const compatibleDrones = DOCK_MODELS[dock.dockModel].drones
+  // Finding 4: parsePlan deliberately does not validate dock/drone
+  // compatibility (see planIo.ts), so an imported or hand-edited plan can
+  // carry a droneModel that isn't in this dock model's compatible list. A
+  // <select> whose value doesn't match any of its <option>s silently falls
+  // back to displaying a *different* option than what's actually stored --
+  // the user would see a drone that isn't the one in their plan, with no
+  // indication anything is wrong. Tracking this explicitly, rather than just
+  // trusting the option list, is what lets the render below add the stored
+  // value back in (visibly marked) when it would otherwise have no matching
+  // option.
+  const droneIsCompatible = compatibleDrones.includes(dock.droneModel)
 
   // Carried item 1: DOCK_MODELS' drone compatibility was inert before this
   // task (nothing read it). Enforced here in both directions -- the drone
@@ -39,15 +50,23 @@ function DockInspector({ dockId }: { dockId: string }) {
   // selected, so the target model's first compatible drone is substituted
   // in the same patch when the current one isn't in the new list.
   function handleModel(e: ChangeEvent<HTMLSelectElement>) {
+    // Type-only: e.target.value is always a string; DOCK_MODEL_IDS is exactly
+    // the <option> values rendered below, so this only ever narrows a value
+    // that already came from this same DockModelId union.
     const model = e.target.value as DockModelId
     const allowed = DOCK_MODELS[model].drones
     const nextDrone: DroneModelId = allowed.includes(dock.droneModel) ? dock.droneModel : allowed[0]
     patchDock(dockId, { dockModel: model, droneModel: nextDrone })
   }
   function handleDrone(e: ChangeEvent<HTMLSelectElement>) {
+    // Type-only: every <option> below (compatible or the incompatible
+    // stored-value fallback) is rendered with a DroneModelId as its value.
     patchDock(dockId, { droneModel: e.target.value as DroneModelId })
   }
   function handleEnvironment(e: ChangeEvent<HTMLSelectElement>) {
+    // Type-only: the two <option> values below ('urban' | 'rural') are
+    // exactly PlannedDock['environment']; there is no third value this
+    // select can ever produce.
     patchDock(dockId, { environment: e.target.value as PlannedDock['environment'] })
   }
   function handleName(e: ChangeEvent<HTMLInputElement>) {
@@ -55,7 +74,18 @@ function DockInspector({ dockId }: { dockId: string }) {
   }
   function handleOverride(e: ChangeEvent<HTMLInputElement>) {
     const raw = e.target.value
-    patchDock(dockId, { radiusKmOverride: raw === '' ? undefined : Number(raw) })
+    if (raw === '') {
+      patchDock(dockId, { radiusKmOverride: undefined })
+      return
+    }
+    const parsed = Number(raw)
+    // An interim invalid numeric input (e.g. a bare "-" or "." while typing)
+    // yields NaN, which is not `null`/`undefined` -- left unguarded, it would
+    // flow into radiusFromTerms and render as "NaN KM" downstream. Simply
+    // ignore the keystroke until it parses to a real number rather than
+    // committing a NaN override.
+    if (Number.isNaN(parsed)) return
+    patchDock(dockId, { radiusKmOverride: parsed })
   }
   function handleRemove() {
     const state = usePlanStore.getState()
@@ -95,8 +125,26 @@ function DockInspector({ dockId }: { dockId: string }) {
               {DRONES[id].label}
             </option>
           ))}
+          {!droneIsCompatible ? (
+            // The stored value has no matching option above: render it too,
+            // visibly marked, so the select shows the truth (what's actually
+            // stored) instead of the browser silently falling back to
+            // displaying the first compatible option in its place.
+            <option value={dock.droneModel}>{DRONES[dock.droneModel].label} · INCOMPATIBLE</option>
+          ) : null}
         </select>
       </label>
+      {!droneIsCompatible ? (
+        // Deliberately outside the <label> above: text inside a <label> that
+        // wraps a control becomes part of that control's accessible name, so
+        // nesting this here would silently change what "Drone" resolves to
+        // for label-based lookups (both testing-library's getByLabelText and
+        // real assistive tech).
+        <span className="pl-badge pl-badge-alert">
+          {DRONES[dock.droneModel].label.toUpperCase()} IS NOT COMPATIBLE WITH{' '}
+          {DOCK_MODELS[dock.dockModel].label.toUpperCase()}
+        </span>
+      ) : null}
       <label className="pl-field">
         <span className="lbl">Environment</span>
         <select className="pl-input" value={dock.environment} onChange={handleEnvironment}>

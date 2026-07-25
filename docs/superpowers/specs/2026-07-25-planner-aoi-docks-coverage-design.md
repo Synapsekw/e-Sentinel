@@ -78,7 +78,7 @@ app/src/modules/planner/
   io/
     kml.ts             KML/KMZ -> Aoi[] (togeojson + fflate)
   map/
-    plannerStyle.ts    sources + layers: AOI fill/line, docks, rings, hatched gaps
+    plannerStyle.ts    sources + layers: AOI fill/line, docks, rings, uncovered-gap fill
     usePlannerLayers.ts  imperative plan -> source.setData sync
     useAoiDraw.ts      terra-draw setup/teardown
     useDockPlacement.ts  capture-mode click/drag for docks
@@ -208,7 +208,8 @@ Pure pipeline in `domain/coverage.ts`:
 2. Buffer each dock at its effective radius, **64 steps**, so rings look circular at high zoom.
 3. Union the buffers → `coverageGeom`.
 4. `intersect(coverageGeom, aoiGeom)` → `covered`; `coveragePct = area(covered)/aoiKm2`.
-5. `difference(aoiGeom, coverageGeom)` → `uncovered`, rendered as the hatched gap layer;
+5. `difference(aoiGeom, coverageGeom)` → `uncovered`, rendered as a translucent red fill (see
+   `plannerStyle.ts`'s `planner-gaps-fill` layer; **not** hatched -- see the note there for why);
    `gapCount` = its polygon count.
 6. Overlap: union of all **pairwise** buffer intersections, clipped to the AOI, over `area(covered)`.
 
@@ -227,8 +228,8 @@ counts is tens of milliseconds and sits behind the same debounce.
   `MAX_CANDIDATES` by widening the spacing deterministically (same technique as the sample grid)
   until the count fits.
 - Greedy: repeatedly take the candidate adding the most uncovered area; stop at
-  `requiredCoveragePct`, when marginal gain falls below **2% of one dock's own unobstructed
-  footprint** (`pi · radiusKm²`), or at the dock cap.
+  `requiredCoveragePct`, when marginal gain falls below **`MIN_MARGINAL_GAIN_SAMPLES` (2)
+  still-uncovered sample-grid cells**, or at the dock cap.
 - **Densify on exhaustion:** if the candidate lattice runs dry (every site has been taken) while
   coverage is still short of `requiredCoveragePct` and the dock cap has not been reached, the
   lattice is refined: spacing is halved from whatever spacing produced the current lattice (same
@@ -243,24 +244,40 @@ counts is tens of milliseconds and sits behind the same debounce.
 | Constant | Value | Purpose |
 |---|---|---|
 | `MAX_DOCKS` | 40 | Hard cap; produces the `STOPPED AT n% · 40 DOCK CAP` message |
-| `MIN_MARGINAL_GAIN_FRACTION_OF_FOOTPRINT` | 0.02 | Below this fraction of one dock's own footprint, the next dock is not worth placing |
+| `MIN_MARGINAL_GAIN_SAMPLES` | 2 | Below this many still-uncovered sample-grid cells, the next dock is not worth placing |
 | `SAMPLE_SPACING_DIVISOR` | 4 | Sample grid spacing = `radiusKm / 4` |
 | `MAX_SAMPLE_POINTS` | 20000 | Spacing widens to respect this on very large AOIs |
 | `MAX_CANDIDATES` | 2000 | Candidate lattice spacing widens to respect this on very large AOIs |
 | `MAX_REFINEMENTS` | 3 | Hard cap on how many times the lattice is halved to densify |
 
-**Why the floor is relative to a dock's own footprint, not total AOI area:** an earlier version of
+**Why the floor is a fixed sample-cell count, not a percentage of anything:** an earlier version of
 this floor (`MIN_MARGINAL_GAIN_PCT`, 0.25% of *total AOI area*) was not scale-invariant. A rural
 dock's own footprint (`pi · radiusKm²`, ~78.5km² at the 5km rural radius) is a fixed quantity, so
 for any AOI larger than roughly 31,400km² a single dock's entire footprint already falls below
 0.25% of the total area, so the greedy loop rejected its very first candidate and `suggestLayout`
 silently returned zero docks with no explanation. Measured live: an 82,522km² AOI produced 0 docks,
-while a 171km² AOI produced 4 docks at 96% coverage under the same code path. Expressing the floor
-as a fraction of one dock's own footprint instead fixes this: the floor no longer depends on total
-AOI size, only on the dock radius and (indirectly, via the sample grid resolution) how finely
-marginal gain is being measured. 0.02 was chosen because it reproduces the pre-existing, already-
-validated 20km-box fixture's quality (11 docks, 97.63% coverage, `stoppedBy: 'target'`) while also
-being AOI-size-independent, so a very large AOI now places docks up to `MAX_DOCKS` instead of zero.
+while a 171km² AOI produced 4 docks at 96% coverage under the same code path.
+
+The first fix re-expressed the floor as a fraction (2%) of one dock's own unobstructed footprint.
+A later review did the algebra and found that framing overstated its own precision. The sample
+grid's spacing (`sampleSpacingKm = radiusKm / SAMPLE_SPACING_DIVISOR`) is derived from the same
+`radiusKm` as the footprint, so `radiusKm` cancels entirely out of "one dock's footprint, in sample
+cells":
+
+```
+dockFootprintSamples = (pi * radiusKm^2) / (radiusKm / SAMPLE_SPACING_DIVISOR)^2 = pi * SAMPLE_SPACING_DIVISOR^2
+```
+
+At `SAMPLE_SPACING_DIVISOR = 4` that is a near-constant ~50.3 sample cells, regardless of AOI size
+or dock radius. "2% of footprint" therefore reduced, always, to "reject a candidate whose best gain
+is 0 or 1 sample cell" -- a fixed rule dressed up as a scale-sensitive percentage. The floor is now
+named directly in the unit the greedy loop already scores gain in: `MIN_MARGINAL_GAIN_SAMPLES` (2)
+still-uncovered sample-grid cells, used with no percentage indirection. This is still not free of
+`SAMPLE_SPACING_DIVISOR`: one sample cell's ground area is `sampleSpacingKm²`, so a coarser divisor
+makes each cell, and so this floor's real-world km² meaning, larger. 2 was chosen because it
+reproduces the pre-existing, already-validated 20km-box fixture's quality (11 docks, 97.63%
+coverage, `stoppedBy: 'target'`) while remaining a fixed, AOI-size-independent quantity, so a very
+large AOI still places docks up to `MAX_DOCKS` instead of zero.
 
 **Perf:** the greedy loop scores marginal gain on a **rasterized sample grid**, not exact polygon
 operations — hundreds of exact unions in a loop would hang the tab. One exact coverage computation
@@ -279,7 +296,7 @@ Partial outcomes are reported honestly via `stoppedBy`, one of four values:
 |---|---|
 | `'target'` | Reached `requiredCoveragePct` |
 | `'cap'` | Hit `MAX_DOCKS` before reaching target |
-| `'gain'` | The best remaining candidate's marginal gain fell below `MIN_MARGINAL_GAIN_FRACTION_OF_FOOTPRINT` of one dock's own footprint, with candidates still on the table: it genuinely was not worth placing another dock |
+| `'gain'` | The best remaining candidate's marginal gain fell below `MIN_MARGINAL_GAIN_SAMPLES` still-uncovered sample cells, with candidates still on the table: it genuinely was not worth placing another dock |
 | `'exhausted'` | No candidate sites remain, even after `MAX_REFINEMENTS` rounds of densification |
 
 `'gain'` and `'exhausted'` are deliberately distinct: the former means the next dock was not worth
@@ -296,7 +313,7 @@ user action ──> planStore mutation (rev++)
                   ├─> usePlannerLayers effect: plan -> GeoJSON -> source.setData
                   │     (guarded by isMapUsable + the MapView ready latch)
                   └─> debounced 150ms coverage job -> CoverageResult -> store
-                        └─> summary strip + hatched gaps layer
+                        └─> summary strip + uncovered-gap fill layer
 ```
 
 The coverage job carries a revision guard: if `rev` changes while a computation is in flight, the
