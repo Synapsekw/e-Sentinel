@@ -190,7 +190,7 @@ verified against a datasheet. The 2026-07-23 spec's open question about proposal
 |---|---|---|---|---|---|---|
 | M4TD | 54 | 48 | 0.30 | 5 | ~12.9 | cap |
 | M4D | 54 | 49 | 0.30 | 5 | ~13.2 | cap |
-| M350 | 61 | 55 | 0.30 | 5 | ~16.0 | cap |
+| M350 | 61 | 55 | 0.30 | 5 | ~17.0 | cap |
 
 In every seeded case the environment cap binds, not endurance — which is exactly the point §6
 makes, and gives the inspector a real number to show as headroom.
