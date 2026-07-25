@@ -1,7 +1,13 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { SimEngine, DATA_DOCKS, DATA_SITES, GEO_UAE } from '@/modules/console/domain'
 import { useAppStore } from '@/shared/store'
-import { selectEntity, clearSelection, selectedDockId, inCaptureMode } from './selectEntity'
+import {
+  selectEntity,
+  clearSelection,
+  selectedDockId,
+  inCaptureMode,
+  registerCaptureExits,
+} from './selectEntity'
 
 function bootedEngine() {
   const e = SimEngine.create({ docks: DATA_DOCKS, roads: GEO_UAE.roads })
@@ -33,11 +39,65 @@ describe('selectEntity', () => {
       selection: null,
       followDroneId: null,
       rightPanel: { mode: 'empty' },
+      controlMode: 'normal',
+      controlActiveId: null,
     })
   })
 
-  it('inCaptureMode is false until Phase 1E lands manual/wizard modes', () => {
+  afterEach(() => {
+    // Restore the no-op defaults so a test that registered spies doesn't
+    // leak them into a later, unrelated test file's module state.
+    registerCaptureExits({ exitManual: () => {}, exitWizard: () => {} })
+  })
+
+  it('inCaptureMode is false in normal mode', () => {
     expect(inCaptureMode()).toBe(false)
+  })
+
+  it('inCaptureMode follows controlMode (Phase 1E / Task 1)', () => {
+    useAppStore.setState({ controlMode: 'manual' })
+    expect(inCaptureMode()).toBe(true)
+    useAppStore.setState({ controlMode: 'wizard' })
+    expect(inCaptureMode()).toBe(true)
+    useAppStore.setState({ controlMode: 'normal' })
+    expect(inCaptureMode()).toBe(false)
+  })
+
+  it('selecting a different entity while manual control is engaged calls the registered exitManual', () => {
+    const exitManual = vi.fn()
+    const exitWizard = vi.fn()
+    registerCaptureExits({ exitManual, exitWizard })
+    useAppStore.setState({ controlMode: 'manual', controlActiveId: 'D-AUH-001' })
+
+    const { map } = fakeMap()
+    selectEntity({ type: 'dock', id: DATA_DOCKS[0].id }, null, map)
+
+    expect(exitManual).toHaveBeenCalledTimes(1)
+    expect(exitWizard).not.toHaveBeenCalled()
+  })
+
+  it('re-selecting the same manually-controlled drone does not call exitManual', () => {
+    const engine = bootedEngine()
+    const exitManual = vi.fn()
+    registerCaptureExits({ exitManual, exitWizard: () => {} })
+    const drone = [...engine.drones.values()].find((d) => d.state !== 'docked')!
+    useAppStore.setState({ controlMode: 'manual', controlActiveId: drone.id })
+
+    const { map } = fakeMap()
+    selectEntity({ type: 'drone', id: drone.id }, engine, map)
+
+    expect(exitManual).not.toHaveBeenCalled()
+  })
+
+  it('any selection while the wizard is engaged calls the registered exitWizard', () => {
+    const exitWizard = vi.fn()
+    registerCaptureExits({ exitManual: () => {}, exitWizard })
+    useAppStore.setState({ controlMode: 'wizard', controlActiveId: null })
+
+    const { map } = fakeMap()
+    selectEntity({ type: 'site', id: DATA_SITES[0].id }, null, map)
+
+    expect(exitWizard).toHaveBeenCalledTimes(1)
   })
 
   it('selecting a dock sets selection + panel and flies the camera once', () => {

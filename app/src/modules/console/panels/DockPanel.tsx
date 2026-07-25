@@ -6,11 +6,10 @@
 // interval bookkeeping with this component's own effect cleanup (see
 // RightPanel.tsx's header comment).
 //
-// #rp-launch is unconditionally disabled: the mission wizard (control.js's
-// enterWizard) lands in Phase 1E. `launchTitle` still tracks legacy's real
-// per-dock availability check (state !== 'ready') so the tooltip is
-// meaningful once the wizard exists and the unconditional disable is
-// lifted.
+// Phase 1E / Task 3: #rp-launch now calls control/useWizard.ts's
+// enterWizard(dock.id) (control.js's control.enterWizard, wired at
+// panels.js:1641-1644) and is enabled exactly when the dock is available to
+// launch from (`launchAvailable`, unchanged from Phase 1D).
 
 import { useEffect, useState } from 'react'
 import type maplibregl from 'maplibre-gl'
@@ -18,6 +17,7 @@ import type { Engine } from '@/modules/console/domain'
 import { EMIRATE_NAMES } from '@/modules/console/chrome/emirates'
 import { batteryFor, stateFor } from '@/modules/console/chrome/dockModel'
 import { DOCK_INDEX } from '@/modules/console/selection/selectEntity'
+import { useWizard } from '@/modules/console/control/useWizard'
 import { useOptionalEngine, useOptionalMap } from './hooks'
 
 export interface DockPanelProps {
@@ -33,6 +33,7 @@ export default function DockPanel({ id, engine: engineProp, map: mapProp }: Dock
   const contextMap = useOptionalMap()
   const engine = engineProp !== undefined ? engineProp : contextEngine
   const map = mapProp !== undefined ? mapProp : contextMap
+  const { enterWizard } = useWizard()
 
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -71,8 +72,9 @@ export default function DockPanel({ id, engine: engineProp, map: mapProp }: Dock
           type="button"
           className="primary"
           id="rp-launch"
-          disabled // Phase 1E: enterWizard(dockId) — the mission wizard lands then.
+          disabled={!launchAvailable}
           title={launchTitle}
+          onClick={() => enterWizard(dock.id)}
         >
           LAUNCH MISSION
         </button>

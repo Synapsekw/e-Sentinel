@@ -25,7 +25,7 @@ import { useAppStore } from '@/shared/store'
 import type { Engine } from '@/modules/console/domain'
 import { EngineContext } from '@/modules/console/engine/EngineContext'
 import { MapContext } from '@/modules/console/map/MapContext'
-import { selectEntity, inCaptureMode } from '@/modules/console/selection'
+import { selectEntity, inCaptureMode, openDebrief } from '@/modules/console/selection'
 import './hud.css'
 
 // panels.js:2219 — a calm national-grid crawl, not a stock ticker.
@@ -206,9 +206,14 @@ export default function Ticker({ engine: engineProp, map: mapProp }: TickerProps
         {events.map((ev) => {
           const isDroneChip = ev.droneId !== null
           const active = isDroneChip && isDroneActive(ev.droneId, engine)
+          // panels.js:2376+2382 — an explicit ev.onClick (the DEBRIEF READY
+          // chip) took precedence over the drone jump and carried the
+          // `clickable` class instead of the drone-activity classes.
+          const missionId = ev.missionId ?? null
           const className =
             'tick-ev' +
             (ev.level === 'warn' ? ' warn' : ev.level === 'alert' ? ' alert' : '') +
+            (missionId ? ' clickable' : '') +
             (isDroneChip ? ' drone-ev' + (active ? ' is-active' : ' is-past') : '')
           return (
             <span
@@ -216,9 +221,14 @@ export default function Ticker({ engine: engineProp, map: mapProp }: TickerProps
               className={className}
               data-drone={ev.droneId ?? undefined}
               onClick={
-                isDroneChip
-                  ? () => focusDroneFromEvent(ev.droneId as string, engine, map)
-                  : undefined
+                missionId
+                  ? () => {
+                      if (inCaptureMode()) return
+                      openDebrief(missionId)
+                    }
+                  : isDroneChip
+                    ? () => focusDroneFromEvent(ev.droneId as string, engine, map)
+                    : undefined
               }
             >
               <span className="tt">{ev.time}</span>

@@ -1,0 +1,52 @@
+/* Ported (Phase 1E / Task 7) from assets/css/console.css:585-589 (request
+   review panel: priority chip variants + the read-only status chip) and
+   :591-617's track-review-specific rules (the .state-chip.steel/.dim
+   variants and button.dg-det-track at :594-595/:609-617 already shipped in
+   panels.css during Phase 1D, so only the remaining new rules — .trk-chip's
+   spacing, the amber expiry countdown and the tasked "INVESTIGATING" line —
+   live here). Imported once each from RequestPanel.tsx and TrackPanel.tsx
+   (Vite dedupes a CSS file imported from multiple entry points). */
+
+/* Request review panel: priority chip variants + read-only status chip */
+.req-pri-chip.urgent {
+  color: var(--amber);
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.06);
+}
+.req-pri-chip.priority {
+  color: #e8ecf4;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.req-pri-chip.routine {
+  color: var(--dim);
+  border-color: var(--line);
+}
+.state-chip.req-status {
+  margin-top: 16px;
+  color: var(--dim);
+  border-color: var(--line);
+}
+
+/* Track review panel status chip spacing (ACTIVE reuses .state-chip.amber;
+   TASKED/EXPIRED reuse .state-chip.steel/.dim from panels.css) */
+.state-chip.trk-chip {
+  margin-top: 10px;
+}
+
+/* Expiry countdown — amber when <60s (class toggled in TrackPanel.tsx) */
+.trk-expiry.amber {
+  color: var(--amber);
+}
+
+/* Tasked read-out line */
+.trk-investigating {
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: #c3cede;
+  border: 1px solid rgba(195, 206, 222, 0.25);
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: rgba(195, 206, 222, 0.05);
+}

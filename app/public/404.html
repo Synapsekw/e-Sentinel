@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SENTINEL · e& Physical Intelligence</title>
+    <script>
+      // GitHub Pages serves static files only: it has no server-side rewrite,
+      // so a deep link like /e-Sentinel/console (or a browser refresh while
+      // the operator is in the console) 404s before React Router ever loads.
+      // Pages does serve THIS file for any unmatched path, so it re-encodes
+      // the requested route into a query string and bounces to the app root,
+      // which index.html unpacks back into a real history entry before React
+      // mounts. Standard rafgraph/spa-github-pages shim, adapted.
+      //
+      // SEGMENT_COUNT = 1 because the site is published under the
+      // /e-Sentinel/ project path: the first path segment is the repo name and
+      // must stay part of the redirect target, not the encoded route.
+      var SEGMENT_COUNT = 1
+      var l = window.location
+      l.replace(
+        l.protocol +
+          '//' +
+          l.hostname +
+          (l.port ? ':' + l.port : '') +
+          l.pathname
+            .split('/')
+            .slice(0, 1 + SEGMENT_COUNT)
+            .join('/') +
+          '/?/' +
+          l.pathname.slice(1).split('/').slice(SEGMENT_COUNT).join('/').replace(/&/g, '~and~') +
+          (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+          l.hash,
+      )
+    </script>
+  </head>
+  <body></body>
+</html>

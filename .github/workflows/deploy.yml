@@ -22,12 +22,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
       - uses: actions/configure-pages@v5
-      - name: Stage runtime files only
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      # Vite builds with base '/e-Sentinel/' (see app/vite.config.ts), the
+      # Pages project path this repo publishes under. dist/ contains the SPA
+      # plus public/404.html, the redirect shim that makes deep links like
+      # /e-Sentinel/console survive a cold load or a refresh.
+      - name: Build the React app
+        working-directory: app
+        run: npm run build
+
+      # The mission debrief / FPV downlink clips live at the REPO root,
+      # outside app/, deliberately: they are ~240MB of mp4 that Vite would
+      # otherwise copy into every dist/. The app requests them at
+      # `${import.meta.env.BASE_URL}videos/<file>` (= /e-Sentinel/videos/...),
+      # so staging them beside the built app puts them exactly where the
+      # production URL resolves. app/vite.config.ts's serveRepoVideos plugin
+      # does the same job for the dev and preview servers.
+      - name: Stage the built app plus the mission videos
         run: |
           mkdir _site
-          cp index.html console.html _site/
-          cp -r assets videos _site/
+          cp -r app/dist/. _site/
+          cp -r videos _site/videos
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

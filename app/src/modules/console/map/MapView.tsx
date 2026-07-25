@@ -70,9 +70,20 @@ export default function MapView({ children }: MapViewProps) {
     })
 
     return () => {
-      map.remove()
+      // Order matters. React runs a component's effect cleanups in the order
+      // the effects were declared, so this one runs BEFORE useBasemap's and
+      // useOffline's below — and any of them (plus a camera animation still
+      // in flight from useFollowDriver/selectEntity) can still reach for the
+      // map after it is torn down. Publishing null first means every
+      // `mapRef.current` guard in the codebase reads "no map" from this
+      // point on, and map.stop() cancels an in-flight easeTo/flyTo so
+      // MapLibre isn't mid-frame when remove() pulls its style out from
+      // under it (the source of a "cannot read getSource of undefined"
+      // throw from inside MapLibre on route navigation away from /console).
       mapRef.current = null
       setReady(false)
+      map.stop()
+      map.remove()
     }
   }, [])
 

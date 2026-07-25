@@ -11,12 +11,13 @@
 // this component's own effect cleanup (see RightPanel.tsx's header
 // comment).
 //
-// #rp-control is unconditionally disabled: manual control (control.js)
-// lands in Phase 1E. The alt row (#rp-alt-row) only ever shows for
-// drone.state === 'manual', which is unreachable before Phase 1E lands, so
-// it renders `hidden` by construction here — but its buttons are still
-// wired to the real (already-existing) engine.nudgeAlt, exactly as legacy,
-// since nudgeAlt is not itself a Phase 1E seam.
+// #rp-control (Phase 1E / Task 2): wired to control/useManualControl.ts's
+// enterManual/exitManual (assets/js/ui/panels.js:1679-1686), gated on
+// dronePanel.ts's controlDisabled (panels.js:522-523, already ported in
+// Phase 1D ahead of this button actually using it). The alt row
+// (#rp-alt-row) shows for drone.state === 'manual' and its buttons call
+// engine.nudgeAlt, unchanged from Phase 1D — nudgeAlt was never itself a
+// Phase 1E seam.
 //
 // Deviation from the plan's proposed filename (DronePanel.tsx): this repo
 // checkout lives on a case-insensitive filesystem (Windows/NTFS), and
@@ -34,7 +35,15 @@ import type maplibregl from 'maplibre-gl'
 import type { Drone, Engine } from '@/modules/console/domain'
 import { battLevel, padHeading } from '@/modules/console/chrome/format'
 import { useAppStore } from '@/shared/store'
-import { distHomeKm, fpvSources, holdDisabled, missionLineFor, rtbDisabled } from './dronePanel'
+import { useManualControl } from '@/modules/console/control/useManualControl'
+import {
+  controlDisabled,
+  distHomeKm,
+  fpvSources,
+  holdDisabled,
+  missionLineFor,
+  rtbDisabled,
+} from './dronePanel'
 import FpvFrame from './FpvFrame'
 import { useOptionalEngine, useOptionalMap } from './hooks'
 
@@ -86,7 +95,32 @@ export default function DronePanel({ id, engine: engineProp, map: mapProp }: Dro
     return () => clearInterval(iv)
   }, [])
 
+  const { enterManual, exitManual } = useManualControl()
+
   const droneOrMissing = engine ? engine.drones.get(id) : null
+
+  // panels.js:625-627: a drone forced out of manual (battery floor) or
+  // released elsewhere while this panel is still open must drop the
+  // manual-control overlay too — this 2 Hz-poll-driven re-render is the
+  // panel's own half of that guarantee (useManualControl.ts's
+  // MANUAL_RELEASED engine-event watch, control.js:716-732, is the other
+  // half). `droneOrMissing.state`/`.id` are listed explicitly alongside
+  // the object itself: the sim engine mutates drone objects in place, so
+  // the object reference alone never changes across ticks and would not
+  // re-fire this effect on a state transition without the primitive
+  // fields also in the dependency array.
+  useEffect(() => {
+    if (!droneOrMissing) return
+    const { controlMode, controlActiveId } = useAppStore.getState()
+    if (
+      droneOrMissing.state !== 'manual' &&
+      controlMode === 'manual' &&
+      controlActiveId === droneOrMissing.id
+    ) {
+      exitManual()
+    }
+  }, [droneOrMissing, droneOrMissing?.state, droneOrMissing?.id, exitManual])
+
   if (!droneOrMissing) return null
   // TypeScript's control-flow narrowing from the guard above does not
   // survive into the closures below (handleFollow/handleRtb/handleHold and
@@ -107,6 +141,15 @@ export default function DronePanel({ id, engine: engineProp, map: mapProp }: Dro
     if (turningOn && map) {
       map.easeTo({ center: drone.pos, zoom: FOLLOW_EASE_ZOOM, duration: FOLLOW_EASE_DURATION_MS })
     }
+  }
+
+  // panels.js:1679-1686.
+  function handleControl() {
+    if (!engine) return
+    const d = engine.drones.get(drone.id)
+    if (!d) return
+    if (d.state === 'manual') exitManual()
+    else enterManual(drone.id)
   }
 
   // panels.js:1666-1669.
@@ -165,7 +208,8 @@ export default function DronePanel({ id, engine: engineProp, map: mapProp }: Dro
           type="button"
           className={'ghost' + (isManual ? ' on' : '')}
           id="rp-control"
-          disabled // Phase 1E: enterManual(droneId) — manual control (control.js) lands then.
+          disabled={controlDisabled(drone)}
+          onClick={handleControl}
         >
           {isManual ? 'RELEASE' : 'TAKE CONTROL'}
         </button>

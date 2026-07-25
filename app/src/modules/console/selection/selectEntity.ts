@@ -1,18 +1,17 @@
-// Ported (Phase 1D / Task 3) from assets/js/ui/panels.js:2455-2493
-// (EC2.select), :2440-2449 (startFollowDriver's header comment, describing
-// the FOLLOW/selection contract this module also honors), :2405-2437
-// (setRightPanel, whose FOLLOW-clearing rule at :2417-2421 is transcribed
-// below as applyPanel), :2143-2160 (selectedDockId / updateRowSelection)
-// and :75-83 (buildDockIndex/buildSiteIndex).
+// Ported (Phase 1D / Task 3, extended Phase 1E / Task 1) from
+// assets/js/ui/panels.js:2455-2493 (EC2.select), :2440-2449
+// (startFollowDriver's header comment, describing the FOLLOW/selection
+// contract this module also honors), :2405-2437 (setRightPanel, whose
+// FOLLOW-clearing rule at :2417-2421 is transcribed below as applyPanel),
+// :2143-2160 (selectedDockId / updateRowSelection), :75-83
+// (buildDockIndex/buildSiteIndex) and :2636-2638 (inCaptureMode).
 //
 // Legacy's EC2.select also stood down manual control / the mission wizard
-// before switching selection (panels.js:2459-2467: exitManual()/
-// exitWizard() calls guarded on EC2.control.mode). Manual control and the
-// wizard are Phase 1E scope (see the plan's Global Constraints) — that
-// guard has no analogue here yet. inCaptureMode() below is exactly the
-// seam Phase 1E will widen to reintroduce it; every call site that must
-// respect it (selectEntity's callers in useMapSelection.ts, and the future
-// dock-list row click) already guards on it.
+// before switching selection (panels.js:2455-2467: exitManual()/
+// exitWizard() calls guarded on EC2.control.mode). That guard now has a
+// real analogue below (selectEntity's capture-mode handoff), backed by the
+// store's `controlMode`/`controlActiveId` fields (Phase 1E / Task 1's
+// control slice, shared/store.ts).
 //
 // setRightPanel's other half — killing the previous mode's 2 Hz drone
 // telemetry timer / 1 Hz ops-digest timer / debrief rAF loop
@@ -28,13 +27,34 @@ import type { DockSeed, Engine, Site } from '@/modules/console/domain'
 import { useAppStore } from '@/shared/store'
 import type { RightPanelState, Selection } from '@/shared/store'
 
-// Phase 1E replaces this body once control.js's manual-control / mission-
-// wizard capture modes land (panels.js:2643-2646). Every guard site below,
-// and in useMapSelection.ts / the future dock-list row click, is already
-// wired to respect it, so landing the real implementation later is a
-// one-function change.
+// panels.js:2636-2638 (inCaptureMode). Now reads the real control-mode
+// slice landed by Phase 1E / Task 1 (shared/store.ts's `controlMode`,
+// default 'normal') instead of the Phase 1D placeholder `false`.
 export function inCaptureMode(): boolean {
-  return false
+  return useAppStore.getState().controlMode !== 'normal'
+}
+
+// The pair of callbacks selectEntity hands control back to when a
+// selection change must stand down whichever capture mode currently holds
+// the map/right panel (panels.js:2459-2467). Module-level mutable refs,
+// defaulting to no-ops, rather than a direct import of Task 2's
+// control/useManualControl.ts / Task 3's control/useWizard.ts — those
+// hooks live under control/ and would otherwise create an import cycle
+// back into this module (every panel component imports selectEntity.ts).
+// Console.tsx calls registerCaptureExits once (Task 8) with the real
+// exitManual/exitWizard implementations.
+interface CaptureExits {
+  exitManual: () => void
+  exitWizard: () => void
+}
+
+let captureExits: CaptureExits = {
+  exitManual: () => {},
+  exitWizard: () => {},
+}
+
+export function registerCaptureExits(exits: CaptureExits): void {
+  captureExits = exits
 }
 
 // Static seed data -> id-indexed maps, built once at module load. Mirrors
@@ -56,12 +76,28 @@ export function applyPanel(next: RightPanelState): void {
   setRightPanel(next)
 }
 
-// Port of EC2.select (panels.js:2469-2493).
+// Port of EC2.select (panels.js:2455-2493).
 export function selectEntity(
   sel: Selection,
   engine: Engine | null,
   map: maplibregl.Map | null,
 ): void {
+  // panels.js:2459-2462: manual control owns map clicks exclusively while
+  // engaged; selecting anything else — a dock, a site, or a different
+  // drone — must hand the map back to normal selection/click behavior
+  // cleanly first.
+  const { controlMode, controlActiveId } = useAppStore.getState()
+  if (controlMode === 'manual' && !(sel.type === 'drone' && sel.id === controlActiveId)) {
+    captureExits.exitManual()
+  }
+  // panels.js:2463-2466: the mission wizard owns the right panel
+  // exclusively while engaged — any selection made elsewhere (dock list
+  // row, etc.) cancels it cleanly first rather than leaving stale wizard
+  // state under a panel swap.
+  if (controlMode === 'wizard') {
+    captureExits.exitWizard()
+  }
+
   if (sel.type === 'dock') {
     const dock = DOCK_INDEX.get(sel.id)
     if (!dock) return
@@ -95,11 +131,35 @@ export function selectEntity(
 }
 
 // OPS button / globe-scene exit (panels.js:2504-2512, :2622-2629).
+// Legacy's OPS handler exited whichever capture mode held the map before
+// clearing (panels.js:2506-2507), so a stranded wizard/manual overlay could
+// never outlive the selection it belonged to. Same courtesy here, through
+// the registerCaptureExits registry.
 export function clearSelection(): void {
-  const { setSelection, setFollowDroneId, setRightPanel } = useAppStore.getState()
+  const { controlMode, setSelection, setFollowDroneId, setRightPanel } = useAppStore.getState()
+  if (controlMode === 'manual') captureExits.exitManual()
+  else if (controlMode === 'wizard') captureExits.exitWizard()
   setSelection(null)
   setFollowDroneId(null)
   setRightPanel({ mode: 'empty' })
+}
+
+// MEDIA button (panels.js:2520-2527): identical capture-mode/selection
+// teardown to clearSelection, but landing on the media library instead of
+// the ops digest.
+export function openMediaLibrary(): void {
+  clearSelection()
+  useAppStore.getState().setRightPanel({ mode: 'media' })
+}
+
+// openDebrief (panels.js:1085-1097): same teardown, landing on a mission's
+// debrief. Lives here rather than in panels/ so every entry point (the
+// DEBRIEF READY ticker chip, a MEDIA card, a DELIVERED request row, and
+// useDebriefWatch's auto-open) shares one implementation that stands down
+// manual control / the wizard first, exactly as legacy's did.
+export function openDebrief(missionId: string): void {
+  clearSelection()
+  useAppStore.getState().setRightPanel({ mode: 'debrief', id: missionId })
 }
 
 // A drone selection still "belongs" to a dock row (D-<dockId> -> dockId),

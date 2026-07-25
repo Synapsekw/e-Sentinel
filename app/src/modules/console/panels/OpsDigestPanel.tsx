@@ -28,6 +28,7 @@ import { MISSIONS_CONFIG } from '@/modules/console/domain'
 import type { Engine, SimEvent } from '@/modules/console/domain'
 import { fmtETA, fmtMMSS } from '@/modules/console/chrome/format'
 import { inCaptureMode, selectEntity } from '@/modules/console/selection'
+import { focusTrack } from '@/modules/console/selection/useMapTrackInteractions'
 import { useOptionalEngine, useOptionalMap } from './hooks'
 import { detectionBody, digestActiveMissions, digestStatsLine, lastDetections } from './opsDigest'
 
@@ -138,8 +139,10 @@ export default function OpsDigest({ engine: engineProp, map: mapProp }: OpsDiges
                   className="dg-det dg-det-track"
                   title={'OPEN ' + track.id}
                   onClick={() => {
-                    // Phase 1E: focusTrack(track.id) — the track review
-                    // panel (setRightPanel('track', ...)) does not exist yet.
+                    // panels.js:1845-1850: fly the camera + open the track
+                    // review panel (Phase 1E / Task 7's TrackPanel.tsx).
+                    if (inCaptureMode()) return
+                    focusTrack(track.id, engine, map)
                   }}
                 >
                   {inner}
