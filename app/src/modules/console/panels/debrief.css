@@ -1,0 +1,56 @@
+/* Ported (Phase 1E / Task 5) from assets/css/console.css:352-366
+   (.rp-analytics / .debrief-video / .debrief-canvas-wrap /
+   .debrief-video-foot) and :494-496 (.debrief-route). Scoped to its own
+   file per this task's scope fence (panels/panels.css is another lane's
+   file) and imported directly from DebriefPanel.tsx. */
+
+.rp-analytics {
+  margin-top: 2px;
+}
+.rp-analytics .rp-kv dt,
+.rp-analytics .rp-kv dd {
+  margin: 0;
+}
+
+.debrief-video {
+  position: relative;
+  margin-top: 10px;
+  aspect-ratio: 16 / 9;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #07080a;
+  border: 1px solid var(--line);
+}
+.debrief-video video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+.debrief-canvas-wrap {
+  position: absolute;
+  inset: 0;
+}
+.debrief-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.debrief-video-foot {
+  margin-top: 7px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.32);
+  letter-spacing: 0.18em;
+}
+
+.debrief-route {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 6px;
+}
+.debrief-route .route-svg {
+  display: block;
+}

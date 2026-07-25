@@ -1,0 +1,26 @@
+/* Ported (Phase 1E / Task 2) from assets/css/console.css:297-304
+   (the manual-control banner chip). `.rp-alt-row` / `.rp-alt-row[hidden]`
+   (console.css:305-306) already live in panels/panels.css (Phase 1D) —
+   not duplicated here. */
+
+.manual-banner {
+  position: fixed;
+  top: 66px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 850;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--amber);
+  background: rgba(10, 11, 14, 0.88);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 99px;
+  padding: 8px 18px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.manual-banner[hidden] {
+  display: none;
+}
