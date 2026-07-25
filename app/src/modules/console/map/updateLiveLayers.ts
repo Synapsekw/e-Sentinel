@@ -8,12 +8,22 @@
 //     `createLiveLayerUpdater()` call) starts clean instead of inheriting a
 //     prior mount's cache keys from shared module globals.
 //   - `EC2.map` / `EC2.mapLoaded` / `EC2.state.selection` globals become
-//     explicit `update(engine, map, selection, followDroneId)` parameters,
-//     with `map` and `selection` additionally stashed in the closure (like
-//     legacy's `lastEngineRef`) so `setRangeHighlight` — called
-//     independently of a frame's `update()` — can still re-apply the
+//     explicit `update(engine, map, selection, followDroneId, ready)`
+//     parameters, with `map` and `selection` additionally stashed in the
+//     closure (like legacy's `lastEngineRef`) so `setRangeHighlight` —
+//     called independently of a frame's `update()` — can still re-apply the
 //     coverage filter the same way legacy's `EC2.setRangeHighlight` re-ran
 //     off the globals.
+//   - `EC2.mapLoaded` itself becomes the caller-supplied `ready` boolean
+//     (Phase 1B's `MapContext.ready`, a one-way latch set once on the
+//     map's 'load' event — see MapView.tsx) rather than MapLibre's
+//     `map.loaded()`. `map.loaded()` is NOT equivalent: it is recomputed
+//     continuously and goes false while the style/sources are dirty or
+//     tiles are pending — including as a side effect of this module's own
+//     `setData`/`setFilter` calls below, and during ordinary pan/zoom/
+//     basemap-switch. Gating on it would make live layers silently skip
+//     frames after the very first frame renders. `ready` never resets, so
+//     it actually mirrors legacy's latch.
 //   - `map.getSource(id).setData(...)` uses the `asGeoJSONSource` narrowing
 //     pattern established in usePingDriver.ts (Phase 1B) instead of a bare
 //     cast, so a non-geojson source id fails loudly rather than silently
@@ -48,6 +58,7 @@ export interface LiveLayerUpdater {
     map: maplibregl.Map,
     selection: Selection | null,
     followDroneId: string | null,
+    ready: boolean,
   ): void
   setRangeHighlight(dockId: string | null): void
 }
@@ -66,6 +77,10 @@ export function createLiveLayerUpdater(): LiveLayerUpdater {
   let lastEngineRef: Engine | null = null
   let lastMapRef: maplibregl.Map | null = null
   let lastSelectionRef: Selection | null = null
+  // Stashed from update()'s `ready` parameter (the one-way latch — see file
+  // header) so setRangeHighlight's out-of-band call to applyCoverageHighlight
+  // can honor the same readiness gate without needing its own `ready` arg.
+  let lastReadyRef = false
 
   // map.js:357-369
   function coverageHighlightIds(engine: Engine | null): string[] {
@@ -86,9 +101,14 @@ export function createLiveLayerUpdater(): LiveLayerUpdater {
   // map.js:371-380. Coverage is static geometry, so highlighting is done
   // purely with layer filters — never setData — and only re-applied when
   // the id set actually changes (cached by the joined key).
+  //
+  // Gated on `lastReadyRef` (stashed from update()'s `ready` latch), not
+  // `map.loaded()` — see file header. setRangeHighlight() calls this
+  // out-of-band (outside a frame's update()), so it relies on whatever
+  // readiness update() last observed rather than taking its own `ready` arg.
   function applyCoverageHighlight(engine: Engine | null): void {
     const map = lastMapRef
-    if (!map || !map.loaded()) return
+    if (!map || !lastReadyRef) return
     const ids = coverageHighlightIds(engine)
     const key = ids.join(',')
     if (key === lastCoverageSel) return
@@ -108,11 +128,13 @@ export function createLiveLayerUpdater(): LiveLayerUpdater {
     map: maplibregl.Map,
     selection: Selection | null,
     followDroneId: string | null,
+    ready: boolean,
   ): void {
-    if (!map || !map.loaded() || !engine) return
+    if (!map || !ready || !engine) return
     lastEngineRef = engine
     lastMapRef = map
     lastSelectionRef = selection
+    lastReadyRef = ready
 
     const dockSrc = asGeoJSONSource(map.getSource('docks'))
     if (dockSrc) dockSrc.setData(buildDockFeatures(engine, selection))
