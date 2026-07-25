@@ -62,6 +62,15 @@
 }
 
 /* ---------- ticker ---------- */
+/* Always rendered (Task 4 review fix) so #tickstream mounts and the
+   auto-scroll rAF driver binds on first effect run; hidden via the
+   attribute — same [hidden]{display:none} idiom as map.css's
+   #basemap-loading[hidden] / globe.css's #globe-ui[hidden] — rather than by
+   unmounting, mirroring legacy console.html's always-present
+   `<footer id="ticker">` revealed by scene wiring. */
+#ticker[hidden] {
+  display: none;
+}
 #ticker {
   position: fixed;
   left: 16px;

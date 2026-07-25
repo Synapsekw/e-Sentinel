@@ -60,12 +60,28 @@ describe('render loop + event subscription (useLiveLayers.ts)', () => {
   let rafSeq: number
   let rafSpy: ReturnType<typeof vi.fn>
   let cafSpy: ReturnType<typeof vi.fn>
-  let originalSetStats: AppState['setStats']
-  let originalPushTickerEvent: AppState['pushTickerEvent']
+  let originalState: Pick<
+    AppState,
+    | 'scene'
+    | 'selection'
+    | 'followDroneId'
+    | 'stats'
+    | 'tickerEvents'
+    | 'setStats'
+    | 'pushTickerEvent'
+  >
 
   beforeEach(() => {
-    originalSetStats = useAppStore.getState().setStats
-    originalPushTickerEvent = useAppStore.getState().pushTickerEvent
+    const s = useAppStore.getState()
+    originalState = {
+      scene: s.scene,
+      selection: s.selection,
+      followDroneId: s.followDroneId,
+      stats: s.stats,
+      tickerEvents: s.tickerEvents,
+      setStats: s.setStats,
+      pushTickerEvent: s.pushTickerEvent,
+    }
     useAppStore.setState({
       scene: 'console',
       selection: null,
@@ -90,7 +106,7 @@ describe('render loop + event subscription (useLiveLayers.ts)', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
-    useAppStore.setState({ setStats: originalSetStats, pushTickerEvent: originalPushTickerEvent })
+    useAppStore.setState(originalState)
   })
 
   // Executes every callback currently queued via the stubbed

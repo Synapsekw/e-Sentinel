@@ -82,10 +82,8 @@ export default function Ticker() {
     prevFirstIdRef.current = newFirstId
   }, [events])
 
-  if (events.length === 0) return null
-
   return (
-    <footer id="ticker">
+    <footer id="ticker" hidden={events.length === 0}>
       <span className="lbl">EVENTS</span>
       <div
         id="tickstream"
