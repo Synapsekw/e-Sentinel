@@ -12,6 +12,12 @@
 // (useGlobe, usePingDriver) that need to run alongside the overlay/chrome,
 // matching the shape of Task 3/4's verification scaffold in App.tsx (which
 // this component replaces).
+//
+// Task 4 adds the live HUD (<GridStats/> + <Ticker/>, console-scene only,
+// same gate as the layer buttons) — both are self-positioned fixed panels
+// per hud.css's file header, standing in for the real `#side`/`#ticker`
+// chrome console.html builds inside the still-absent `#side`/`#rpanel`
+// asides, again left to Phase 1D.
 
 import { useEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'
@@ -22,6 +28,8 @@ import { useGlobe } from './globe/useGlobe'
 import { usePingDriver } from './map/usePingDriver'
 import { useLiveLayers } from './engine/useLiveLayers'
 import OfflineChip from './OfflineChip'
+import GridStats from './hud/GridStats'
+import Ticker from './hud/Ticker'
 import { useAppStore, type MapLayer } from '@/shared/store'
 
 const LAYERS: MapLayer[] = ['dark', 'light', 'sat', 'terrain']
@@ -92,6 +100,12 @@ function ConsoleScene() {
             exit
           </button>
         </div>
+      ) : null}
+      {scene === 'console' ? (
+        <>
+          <GridStats />
+          <Ticker />
+        </>
       ) : null}
     </>
   )

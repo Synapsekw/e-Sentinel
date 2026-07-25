@@ -14,13 +14,24 @@
 // separate file, since both concerns need the identical engine+map+ready
 // inputs and the brief's file list only calls for this one hook.
 //
-// The ticker-push half of onEvent (main.js:57, `EC2.ui.pushEvent`) is a
-// deliberate seam for Task 4: `pushTickerEvent` doesn't exist on the store
-// yet. The mapped-event branch below is marked TODO and is a one-line call
-// once Task 4 lands it — the subscription itself (attach once, detach on
-// unmount) is built now so Task 4 doesn't need to touch this wiring.
+// The ticker-push half of onEvent (main.js:57, `EC2.ui.pushEvent`) was a
+// deliberate seam left for Task 4 (`pushTickerEvent` didn't exist on the
+// store yet); it's filled in below via tickerModel.ts's mapEngineEvent.
+//
+// TASK 4 EXTRA (test coverage): the event subscription and the rAF render
+// loop are pulled out into `attachEngineEvents` / `startRenderLoop` below —
+// plain functions taking their engine/map/updater/ready inputs explicitly
+// instead of closing over hook-internal refs — so the render-loop test
+// (useLiveLayers.test.tsx) can drive them directly with a fake engine/map/
+// updater and a stubbed rAF, without needing a real MapLibre instance or a
+// React harness wired through EngineProvider+MapView. useLiveLayers() itself
+// is now just two effects that resolve the real engine/map/updater and hand
+// them to these functions — no behavior changed, only where the logic lives.
 
 import { useEffect, useRef } from 'react'
+import type { MutableRefObject } from 'react'
+import type maplibregl from 'maplibre-gl'
+import type { Engine } from '@/modules/console/domain'
 import { useEngine } from './EngineContext'
 import { useMap } from '@/modules/console/map/MapContext'
 import { useAppStore } from '@/shared/store'
@@ -28,8 +39,59 @@ import { createLiveLayerUpdater } from '@/modules/console/map/updateLiveLayers'
 import type { LiveLayerUpdater } from '@/modules/console/map/updateLiveLayers'
 import { pushLaunchPulse } from '@/modules/console/map/fx'
 import { computeCounts } from './refreshCounts'
+import { mapEngineEvent, nowClockStr } from '@/modules/console/hud/tickerModel'
 
-const STATS_INTERVAL_MS = 1000 // main.js:90's 1000ms refreshCounts throttle
+export const STATS_INTERVAL_MS = 1000 // main.js:90's 1000ms refreshCounts throttle
+
+// Engine event subscription: ticker push (tickerModel.ts's mapEngineEvent)
+// + launch FX pulse (main.js:56-59). `engine.onEvent` (domain/engine.ts) has
+// no separate unsubscribe return — it pushes the callback onto
+// `engine._subscribers` and hands the same callback back — so the returned
+// cleanup removes it from that array by identity, same handle.
+export function attachEngineEvents(
+  engine: Engine,
+  mapRef: MutableRefObject<maplibregl.Map | null>,
+  ready: boolean,
+): () => void {
+  const cb = engine.onEvent((ev) => {
+    useAppStore.getState().pushTickerEvent(mapEngineEvent(ev, nowClockStr))
+    if (ev.code === 'MISSION_LAUNCHED' && ev.dockId) {
+      pushLaunchPulse(ev.dockId, mapRef.current, useAppStore.getState().scene, ready)
+    }
+  })
+
+  return () => {
+    const idx = engine._subscribers.indexOf(cb)
+    if (idx !== -1) engine._subscribers.splice(idx, 1)
+  }
+}
+
+// rAF render loop (main.js:87-96): keeps live map layers in sync with engine
+// state every frame, throttling the derived grid-stats push to ~1 Hz.
+// Returns a cleanup that cancels the pending frame.
+export function startRenderLoop(
+  engine: Engine,
+  map: maplibregl.Map,
+  updater: LiveLayerUpdater,
+  ready: boolean,
+  statsIntervalMs: number = STATS_INTERVAL_MS,
+): () => void {
+  let rafId = 0
+  let lastStatsAt = 0
+
+  function frame(ts: number): void {
+    const { selection, followDroneId } = useAppStore.getState()
+    updater.update(engine, map, selection, followDroneId, ready)
+    if (ts - lastStatsAt > statsIntervalMs) {
+      lastStatsAt = ts
+      useAppStore.getState().setStats(computeCounts(engine))
+    }
+    rafId = requestAnimationFrame(frame)
+  }
+  rafId = requestAnimationFrame(frame)
+
+  return () => cancelAnimationFrame(rafId)
+}
 
 export function useLiveLayers(): void {
   const { engineRef, started } = useEngine()
@@ -43,61 +105,24 @@ export function useLiveLayers(): void {
   const updaterRef = useRef<LiveLayerUpdater | null>(null)
   if (!updaterRef.current) updaterRef.current = createLiveLayerUpdater()
 
-  // Engine event subscription: ticker push (Task 4 seam) + launch FX pulse
-  // (main.js:56-59). Attaches once the engine exists (guarded on `started`)
-  // and detaches on unmount / engine identity change. `engine.onEvent`
-  // (domain/engine.ts) has no separate unsubscribe return — it pushes the
-  // callback onto `engine._subscribers` and hands the same callback back —
-  // so cleanup removes it from that array by identity, same handle.
+  // Attaches once the engine exists (guarded on `started`) and detaches on
+  // unmount / engine identity change.
   useEffect(() => {
     const engine = engineRef.current
     if (!started || !engine) return
-
-    const cb = engine.onEvent((ev) => {
-      // TODO(Task 4): useAppStore.getState().pushTickerEvent(mapTickerEvent(ev))
-      if (ev.code === 'MISSION_LAUNCHED' && ev.dockId) {
-        pushLaunchPulse(ev.dockId, mapRef.current, useAppStore.getState().scene, ready)
-      }
-    })
-
-    return () => {
-      const idx = engine._subscribers.indexOf(cb)
-      if (idx !== -1) engine._subscribers.splice(idx, 1)
-    }
+    return attachEngineEvents(engine, mapRef, ready)
   }, [started, engineRef, mapRef, ready])
 
-  // rAF render loop (main.js:87-96): keeps live map layers in sync with
-  // engine state every frame, throttling the derived grid-stats push to
-  // ~1 Hz. Only runs once the engine has started AND the map is ready —
-  // mirrors legacy's implicit gating (EC2.updateLiveLayers / EC2.map both
-  // needing to exist before startEngine's frame() loop could do anything).
+  // Only runs once the engine has started AND the map is ready — mirrors
+  // legacy's implicit gating (EC2.updateLiveLayers / EC2.map both needing to
+  // exist before startEngine's frame() loop could do anything).
   useEffect(() => {
     if (!started || !ready) return
     const engine = engineRef.current
     const map = mapRef.current
-    if (!engine || !map) return
-
     const updater = updaterRef.current
-    if (!updater) return
+    if (!engine || !map || !updater) return
 
-    let rafId = 0
-    let lastStatsAt = 0
-
-    function frame(ts: number): void {
-      if (!engine || !map) return
-      const { selection, followDroneId } = useAppStore.getState()
-      // Non-null: guarded by the `if (!updater) return` above this closure's
-      // definition — `updater` is a `const` that TS's closure analysis
-      // doesn't re-narrow inside a nested function declaration.
-      updater!.update(engine, map, selection, followDroneId, ready)
-      if (ts - lastStatsAt > STATS_INTERVAL_MS) {
-        lastStatsAt = ts
-        useAppStore.getState().setStats(computeCounts(engine))
-      }
-      rafId = requestAnimationFrame(frame)
-    }
-    rafId = requestAnimationFrame(frame)
-
-    return () => cancelAnimationFrame(rafId)
+    return startRenderLoop(engine, map, updater, ready)
   }, [started, ready, engineRef, mapRef])
 }

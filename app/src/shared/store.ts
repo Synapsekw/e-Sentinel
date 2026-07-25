@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { appendCapped } from '@/modules/console/hud/tickerModel'
+import type { TickerEventInput } from '@/modules/console/hud/tickerModel'
 
 export type Scene = 'globe' | 'console'
 export type MapLayer = 'dark' | 'light' | 'sat' | 'terrain'
@@ -20,6 +22,25 @@ export interface GridStats {
   alert: number
 }
 
+// One ticker chip (mirrors the DOM a legacy .tick-ev span carried — see
+// panels.js:2366-2391 pushEvent). `id` is assigned by pushTickerEvent from a
+// module-scoped counter (not Date.now/Math.random) purely for a stable React
+// key; it has no meaning to the sim. `droneId` is non-null only when `source`
+// names a live drone entity (see tickerModel.ts's mapEngineEvent) — Ticker.tsx
+// reads it for future click-through, which is Phase 1D's job, not this one's.
+export interface TickerEvent {
+  id: number
+  time: string
+  source: string
+  message: string
+  level: 'info' | 'warn' | 'alert'
+  droneId: string | null
+}
+
+// panels.js:2390's `while (stream.children.length > 30) ...` cap, so a long
+// sim run can't grow the ticker (and thus this store slice) without bound.
+const TICKER_CAP = 30
+
 export interface AppState {
   scene: Scene
   layer: MapLayer
@@ -28,6 +49,7 @@ export interface AppState {
   selection: Selection | null
   followDroneId: string | null
   stats: GridStats
+  tickerEvents: TickerEvent[]
   setScene: (scene: Scene) => void
   setLayer: (layer: MapLayer) => void
   setOffline: (offline: boolean) => void
@@ -35,7 +57,14 @@ export interface AppState {
   setSelection: (selection: Selection | null) => void
   setFollowDroneId: (followDroneId: string | null) => void
   setStats: (stats: GridStats) => void
+  pushTickerEvent: (ev: TickerEventInput) => void
 }
+
+// Module-scoped, monotonic — deliberately NOT Date.now()/Math.random() (the
+// brief's explicit constraint) so ticker event ids stay deterministic and
+// collision-free across a session, including in tests that push many events
+// in the same millisecond.
+let nextTickerEventId = 0
 
 // Global UI store. Scene starts 'globe' (orbital boot), layer 'dark',
 // timeScale 1, selection null, offline false — matching the legacy
@@ -50,6 +79,7 @@ export const useAppStore = create<AppState>((set) => ({
   selection: null,
   followDroneId: null,
   stats: { ready: 0, flying: 0, charge: 0, alert: 0 },
+  tickerEvents: [],
   setScene: (scene) => set({ scene }),
   setLayer: (layer) => set({ layer }),
   setOffline: (offline) => set({ offline }),
@@ -57,4 +87,12 @@ export const useAppStore = create<AppState>((set) => ({
   setSelection: (selection) => set({ selection }),
   setFollowDroneId: (followDroneId) => set({ followDroneId }),
   setStats: (stats) => set({ stats }),
+  pushTickerEvent: (ev) =>
+    set((state) => ({
+      tickerEvents: appendCapped(
+        state.tickerEvents,
+        { ...ev, id: ++nextTickerEventId },
+        TICKER_CAP,
+      ),
+    })),
 }))
