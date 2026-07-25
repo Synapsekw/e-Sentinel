@@ -82,12 +82,9 @@
   align-items: center;
   gap: 12px;
   padding: 0 14px;
-  /* console.css's --chrome/--chrome-blur tokens aren't ported to
-     shared/tokens.css yet (Phase 1D's real chrome brings them); this is the
-     same dark-mode default value (console.css:15) hardcoded instead. */
-  background: rgba(10, 11, 14, 0.82);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: var(--chrome);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
