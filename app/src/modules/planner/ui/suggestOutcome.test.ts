@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { describeSuggestOutcome } from './suggestOutcome'
+import { describeSuggestOutcome, isLayoutStatusCurrent } from './suggestOutcome'
 import type { SuggestResult } from '../domain/autoPlace'
 import type { PlannedDock } from '../domain/types'
 
@@ -61,5 +61,23 @@ describe('describeSuggestOutcome', () => {
     const out = describeSuggestOutcome(r)
     expect(out.text).toBe('NO SITES AVAILABLE')
     expect(out.tone).toBe('alert')
+  })
+})
+
+describe('isLayoutStatusCurrent (Critical 2)', () => {
+  it('is current while the plan is still at the revision the layout was computed for', () => {
+    expect(isLayoutStatusCurrent(4, 4)).toBe(true)
+  })
+
+  it('is stale once the plan has moved on to a later revision', () => {
+    // The exact regression this closes: delete a dock (or make any other
+    // edit) after SUGGEST LAYOUT runs, and the plan's rev advances past the
+    // one the layout message described -- the message must disappear rather
+    // than sit next to now-contradictory live coverage stats.
+    expect(isLayoutStatusCurrent(4, 5)).toBe(false)
+  })
+
+  it('is also stale for a revision that is somehow behind the layout status (defensive symmetry)', () => {
+    expect(isLayoutStatusCurrent(5, 4)).toBe(false)
   })
 })

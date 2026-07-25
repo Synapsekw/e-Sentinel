@@ -50,3 +50,20 @@ export function describeSuggestOutcome(result: SuggestResult): SuggestOutcome {
   // reaching target, having already placed what it could.
   return { text: `STOPPED AT ${pct}% · NO SITES REMAIN`, tone: 'alert' }
 }
+
+// Critical 2 (final whole-branch review): ui/Planner.tsx used to set
+// layoutStatus once, after a SUGGEST LAYOUT run, and never clear it. Delete
+// a dock afterward and the strip kept showing the stale layout message
+// ("LAYOUT: 4 DOCKS · 96% COVERAGE · TARGET MET") right next to the live,
+// now-contradictory coverage stats. A layout message only describes the
+// plan revision it was computed for; once the plan moves on to a different
+// revision, it must stop describing anything at all. This is the same
+// staleness shape useCoverageDriver.ts's shouldApply already solves for
+// computeCoverage's own debounced result, extracted here as a plain
+// predicate (rather than folded inline into ui/Planner.tsx) so it can be
+// pinned by a test without mounting the full component tree -- this module
+// already exists precisely to keep this kind of UI-only formatting/staleness
+// logic out of domain/, which must stay framework-free.
+export function isLayoutStatusCurrent(statusRev: number, planRev: number): boolean {
+  return statusRev === planRev
+}

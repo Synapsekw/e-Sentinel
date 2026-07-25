@@ -48,12 +48,12 @@ All verified available 2026-07-25:
 |---|---|---|
 | `terra-draw` | 1.32.2 | AOI polygon/rectangle/circle drawing + vertex editing |
 | `terra-draw-maplibre-gl-adapter` | 1.4.1 | MapLibre binding (terra-draw v1 split adapters into their own packages — the 2026-07-23 spec's "terra-draw (+ MapLibre adapter)" is now two installs) |
-| `@turf/buffer`, `@turf/union`, `@turf/intersect`, `@turf/difference`, `@turf/area`, `@turf/bbox`, `@turf/boolean-point-in-polygon`, `@turf/simplify` | 7.3.5 | Coverage geometry |
+| `@turf/buffer`, `@turf/union`, `@turf/intersect`, `@turf/difference`, `@turf/area`, `@turf/bbox`, `@turf/boolean-point-in-polygon`, `@turf/simplify`, `@turf/kinks` | 7.3.5 | Coverage geometry, plus self-intersection detection (`domain/geometry.ts`, added in the final whole-branch review to close Finding 4) |
 | `@tmcw/togeojson` | 7.1.2 | KML → GeoJSON |
 | `fflate` | 0.8.3 | KMZ unzip |
 
 Cherry-picked `@turf/*` packages, **not** the `@turf/turf` meta-package — the planner needs
-eight functions, not the whole library.
+nine functions, not the whole library.
 
 > **Trap:** turf 7 changed `union`, `intersect` and `difference` to take a single
 > `FeatureCollection` argument, not two positional features. Most examples online still show the
@@ -73,6 +73,7 @@ app/src/modules/planner/
     catalog.ts         dock/drone catalog + radius derivation
     coverage.ts        buffer -> union -> intersect AOI -> coverage %, overlap %, gaps
     autoPlace.ts       hex candidate grid + greedy selection
+    geometry.ts        self-intersection validity check (@turf/kinks), shared by kml.ts and the draw-commit path
     plan.ts            plan construction and mutation, invariants
     planIo.ts          plan JSON serialize/parse, versioned
   io/
@@ -179,7 +180,11 @@ site-specific constraints raised mid-meeting.
 `URBAN_RANGE_KM` (3), `RURAL_RANGE_KM` (5), `URBAN_CENTERS` and `isUrbanDock(dock)`. The planner
 imports these directly, which guarantees planner rings match console rings and gives
 `environment` a sensible default: a newly dropped dock auto-detects urban/rural from its position
-via `isUrbanDock`, and the inspector lets you override it.
+via `isUrbanDock`, and the inspector lets you override it. `SUGGEST LAYOUT` (`domain/autoPlace.ts`)
+derives each candidate's environment from its own position the same way — see §8 — so a single run
+over an AOI straddling an urban boundary produces docks at both the 3km and 5km radii, matching
+whatever a manually-placed dock at the same spots would get, never one radius applied uniformly
+regardless of where a candidate actually sits.
 
 The catalog (`domain/catalog.ts`) holds dock models, the drones each can host, and per-drone
 `cruiseKph` / `enduranceMin` / `reservePct` / `onTaskMin`. The sim carries no per-drone endurance
@@ -222,11 +227,24 @@ counts is tens of milliseconds and sits behind the same debounce.
 
 `domain/autoPlace.ts`, deterministic **by construction** — no RNG, so no seed to manage:
 
+- Each candidate's radius is derived from **its own position** via `DOCK_RANGE.isUrbanDock` (same
+  model §6 describes for manual placement), not one radius for the whole run. A final review of
+  this slice found `suggestLayout` originally hardcoded every generated dock's environment to
+  `'rural'`, so an AOI straddling an urban boundary got uniform 5km rings where the product's own
+  model says part of it should be 3km. Scoring now uses each candidate's real radius; the sample
+  grid and initial candidate lattice, which each need one spacing number decided before any
+  candidate position is known, are sized conservatively from `min(urbanRadiusKm, ruralRadiusKm)` —
+  denser than either radius alone would require, so a tighter-radius urban pocket inside an
+  otherwise-rural AOI is never under-resolved.
 - Hex lattice anchored to the AOI bbox corner (never a random or centroid-derived origin).
-- Spacing `r · √3 · (1 − targetOverlapPct)`.
+- Spacing `minRadiusKm · √3 · (1 − targetOverlapPct)`.
 - Candidates filtered to those inside the AOI via `booleanPointInPolygon`, then bounded to
   `MAX_CANDIDATES` by widening the spacing deterministically (same technique as the sample grid)
   until the count fits.
+- Existing docks already in the plan (manual or auto) are preserved, never replaced: their coverage
+  seeds the greedy loop's covered-set before any new candidate is scored, and the result appends new
+  docks to them rather than discarding them. `MAX_DOCKS` is a total-plan budget, counting docks
+  already present, not a per-run allowance.
 - Greedy: repeatedly take the candidate adding the most uncovered area; stop at
   `requiredCoveragePct`, when marginal gain falls below **`MIN_MARGINAL_GAIN_SAMPLES` (2)
   still-uncovered sample-grid cells**, or at the dock cap.
@@ -268,16 +286,21 @@ cells":
 dockFootprintSamples = (pi * radiusKm^2) / (radiusKm / SAMPLE_SPACING_DIVISOR)^2 = pi * SAMPLE_SPACING_DIVISOR^2
 ```
 
-At `SAMPLE_SPACING_DIVISOR = 4` that is a near-constant ~50.3 sample cells, regardless of AOI size
-or dock radius. "2% of footprint" therefore reduced, always, to "reject a candidate whose best gain
-is 0 or 1 sample cell" -- a fixed rule dressed up as a scale-sensitive percentage. The floor is now
-named directly in the unit the greedy loop already scores gain in: `MIN_MARGINAL_GAIN_SAMPLES` (2)
-still-uncovered sample-grid cells, used with no percentage indirection. This is still not free of
-`SAMPLE_SPACING_DIVISOR`: one sample cell's ground area is `sampleSpacingKm²`, so a coarser divisor
-makes each cell, and so this floor's real-world km² meaning, larger. 2 was chosen because it
-reproduces the pre-existing, already-validated 20km-box fixture's quality (11 docks, 97.63%
-coverage, `stoppedBy: 'target'`) while remaining a fixed, AOI-size-independent quantity, so a very
-large AOI still places docks up to `MAX_DOCKS` instead of zero.
+At `SAMPLE_SPACING_DIVISOR = 4` that is a near-constant ~50.3 sample cells at whichever radius the
+sample spacing was itself derived from, regardless of AOI size. "2% of footprint" therefore
+reduced, always, to "reject a candidate whose best gain is 0 or 1 sample cell" -- a fixed rule
+dressed up as a scale-sensitive percentage. The floor is now named directly in the unit the greedy
+loop already scores gain in: `MIN_MARGINAL_GAIN_SAMPLES` (2) still-uncovered sample-grid cells,
+used with no percentage indirection. This is still not free of `SAMPLE_SPACING_DIVISOR`: one sample
+cell's ground area is `sampleSpacingKm²`, so a coarser divisor makes each cell, and so this floor's
+real-world km² meaning, larger. 2 was chosen because it reproduces the pre-existing, already-
+validated 20km-box fixture's quality while remaining a fixed, AOI-size-independent quantity, so a
+very large AOI still places docks up to `MAX_DOCKS` instead of zero. (The fixture's own docks/
+coverage numbers moved from 11 docks / 97.63% to 20 docks / 94.34% once §8's per-position
+environment fix landed — this box straddles the edge of Abu Dhabi's urban circle, so roughly half
+its docks now get the tighter 3km cap instead of the old uniform 5km; the quality bar the constant
+was chosen against is "reaches the required coverage without an unreasonable dock count," which
+still holds.)
 
 **Perf:** the greedy loop scores marginal gain on a **rasterized sample grid**, not exact polygon
 operations — hundreds of exact unions in a loop would hang the tab. One exact coverage computation
@@ -319,6 +342,15 @@ user action ──> planStore mutation (rev++)
 The coverage job carries a revision guard: if `rev` changes while a computation is in flight, the
 stale result is discarded rather than written. Dock dragging bypasses the chain entirely — the
 ring follows the cursor imperatively and only `dragend` commits.
+
+Both `usePlannerLayers` and the debounced coverage job key their effects off `plan.aois`,
+`plan.docks` and `plan.params` specifically, not off the plan object's identity. `domain/plan.ts`'s
+`bump()` always carries a mutation's untouched fields through by reference, so a cosmetic-only edit
+(the plan name or customer field, typed in `PlanTree.tsx`) produces a new `plan` object but the
+exact same `aois`/`docks`/`params` references — neither the map sync nor a `computeCoverage` run is
+triggered by typing a name. A final review of this slice found both hooks originally depended on
+`plan` itself, so every keystroke in a name field rebuilt every dock ring buffer and, after the
+debounce, re-ran the full coverage pipeline with no geometry having changed at all.
 
 Persistence: debounced localStorage autosave for convenience; plan JSON export/import is the
 source of truth.

@@ -24,13 +24,14 @@ import { usePlanStore } from '@/modules/planner/store/planStore'
 import { addAoi, adoptIdsFrom, nextId, setDocks } from '@/modules/planner/domain/plan'
 import { suggestLayout } from '@/modules/planner/domain/autoPlace'
 import { serializePlan, parsePlan } from '@/modules/planner/domain/planIo'
+import { isValidAoiGeometry } from '@/modules/planner/domain/geometry'
 import { importAoiFile } from '@/modules/planner/io/kml'
 import type { Aoi, DeploymentPlan } from '@/modules/planner/domain/types'
 import PlannerTopbar from './PlannerTopbar'
 import PlanTree from './PlanTree'
 import Inspector from './Inspector'
 import SummaryStrip from './SummaryStrip'
-import { describeSuggestOutcome } from './suggestOutcome'
+import { describeSuggestOutcome, isLayoutStatusCurrent } from './suggestOutcome'
 import type { SuggestOutcome } from './suggestOutcome'
 import './planner.css'
 
@@ -69,13 +70,23 @@ function loadAutosave(): DeploymentPlan | null {
 
 type ImportMessage = { level: 'error' | 'info'; text: string } | null
 
+// Critical 2 (final whole-branch review): pairs a SUGGEST LAYOUT outcome
+// with the plan revision it was computed against, so it can be hidden once
+// the plan moves on (see isLayoutStatusCurrent's comment in
+// suggestOutcome.ts) instead of sitting stale next to the live coverage
+// stats forever.
+interface LayoutStatus {
+  outcome: SuggestOutcome
+  rev: number
+}
+
 function PlannerShell() {
   const { mapRef, ready } = useMap()
   const plan = usePlanStore((s) => s.plan)
   const coverage = usePlanStore((s) => s.coverage)
   const [drawMode, setDrawMode] = useState<AoiDrawMode>('idle')
   const [importMessage, setImportMessage] = useState<ImportMessage>(null)
-  const [layoutStatus, setLayoutStatus] = useState<SuggestOutcome | null>(null)
+  const [layoutStatus, setLayoutStatus] = useState<LayoutStatus | null>(null)
 
   useCoverageDriver()
   usePlannerLayers(mapRef, ready, plan, coverage)
@@ -87,13 +98,21 @@ function PlannerShell() {
       name: `AOI ${state.plan.aois.length + 1}`,
       geometry,
       source: 'drawn',
-      valid: true,
+      // Important 4 (final whole-branch review): this used to be hardcoded
+      // `true` unconditionally -- the draw-commit path set no validity at
+      // all. A self-intersecting drawn ring reached computeCoverage as
+      // `valid: true` and collapsed its entire result to `{ ok: false,
+      // reason: 'degenerate' }` instead of being excluded and flagged (see
+      // domain/geometry.ts's module comment).
+      valid: isValidAoiGeometry(geometry),
     }
     state.setPlan(addAoi(state.plan, aoi))
   }
 
   const draw = useAoiDraw(mapRef, ready, { onFinish: handleDrawFinish })
-  const dockPlacement = useDockPlacement(mapRef, ready)
+  // Important 5: gate dock dragging on the draw mode being idle -- see
+  // useDockPlacement's drawModeIdle parameter comment.
+  const dockPlacement = useDockPlacement(mapRef, ready, drawMode === 'idle')
 
   // Escape stands down an in-progress draw, the same convention
   // useDockPlacement already applies to armed dock placement. useAoiDraw
@@ -179,12 +198,18 @@ function PlannerShell() {
   function handleSuggestLayout() {
     const state = usePlanStore.getState()
     const result = suggestLayout(state.plan)
-    state.setPlan(setDocks(state.plan, result.docks))
+    const next = setDocks(state.plan, result.docks)
+    state.setPlan(next)
     // Defect 2: suggestLayout's achievedPct/stoppedBy used to be thrown away
     // here, so a partial or failed layout (zero docks, capped short of
     // target, marginal gain too low) looked identical to a full success --
     // see suggestOutcome.ts for why that matters and how the message reads.
-    setLayoutStatus(describeSuggestOutcome(result))
+    //
+    // Critical 2: paired with `next.rev` (the plan this outcome actually
+    // describes, AFTER the setDocks bump above -- not state.plan.rev, which
+    // is one revision behind it) so the render below can stop showing this
+    // message the moment the plan moves past this revision.
+    setLayoutStatus({ outcome: describeSuggestOutcome(result), rev: next.rev })
   }
 
   return (
@@ -219,7 +244,15 @@ function PlannerShell() {
       <aside className="pl-rpanel">
         <Inspector />
       </aside>
-      <SummaryStrip coverage={coverage} dockCount={plan.docks.length} layoutStatus={layoutStatus} />
+      <SummaryStrip
+        coverage={coverage}
+        dockCount={plan.docks.length}
+        layoutStatus={
+          layoutStatus && isLayoutStatusCurrent(layoutStatus.rev, plan.rev)
+            ? layoutStatus.outcome
+            : null
+        }
+      />
     </>
   )
 }
