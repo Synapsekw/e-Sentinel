@@ -1,39 +1,36 @@
-/* Ported (Phase 1C / Task 4) from assets/css/console.css:154-155 (.panel/
-   .panel h4), :165-168 (.stats/.st/.st .n/.st .c), and :386-404 (#ticker,
-   #ticker>.lbl, #tickstream(::-webkit-scrollbar), .tick-ev and its .tt/.src/
-   .warn/.alert modifiers). The is-active/is-past/clickable/drone-ev
+/* Ported (Phase 1C / Task 4, `.panel` renamed from the placeholder
+   `.hud-panel` + Task 8's #ticker inset restored + Phase 1D / Task 6's dead
+   fixed-panel positioning removed) from assets/css/console.css:154-155
+   (.panel/.panel h4), :165-168 (.stats/.st/.st .n/.st .c), and :386-404
+   (#ticker, #ticker>.lbl, #tickstream(::-webkit-scrollbar), .tick-ev and its
+   .tt/.src/.warn/.alert modifiers). The is-active/is-past/clickable/drone-ev
    modifiers (console.css:404,410-413) are intentionally NOT transcribed —
    they style Phase 1D's click-through-to-drone behavior, which Ticker.tsx
    does not build yet.
 
-   Positioning is new, not transcribed: legacy's #grid-stats lived inside the
-   real `#side` aside and #ticker spanned `left:318px;right:340px` to dodge
-   the real side/right panels — none of that chrome exists yet (Phase 1D
-   builds it). Both are standalone fixed panels here, following the same
-   minimal-chrome pattern as OfflineChip.tsx and Console.tsx's layer buttons,
-   positioned to clear the top-left layer buttons / top-right OfflineChip. */
+   `.panel`/`.panel h4` are the real console.html class (console.html:45,49,
+   58 all use `class="panel ..."`) -- Task 6 renames them here from the
+   Phase 1C placeholder `.hud-panel`/`.hud-panel h4` now that Sidebar.tsx /
+   LiveNetworkTile.tsx / RequestBoard.tsx render the genuine `#side` aside
+   content and need the real class name. The Phase 1C standalone
+   `#grid-stats-panel` fixed-position wrapper is deleted along with it: Task
+   6's GridStats.tsx no longer renders that element (its `.panel` wrapper now
+   lives in Sidebar.tsx, positioned by `#side`'s flex layout in chrome.css,
+   not by a fixed offset). */
 
-.hud-panel {
+.panel {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px;
 }
-.hud-panel h4 {
+.panel h4 {
   font-family: var(--mono);
   font-size: 9.5px;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--dim);
   margin-bottom: 12px;
-}
-
-#grid-stats-panel {
-  position: fixed;
-  top: 64px;
-  left: 16px;
-  z-index: 900;
-  width: 200px;
 }
 
 .stats {
