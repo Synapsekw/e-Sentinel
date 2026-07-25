@@ -4,6 +4,7 @@ import simplify from '@turf/simplify'
 import { feature } from '@turf/helpers'
 import type { MultiPolygon, Polygon } from 'geojson'
 import { nextId } from '../domain/plan'
+import { isValidAoiGeometry } from '../domain/geometry'
 import type { Aoi } from '../domain/types'
 
 export const SIMPLIFY_VERTEX_THRESHOLD = 1500
@@ -75,12 +76,20 @@ export function parseKmlText(xml: string): ImportResult {
     const g = f.geometry
     if (g && (g.type === 'Polygon' || g.type === 'MultiPolygon')) {
       const { geometry, from, simplifyFailed } = maybeSimplify(g)
+      // Important 4 (final whole-branch review): !simplifyFailed alone only
+      // catches the ABOVE-threshold failure path (see maybeSimplify); a
+      // self-intersecting ring under SIMPLIFY_VERTEX_THRESHOLD never went
+      // through simplify at all and used to reach the plan as `valid: true`,
+      // which poisons computeCoverage's ENTIRE result (see
+      // domain/geometry.ts's module comment) instead of being excluded and
+      // flagged the way the design doc requires.
+      const valid = !simplifyFailed && isValidAoiGeometry(geometry)
       aois.push({
         id: nextId('aoi'),
         name: String(f.properties?.name ?? 'IMPORTED AREA').toUpperCase(),
         geometry,
         source: 'kml',
-        valid: !simplifyFailed,
+        valid,
         ...(from != null ? { simplifiedFrom: from } : {}),
       })
     } else {
@@ -100,7 +109,25 @@ export function parseKmlText(xml: string): ImportResult {
 
 export async function importAoiFile(file: File): Promise<ImportResult> {
   const isKmz = file.name.toLowerCase().endsWith('.kmz')
-  if (!isKmz) return parseKmlText(await file.text())
+  if (!isKmz) {
+    // Important 7 (final whole-branch review): this was the one unguarded
+    // read in the whole import surface -- the .kmz branch below already
+    // wraps its own read (unzipSync/arrayBuffer) in a try/catch, and
+    // handleImportPlanFile (ui/Planner.tsx) does the same for plan JSON
+    // imports. A rejected file.text() here (a permission error, a file
+    // removed/renamed between picker and read, etc.) used to become an
+    // unhandled promise rejection with no alert and no message: nothing
+    // visibly happened at all, which is exactly the silent-degradation this
+    // whole review is about closing.
+    let text: string
+    try {
+      text = await file.text()
+    } catch (err) {
+      console.error('[planner] could not read KML file', err)
+      return { ok: false, code: 'UNREADABLE', message: 'COULD NOT READ FILE' }
+    }
+    return parseKmlText(text)
+  }
 
   let entries: Record<string, Uint8Array>
   try {

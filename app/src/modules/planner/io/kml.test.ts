@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 // jsdom's Blob/File implementation (as of jsdom 25, used by the
@@ -86,6 +86,31 @@ describe('parseKmlText', () => {
     expect(r.aois[0].simplifiedFrom).toBeUndefined()
     expect(r.aois[0].geometry).toBeDefined()
   })
+
+  // Important 4 (final whole-branch review): before this, the only way an
+  // AOI became invalid was the simplify-threshold branch above throwing.
+  // A self-intersecting ring well under SIMPLIFY_VERTEX_THRESHOLD never went
+  // through simplify at all and reached the plan as `valid: true`, which
+  // poisons computeCoverage's entire result instead of being excluded and
+  // flagged (design doc section 11).
+  it('flags a self-intersecting (bowtie) polygon invalid while a good polygon in the same file stays valid', () => {
+    const kml = `<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+      <Placemark><name>Good</name><Polygon><outerBoundaryIs><LinearRing><coordinates>
+        54.5,24.2 54.7,24.2 54.7,24.4 54.5,24.4 54.5,24.2
+      </coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+      <Placemark><name>Bowtie</name><Polygon><outerBoundaryIs><LinearRing><coordinates>
+        54.5,24.2 54.7,24.4 54.7,24.2 54.5,24.4 54.5,24.2
+      </coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+      </Document></kml>`
+
+    const r = parseKmlText(kml)
+    if (!r.ok) throw new Error(`expected ok, got ${r.code}`)
+    expect(r.aois).toHaveLength(2)
+    const good = r.aois.find((a) => a.name === 'GOOD')
+    const bowtie = r.aois.find((a) => a.name === 'BOWTIE')
+    expect(good?.valid).toBe(true)
+    expect(bowtie?.valid).toBe(false)
+  })
 })
 
 describe('importAoiFile', () => {
@@ -122,5 +147,27 @@ describe('importAoiFile', () => {
     expect(r.ok).toBe(false)
     if (r.ok) return
     expect(r.code).toBe('UNREADABLE')
+  })
+
+  it('reports a message instead of an unhandled rejection when reading a .kml file fails (Important 7)', async () => {
+    // Before this fix, importAoiFile's non-.kmz branch called
+    // `await file.text()` with no try/catch, so a rejected read became an
+    // unhandled promise rejection: no alert, no message, nothing happened.
+    // The .kmz branch (arrayBuffer/unzipSync above) and handleImportPlanFile
+    // (ui/Planner.tsx) already guard their own reads the same way this now
+    // does. A minimal object satisfying only what importAoiFile actually
+    // touches (name, text()) stands in for File here -- this cast is
+    // type-only, not a structural File.
+    const failing = {
+      name: 'aoi.kml',
+      text: () => Promise.reject(new Error('permission denied')),
+    } as unknown as File
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const r = await importAoiFile(failing)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.code).toBe('UNREADABLE')
+    expect(consoleSpy).toHaveBeenCalled()
+    consoleSpy.mockRestore()
   })
 })
