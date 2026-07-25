@@ -1,0 +1,60 @@
+/* Ported (Phase 1B / Task 3) verbatim from assets/css/console.css:
+   #map (line 25), #basemap-loading + [hidden] (lines 453-463, minus the
+   #side-collapsed left-shift rule, which belongs to Task 5's console
+   chrome), and .maplibregl-ctrl-bottom-right / .maplibregl-ctrl-attrib /
+   its link + button states (lines 420-429), all one block in legacy so the
+   attribution control's stacking order (z-index:750) is carried over
+   alongside its restyling. Only the selectors relevant to MapView +
+   BasemapChip are transcribed here; everything else in console.css stays
+   with its owning task. */
+
+#map {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+}
+
+/* Basemap tile-loading chip: a small "ACQUIRING BASEMAP" pill shown only
+   while raster tiles are actually being fetched (see BasemapChip.tsx). */
+#basemap-loading {
+  position: fixed;
+  left: 332px;
+  bottom: 44px;
+  z-index: 810;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 5px 12px;
+  color: var(--dim);
+  white-space: nowrap;
+  pointer-events: none;
+}
+#basemap-loading[hidden] {
+  display: none;
+}
+
+.maplibregl-ctrl-bottom-right {
+  z-index: 750;
+}
+.maplibregl-ctrl-attrib {
+  background: rgba(10, 11, 14, 0.7) !important;
+  color: var(--dim) !important;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--dim) !important;
+}
+.maplibregl-ctrl-attrib a:hover {
+  color: #fff !important;
+}
+.maplibregl-ctrl-attrib-button {
+  filter: invert(1) brightness(1.6) opacity(0.7);
+}
