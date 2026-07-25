@@ -590,7 +590,7 @@ export type CoverageResult =
       overlapPct: number
       uncovered: GeoJSON.MultiPolygon
       gapCount: number
-      perDock: { dockId: string; contributionKm2: number }[]
+      perDock: { dockId: string; grossContributionKm2: number }[]
     }
 ```
 
@@ -997,7 +997,7 @@ describe('computeCoverage', () => {
     if (!r.ok) throw new Error('expected ok')
     expect(r.perDock).toHaveLength(1)
     expect(r.perDock[0].dockId).toBe('d1')
-    expect(r.perDock[0].contributionKm2).toBeCloseTo(78.5, 0)
+    expect(r.perDock[0].grossContributionKm2).toBeCloseTo(78.5, 0)
   })
 })
 ```
@@ -1092,7 +1092,7 @@ export function computeCoverage(plan: DeploymentPlan): CoverageResult {
 
   const perDock = buffers.map((b) => ({
     dockId: b.dock.id,
-    contributionKm2: km2(intersect(featureCollection([b.geom, aoiGeom]))),
+    grossContributionKm2: km2(intersect(featureCollection([b.geom, aoiGeom]))),
   }))
 
   return {
