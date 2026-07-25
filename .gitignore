@@ -14,3 +14,9 @@ dist/
 # Needed only on checkouts whose path contains "&" (breaks cmd.exe).
 # Never commit: the absolute path would break Linux CI.
 app/.npmrc
+
+# Playwright MCP session artifacts (snapshots, console logs, screenshots)
+.playwright-mcp/
+*.png
+!assets/img/*.png
+!app/public/assets/img/*.png
