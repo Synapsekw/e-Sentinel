@@ -80,7 +80,7 @@ interface LayoutStatus {
   rev: number
 }
 
-function PlannerShell() {
+export function PlannerShell() {
   const { mapRef, ready } = useMap()
   const plan = usePlanStore((s) => s.plan)
   const coverage = usePlanStore((s) => s.coverage)
@@ -131,6 +131,17 @@ function PlannerShell() {
   }, [drawMode, draw])
 
   function handleSetDrawMode(mode: AoiDrawMode) {
+    // Minor 6 (final whole-branch review): with the click-to-place effect
+    // now gated on draw mode being idle (see useDockPlacement.ts), an armed
+    // placement simply went inert instead of double-firing once a draw mode
+    // was picked -- but nothing stood the stale `placing` state itself back
+    // down, so the `+ DOCK` button stayed lit as if a dock click was still
+    // one click away. Arming a draw mode here always stands dock placement
+    // down first, the same "one active capture mode at a time" convention
+    // the console's `controlMode` (shared/store.ts) already keeps as a
+    // single variable rather than two independent booleans that could both
+    // be true together.
+    if (mode !== 'idle' && dockPlacement.placing) dockPlacement.cancel()
     setDrawMode(mode)
     draw.setMode(mode)
   }
@@ -139,8 +150,18 @@ function PlannerShell() {
     setDrawMode('idle')
   }
   function handleToggleDockPlacement() {
-    if (dockPlacement.placing) dockPlacement.cancel()
-    else dockPlacement.startPlacing()
+    if (dockPlacement.placing) {
+      dockPlacement.cancel()
+      return
+    }
+    // Minor 6: the reverse direction -- arming dock placement while a draw
+    // mode is active stands the draw down first, so the two tools can never
+    // both be armed at once.
+    if (drawMode !== 'idle') {
+      draw.cancel()
+      setDrawMode('idle')
+    }
+    dockPlacement.startPlacing()
   }
 
   async function handleImportAoiFile(file: File) {
@@ -209,7 +230,10 @@ function PlannerShell() {
     // describes, AFTER the setDocks bump above -- not state.plan.rev, which
     // is one revision behind it) so the render below can stop showing this
     // message the moment the plan moves past this revision.
-    setLayoutStatus({ outcome: describeSuggestOutcome(result), rev: next.rev })
+    setLayoutStatus({
+      outcome: describeSuggestOutcome(result, state.plan.params.requiredCoveragePct),
+      rev: next.rev,
+    })
   }
 
   return (

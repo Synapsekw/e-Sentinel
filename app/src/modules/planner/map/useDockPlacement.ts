@@ -43,16 +43,22 @@ const DOCK_LAYER_ID = 'planner-docks-circle'
 export function useDockPlacement(
   mapRef: MutableRefObject<maplibregl.Map | null>,
   ready: boolean,
-  // Important 5 (final whole-branch review): this effect used to attach its
-  // mousedown/mousemove/mouseup handlers unconditionally, with no knowledge
-  // of AOI drawing. With DRAW · POLYGON active, a vertex click landing on an
-  // existing dock marker started a dock drag (queryRenderedFeatures against
-  // the same DOCK_LAYER_ID a placement click also probes), disabling
-  // dragPan, while terra-draw was simultaneously consuming the same clicks
-  // as polygon vertices -- the two features fought each other. Defaulting to
-  // true keeps every existing caller/test (none of which know about draw
-  // mode) working unchanged; PlannerShell (ui/Planner.tsx), which owns both
-  // `drawMode` and this hook, passes `drawMode === 'idle'` explicitly.
+  // Important 5 (final whole-branch review): the drag effect below used to
+  // attach its mousedown/mousemove/mouseup handlers unconditionally, with no
+  // knowledge of AOI drawing. With DRAW · POLYGON active, a vertex click
+  // landing on an existing dock marker started a dock drag
+  // (queryRenderedFeatures against the same DOCK_LAYER_ID a placement click
+  // also probes), disabling dragPan, while terra-draw was simultaneously
+  // consuming the same clicks as polygon vertices -- the two features fought
+  // each other.
+  // Minor 6 (final whole-branch review): the click-to-place effect gates on
+  // this too now -- it had the identical gap (a placement click landing on
+  // open ground both added a dock AND was consumed by terra-draw as a
+  // polygon vertex), just missed by the original Important 5 fix.
+  // Defaulting to true keeps every existing caller/test (none of which know
+  // about draw mode) working unchanged; PlannerShell (ui/Planner.tsx), which
+  // owns both `drawMode` and this hook, passes `drawMode === 'idle'`
+  // explicitly.
   drawModeIdle = true,
 ): DockPlacement {
   const [placing, setPlacing] = useState(false)
@@ -63,7 +69,15 @@ export function useDockPlacement(
   // mode convention (useCaptureMapClicks / useWizard).
   useEffect(() => {
     const map = mapRef.current
-    if (!ready || !isMapUsable(map)) return
+    // Minor 6 (final whole-branch review): the drag effect below was
+    // already gated on drawModeIdle (Important 5), but this click-to-place
+    // effect was not -- with `+ DOCK` armed and `DRAW * POLYGON` selected, a
+    // single map click both added a dock here AND was consumed by
+    // terra-draw as a polygon vertex, the same "two features fighting over
+    // one click" shape Important 5 fixed for dragging. Bailing out here too
+    // means an armed placement simply does nothing while a draw mode is
+    // active, instead of double-firing.
+    if (!ready || !isMapUsable(map) || !drawModeIdle) return
 
     const onClick = (e: maplibregl.MapMouseEvent) => {
       if (!placingRef.current) return
@@ -105,7 +119,7 @@ export function useDockPlacement(
       // detects (same reasoning as useAoiDraw.ts's teardownDraw).
       if (isMapUsable(map)) map.off('click', onClick)
     }
-  }, [mapRef, ready])
+  }, [mapRef, ready, drawModeIdle])
 
   // Drag. The store is NOT touched until the gesture ends: committing per
   // mousemove would re-render every panel and rebuild all N ring buffers on

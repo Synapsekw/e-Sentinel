@@ -344,6 +344,35 @@ describe('useDockPlacement placement mode', () => {
     expect(usePlanStore.getState().plan.docks).toHaveLength(0)
   })
 
+  it('does not add a dock on a map click while a draw mode is active (Minor 6)', () => {
+    // Regression: with `+ DOCK` armed AND `DRAW * POLYGON` selected, a
+    // single map click used to both add a dock here (this effect was not
+    // gated on drawModeIdle, unlike the drag effect Important 5 already
+    // fixed) and place a polygon vertex via terra-draw.
+    const { result, rerender } = renderHook(({ idle }) => useDockPlacement(mapRef, true, idle), {
+      initialProps: { idle: false },
+    })
+
+    act(() => result.current.startPlacing())
+    act(() => {
+      fakeMap.fire('click', { lngLat: { lng: 54.6, lat: 24.3 } })
+    })
+
+    expect(usePlanStore.getState().plan.docks).toHaveLength(0)
+    // Placement stays armed while gated -- a draw mode being active does not
+    // itself stand placement down (that mutual-exclusion decision belongs to
+    // ui/Planner.tsx, which owns both drawMode and this hook); it just stops
+    // an ungated click from silently doing both things at once.
+    expect(result.current.placing).toBe(true)
+
+    rerender({ idle: true })
+    act(() => {
+      fakeMap.fire('click', { lngLat: { lng: 54.6, lat: 24.3 } })
+    })
+    expect(usePlanStore.getState().plan.docks).toHaveLength(1)
+    expect(result.current.placing).toBe(false)
+  })
+
   it('a placement click landing on an existing dock marker neither adds a dock nor stands placement down', () => {
     // Regression for the carried double-commit nuisance: clicking an
     // existing dock while placement mode is armed used to fire both the
