@@ -7,8 +7,8 @@ import {
   MAX_CANDIDATES,
   MAX_REFINEMENTS,
 } from './autoPlace'
-import { createPlan, addAoi, resetIdsForTest } from './plan'
-import type { Aoi } from './types'
+import { createPlan, addAoi, addDock, resetIdsForTest } from './plan'
+import type { Aoi, PlannedDock } from './types'
 
 const squareAoi = (): Aoi => ({
   id: 'a1',
@@ -217,31 +217,42 @@ describe('suggestLayout', () => {
   })
 
   it('reaches the default required coverage by densifying past the initial lattice', () => {
-    // The initial (unrefined) hex lattice over this box yields exactly 9
-    // in-AOI candidate sites. Before the densify fix, the greedy loop
-    // stopped the moment those 9 ran out, at ~88.45% coverage, and
-    // mislabeled it as stoppedBy: 'gain' even though the 9th dock's
-    // marginal gain (1.838%) was well above the 0.25% floor. With
-    // refinement, the loop keeps densifying (bounded by MAX_REFINEMENTS)
-    // until it actually reaches the required coverage.
+    // Critical 1 (final whole-branch review) changed what this test needs to
+    // force refinement with. The initial hex lattice's spacing used to be
+    // derived from a single always-rural 5km radiusKm; it is now derived
+    // from minRadiusKm, the smaller of the urban/rural radii this drone
+    // model could ever be assigned (3km), so the lattice is denser than
+    // before. At this plan's DEFAULT targetOverlapPct (20%), that denser
+    // lattice alone already supplies enough candidates (25, measured by
+    // temporarily instrumenting suggestLayout's initial candidate count,
+    // not part of the committed source) to reach 95% coverage without ever
+    // refining -- so this test now pins targetOverlapPct to 0% instead
+    // (still inside the params' valid [0, 80] range) to genuinely keep
+    // exercising the densify path: at 0% overlap the initial lattice over
+    // this box yields only 16 in-AOI candidate sites (too few on their own),
+    // and refinement (confirmed via the same instrumentation to run exactly
+    // once for this scenario) must actually produce more sites for the loop
+    // to reach target.
     const plan = addAoi(createPlan(), squareAoi())
-    const r = suggestLayout(plan)
+    const params = { ...plan, params: { targetOverlapPct: 0, requiredCoveragePct: 95 } }
+    const r = suggestLayout(params)
     expect(r.stoppedBy).toBe('target')
-    expect(r.achievedPct).toBeGreaterThanOrEqual(plan.params.requiredCoveragePct)
-    // Reaching target needed more docks than the 9 the coarse lattice alone
-    // could offer, proving refinement actually ran.
-    expect(r.docks.length).toBeGreaterThan(9)
+    expect(r.achievedPct).toBeGreaterThanOrEqual(params.params.requiredCoveragePct)
+    // Reaching target needed more docks than the 16 sites the coarse lattice
+    // alone could offer, proving refinement actually ran.
+    expect(r.docks.length).toBeGreaterThan(16)
   })
 
   it('refinement itself is deterministic: two runs on the same input match byte-for-byte', () => {
     const plan = addAoi(createPlan(), squareAoi())
+    const params = { ...plan, params: { targetOverlapPct: 0, requiredCoveragePct: 95 } }
     resetIdsForTest()
-    const a = suggestLayout(plan)
+    const a = suggestLayout(params)
     resetIdsForTest()
-    const b = suggestLayout(plan)
+    const b = suggestLayout(params)
     // Sanity: this scenario actually exercises refinement (see the test
     // above), so this is pinning refined output, not just the coarse pass.
-    expect(a.docks.length).toBeGreaterThan(9)
+    expect(a.docks.length).toBeGreaterThan(16)
     expect(JSON.stringify(a)).toBe(JSON.stringify(b))
   })
 
@@ -278,8 +289,15 @@ describe('suggestLayout', () => {
     expect(r.achievedPct).toBeGreaterThan(0)
     expect(r.achievedPct).toBeLessThan(95)
     // MAX_CANDIDATES keeps the lattice (and so this run) bounded even though
-    // the AOI is hundreds of km across; this must stay interactive.
-    expect(elapsedMs).toBeLessThan(5000)
+    // the AOI is hundreds of km across; this must stay interactive. Ceiling
+    // widened from 5000 to 9000ms as part of Critical 1 (final whole-branch
+    // review): every candidate now costs one extra DOCK_RANGE.isUrbanDock
+    // classification (see radiusForPosition), and this environment's
+    // measured wall-clock for this exact test ranged 2.4s in isolation to
+    // ~6.0s as the last of several heavy tests in one run (this file's other
+    // large-AOI tests still running in the same process beforehand). Still a
+    // generous ceiling meant to catch a genuine blowup, not pin exact timing.
+    expect(elapsedMs).toBeLessThan(9000)
   })
 
   it('places docks on a >50,000km2 AOI that used to return zero under the old area-relative floor (Defect 1 regression)', () => {
@@ -391,8 +409,122 @@ describe('suggestLayout', () => {
       expect(r.achievedPct).toBeGreaterThan(0)
       // Generous ceiling: real runs complete in well under it. This only
       // needs to catch a genuine blowup (e.g. the widen loop failing to
-      // converge), not pin exact performance.
-      expect(elapsedMs).toBeLessThan(8000)
+      // converge), not pin exact performance. Widened from 8000 to 11000ms
+      // as part of Critical 1 (final whole-branch review) for the same
+      // reason as the ~200km-wide AOI test above: one extra urban/rural
+      // classification per candidate, measured on this environment at up to
+      // ~8.4s for the scale-25 case when run after this file's other
+      // large-AOI tests in the same process.
+      expect(elapsedMs).toBeLessThan(11000)
     },
   )
+
+  describe('Critical 1: per-position environment derivation', () => {
+    const smallAoiAround = (lon: number, lat: number, halfDeg: number): Aoi => ({
+      id: 'a1',
+      name: 'SMALL',
+      source: 'drawn',
+      valid: true,
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [lon - halfDeg, lat - halfDeg],
+            [lon + halfDeg, lat - halfDeg],
+            [lon + halfDeg, lat + halfDeg],
+            [lon - halfDeg, lat + halfDeg],
+            [lon - halfDeg, lat - halfDeg],
+          ],
+        ],
+      },
+    })
+
+    it('a suggested dock inside a known urban centre gets environment "urban"', () => {
+      // Abu Dhabi Corniche -- inside an URBAN_CENTERS circle in the sim's
+      // dock range model, same point useDockPlacement.test.ts's dockFromClick
+      // test uses for the manual-placement path. Before this fix, autoPlace's
+      // makeDock hardcoded environment: 'rural' unconditionally, so this
+      // dock would have rendered a 5km ring here instead of the 3km ring the
+      // console's own model (and a manually-placed dock at the same spot)
+      // would assign.
+      const plan = addAoi(createPlan(), smallAoiAround(54.349, 24.477, 0.01))
+      const r = suggestLayout(plan)
+      expect(r.docks.length).toBeGreaterThan(0)
+      expect(r.docks.every((d) => d.environment === 'urban')).toBe(true)
+    })
+
+    it('a suggested dock out in open desert gets environment "rural"', () => {
+      const plan = addAoi(createPlan(), smallAoiAround(53.0, 23.2, 0.01))
+      const r = suggestLayout(plan)
+      expect(r.docks.length).toBeGreaterThan(0)
+      expect(r.docks.every((d) => d.environment === 'rural')).toBe(true)
+    })
+  })
+
+  describe('Finding 6: existing docks survive SUGGEST LAYOUT', () => {
+    const manualDock = (id: string): PlannedDock => ({
+      id,
+      name: 'HAND PLACED',
+      position: [54.6, 24.3],
+      dockModel: 'DOCK3',
+      droneModel: 'M4TD',
+      environment: 'urban',
+      source: 'manual',
+    })
+
+    it('keeps a manually placed dock instead of destroying it', () => {
+      const plan = addDock(addAoi(createPlan(), squareAoi()), manualDock('manual-1'))
+      const r = suggestLayout(plan)
+      const manual = r.docks.filter((d) => d.source === 'manual')
+      expect(manual).toHaveLength(1)
+      expect(manual[0].id).toBe('manual-1')
+      // The manual dock is seeded into the covered-set (Finding 6), not
+      // ignored, but this AOI still needs more ground covered on top of it.
+      expect(r.docks.length).toBeGreaterThan(1)
+      expect(r.docks.every((d) => d.source === 'auto' || d.id === 'manual-1')).toBe(true)
+    })
+
+    it('never grows the plan past MAX_DOCKS even when existing docks are already close to the cap', () => {
+      let plan = addAoi(createPlan(), largeBoxAoi(3))
+      for (let i = 0; i < MAX_DOCKS - 1; i += 1) {
+        plan = addDock(plan, manualDock(`manual-${i}`))
+      }
+      const tight = { ...plan, params: { targetOverlapPct: 20, requiredCoveragePct: 90 } }
+      const r = suggestLayout(tight)
+      expect(r.docks.length).toBeLessThanOrEqual(MAX_DOCKS)
+      expect(r.stoppedBy).toBe('cap')
+      // Every one of the MAX_DOCKS - 1 pre-existing docks is still present.
+      expect(r.docks.filter((d) => d.source === 'manual')).toHaveLength(MAX_DOCKS - 1)
+    })
+  })
+
+  describe('Critical 3: non-terminating overlap cannot hang the lattice builder', () => {
+    it('does not hang when targetOverlapPct is 100 (spacing would be exactly zero)', () => {
+      const plan = addAoi(createPlan(), squareAoi())
+      const params = { ...plan, params: { targetOverlapPct: 100, requiredCoveragePct: 95 } }
+      const start = Date.now()
+      const r = suggestLayout(params)
+      const elapsedMs = Date.now() - start
+      // No candidate lattice can ever be built at zero spacing, so this is
+      // an honest 'exhausted', not a hang.
+      expect(r.docks).toEqual([])
+      expect(r.stoppedBy).toBe('exhausted')
+      expect(elapsedMs).toBeLessThan(2000)
+    })
+
+    it('does not hang when targetOverlapPct is above 100 (spacing would be negative)', () => {
+      // parsePlan rejects this before a plan ever reaches suggestLayout (see
+      // planIo.test.ts), but the lattice builder's own guard must hold
+      // unconditionally for any caller, not just ones that go through
+      // parsePlan.
+      const plan = addAoi(createPlan(), squareAoi())
+      const params = { ...plan, params: { targetOverlapPct: 150, requiredCoveragePct: 95 } }
+      const start = Date.now()
+      const r = suggestLayout(params)
+      const elapsedMs = Date.now() - start
+      expect(r.docks).toEqual([])
+      expect(r.stoppedBy).toBe('exhausted')
+      expect(elapsedMs).toBeLessThan(2000)
+    })
+  })
 })

@@ -79,7 +79,18 @@ export function radiusFromTerms(terms: {
 // The aircraft can usually fly much further than we plan for; BVLOS and
 // airspace rules bind first. Reporting both terms lets the inspector show the
 // headroom rather than an unexplained number.
-export function effectiveRadius(dock: PlannedDock): RadiusBreakdown {
+//
+// Typed as a Pick, not the full PlannedDock: only these three fields are ever
+// read below. autoPlace.ts's suggestLayout needs a radius for a candidate
+// site that is not (yet, and may never become) a real dock -- minting a full
+// PlannedDock (id/name/position/source) just to ask "what radius would this
+// environment/drone combination get" would be wasteful and, worse, would
+// burn an id off the nextId() counter for every candidate scored, which
+// breaks determinism. A plain Pick lets both callers pass exactly what they
+// have.
+export function effectiveRadius(
+  dock: Pick<PlannedDock, 'droneModel' | 'environment' | 'radiusKmOverride'>,
+): RadiusBreakdown {
   const spec = DRONES[dock.droneModel]
   const usableMin = spec.enduranceMin * (1 - spec.reservePct)
   const outLegMin = (usableMin - spec.onTaskMin) / 2

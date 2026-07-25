@@ -3,10 +3,11 @@ import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
 import { feature, featureCollection, point } from '@turf/helpers'
 import union from '@turf/union'
 import type { Feature, MultiPolygon, Polygon } from 'geojson'
+import { DOCK_RANGE } from '@/modules/console/domain'
 import { computeCoverage } from './coverage'
 import { effectiveRadius } from './catalog'
 import { nextId, setDocks } from './plan'
-import type { DeploymentPlan, DroneModelId, PlannedDock } from './types'
+import type { DeploymentPlan, DockModelId, DroneModelId, PlannedDock } from './types'
 
 export const MAX_DOCKS = 40
 // The old MIN_MARGINAL_GAIN_PCT floor measured a candidate's marginal gain
@@ -47,6 +48,25 @@ export const MAX_DOCKS = 40
 // default required coverage" tests) while remaining a fixed,
 // AOI-size-independent quantity, so it no longer blows up on a large AOI the
 // way the old percent-of-total-area floor did.
+//
+// Critical 1 fix (final whole-branch review): every one of the derivations
+// above was written assuming a single radiusKm for the whole run, from a
+// synthetic dock probed at (0, 0) with environment hardcoded to 'rural'. In
+// reality a candidate's radius depends on WHERE it sits (urban centres get
+// the tighter 3km cap, see @/modules/console/domain's DOCK_RANGE.isUrbanDock,
+// the exact model useDockPlacement.ts's manual-placement path already used),
+// so a single global radius made the AOI this branch was demoed against --
+// which straddles the edge of Abu Dhabi's urban circle -- score its urban
+// half as if it were rural, placing 5km rings where the product's own model
+// says 3km applies. The fix scores every candidate with its OWN
+// position-derived radius (see withinRadius's radiusKm parameter and its
+// call sites below). The sample grid and the initial candidate lattice both
+// still need ONE spacing number to be built at, decided before any candidate
+// position is known; radiusUrbanKm/radiusRuralKm/minRadiusKm below resolve
+// that by taking the smaller of the two radii this drone model could ever be
+// assigned, which is the conservative (denser, never under-resolving a
+// tighter-radius urban pocket) choice, and is a fixed pair of numbers derivable
+// with no dependency on AOI geometry or candidate positions.
 export const MIN_MARGINAL_GAIN_SAMPLES = 2
 export const SAMPLE_SPACING_DIVISOR = 4
 export const MAX_SAMPLE_POINTS = 20000
@@ -76,14 +96,43 @@ export interface SuggestResult {
 const KM_PER_DEG_LAT = 111.2
 const kmPerDegLon = (lat: number) => 111.32 * Math.cos((lat * Math.PI) / 180)
 
+function dockModelFor(droneModel: DroneModelId): DockModelId {
+  return droneModel === 'M350' ? 'DOCK2' : 'DOCK3'
+}
+
+// Environment classification reused verbatim from the manual-placement path
+// (map/useDockPlacement.ts's dockFromClick) so a planner ring always matches
+// a console ring for the same location -- see the design doc section 6.
+function environmentAt(lon: number, lat: number): 'urban' | 'rural' {
+  return DOCK_RANGE.isUrbanDock({ coords: [lon, lat] }) ? 'urban' : 'rural'
+}
+
+// Radius for a hypothetical dock of the given environment/drone combination,
+// with no position and no minted id -- used to bound the sample grid and
+// initial lattice spacing (see minRadiusKm below), NOT to score any real
+// candidate. effectiveRadius only reads droneModel/environment/
+// radiusKmOverride (see catalog.ts's Pick-typed signature), so no id/name/
+// position/source needs to be fabricated here.
+function radiusForEnvironment(environment: 'urban' | 'rural', droneModel: DroneModelId): number {
+  return effectiveRadius({ droneModel, environment }).radiusKm
+}
+
+// A real candidate's own radius, derived from its actual position. This is
+// what withinRadius scores gain against for that specific candidate -- see
+// the Critical 1 comment above MIN_MARGINAL_GAIN_SAMPLES for why a single
+// global radius was wrong.
+function radiusForPosition(lon: number, lat: number, droneModel: DroneModelId): number {
+  return radiusForEnvironment(environmentAt(lon, lat), droneModel)
+}
+
 function makeDock(lon: number, lat: number, droneModel: DroneModelId): PlannedDock {
   return {
     id: nextId('dock'),
     name: `PROPOSED ${lon.toFixed(3)} ${lat.toFixed(3)}`,
     position: [lon, lat],
-    dockModel: droneModel === 'M350' ? 'DOCK2' : 'DOCK3',
+    dockModel: dockModelFor(droneModel),
     droneModel,
-    environment: 'rural',
+    environment: environmentAt(lon, lat),
     source: 'auto',
   }
 }
@@ -107,15 +156,34 @@ export function suggestLayout(
   // `aoiGeom` does not carry into the nested function declarations below.
   const geom: Feature<Polygon | MultiPolygon> = aoiGeom
 
-  const radiusKm = effectiveRadius(makeDock(0, 0, droneModel)).radiusKm
+  // Conservative bound used ONLY to size the sample grid and the initial
+  // candidate lattice (see the Critical 1 comment above
+  // MIN_MARGINAL_GAIN_SAMPLES). Real per-candidate scoring uses
+  // radiusForPosition, below, not this value -- taking the smaller of the
+  // two radii this drone model could ever be assigned means the grid is
+  // always fine enough to resolve a tighter-radius urban pocket, even one
+  // inside an otherwise entirely rural AOI.
+  const radiusUrbanKm = radiusForEnvironment('urban', droneModel)
+  const radiusRuralKm = radiusForEnvironment('rural', droneModel)
+  const minRadiusKm = Math.min(radiusUrbanKm, radiusRuralKm)
+
   const [minLon, minLat, maxLon, maxLat] = bbox(aoiGeom)
   const midLat = (minLat + maxLat) / 2
 
   // Hex lattice anchored to the bbox MINIMUM corner. Never a centroid or a
   // random origin: the anchor is what makes the whole thing reproducible.
-  const initialSpacingKm = radiusKm * Math.sqrt(3) * (1 - plan.params.targetOverlapPct / 100)
+  const initialSpacingKm = minRadiusKm * Math.sqrt(3) * (1 - plan.params.targetOverlapPct / 100)
 
   function buildLattice(spacingKm: number): [number, number][] {
+    // Defensive bail (Critical 3): a spacing of zero or less would make
+    // dLat/dLon zero or negative below, so the `lat +=`/`lon +=` loops would
+    // never advance past maxLat/maxLon and would hang the tab forever. A
+    // targetOverlapPct of 100 or more is supposed to be rejected before a
+    // plan ever reaches this function (see planIo.ts's parsePlan
+    // validation), but this guard makes that true unconditionally, for any
+    // caller, not just ones that go through parsePlan -- see the "does not
+    // hang on a non-terminating overlap" test in autoPlace.test.ts.
+    if (spacingKm <= 0) return []
     const dLat = spacingKm / KM_PER_DEG_LAT
     const dLon = spacingKm / kmPerDegLon(midLat)
     const list: [number, number][] = []
@@ -131,18 +199,33 @@ export function suggestLayout(
     return list
   }
 
+  // A candidate site paired with the radius it would actually get if placed
+  // (derived from ITS OWN position, not the run-wide minRadiusKm above) --
+  // the Critical 1 fix's core change from a single global radius.
+  interface Candidate {
+    pos: [number, number]
+    radiusKm: number
+  }
+
+  function annotate(positions: [number, number][]): Candidate[] {
+    return positions.map((pos) => ({
+      pos,
+      radiusKm: radiusForPosition(pos[0], pos[1], droneModel),
+    }))
+  }
+
   // Candidate count scales with AOI area / radius^2 and is otherwise
   // unbounded; widen deterministically (same technique as the sample grid
   // below) until it fits under MAX_CANDIDATES, which keeps the greedy loop's
   // O(docks * candidates * samples) cost bounded on very large AOIs.
-  function boundedLattice(spacingKm: number): { list: [number, number][]; spacingKm: number } {
+  function boundedLattice(spacingKm: number): { list: Candidate[]; spacingKm: number } {
     let s = spacingKm
     let list = buildLattice(s)
     while (list.length > MAX_CANDIDATES) {
       s *= CANDIDATE_SPACING_WIDEN_FACTOR
       list = buildLattice(s)
     }
-    return { list, spacingKm: s }
+    return { list: annotate(list), spacingKm: s }
   }
 
   const samePoint = (a: [number, number], b: [number, number]): boolean =>
@@ -153,7 +236,7 @@ export function suggestLayout(
   // Rasterized sample grid for greedy scoring. Running an exact turf union per
   // candidate per iteration would be hundreds of polygon ops and would hang
   // the tab; one exact coverage computation runs at the end instead.
-  let sampleSpacingKm = radiusKm / SAMPLE_SPACING_DIVISOR
+  let sampleSpacingKm = minRadiusKm / SAMPLE_SPACING_DIVISOR
   let samples: [number, number][] = []
   for (;;) {
     samples = []
@@ -170,10 +253,26 @@ export function suggestLayout(
   if (samples.length === 0) return { docks: [], achievedPct: 0, stoppedBy: 'exhausted' }
 
   const covered = new Array<boolean>(samples.length).fill(false)
-  const withinRadius = (c: [number, number], s: [number, number]): boolean => {
+  const withinRadius = (c: [number, number], s: [number, number], radiusKm: number): boolean => {
     const dy = (s[1] - c[1]) * KM_PER_DEG_LAT
     const dx = (s[0] - c[0]) * kmPerDegLon(midLat)
     return dx * dx + dy * dy <= radiusKm * radiusKm
+  }
+
+  // Finding 6: an engineer's hand-placed docks must survive SUGGEST LAYOUT,
+  // not be silently destroyed. Seed the covered-set from every dock already
+  // in the plan -- using each dock's OWN effectiveRadius, which honours a
+  // manual radiusKmOverride or an explicit environment the greedy loop would
+  // never itself assign -- before scoring a single new candidate. The loop
+  // below then only adds new sites on top of what is already covered, and
+  // the final result appends to, rather than replaces, this list.
+  const existingDocks = plan.docks
+  for (const dock of existingDocks) {
+    const r = effectiveRadius(dock).radiusKm
+    if (r <= 0) continue
+    for (let s = 0; s < samples.length; s += 1) {
+      if (!covered[s] && withinRadius(dock.position, samples[s], r)) covered[s] = true
+    }
   }
 
   const chosen: [number, number][] = []
@@ -187,7 +286,10 @@ export function suggestLayout(
   const minGainSamples = MIN_MARGINAL_GAIN_SAMPLES
 
   for (;;) {
-    if (chosen.length >= MAX_DOCKS) {
+    // MAX_DOCKS is a total-plan budget, not a per-run one: docks already in
+    // the plan count against it too (Finding 6), otherwise this could grow
+    // the plan past the cap just by running SUGGEST LAYOUT again.
+    if (existingDocks.length + chosen.length >= MAX_DOCKS) {
       stoppedBy = 'cap'
       break
     }
@@ -210,16 +312,17 @@ export function suggestLayout(
       refinements += 1
       const rebuilt = boundedLattice(currentCandidateSpacingKm * REFINEMENT_SPACING_FACTOR)
       currentCandidateSpacingKm = rebuilt.spacingKm
-      candidates = rebuilt.list.filter((c) => !chosen.some((ch) => samePoint(ch, c)))
+      candidates = rebuilt.list.filter((c) => !chosen.some((ch) => samePoint(ch, c.pos)))
       continue
     }
 
     let bestIdx = -1
     let bestGain = 0
     for (let i = 0; i < candidates.length; i += 1) {
+      const cand = candidates[i]
       let gain = 0
       for (let s = 0; s < samples.length; s += 1) {
-        if (!covered[s] && withinRadius(candidates[i], samples[s])) gain += 1
+        if (!covered[s] && withinRadius(cand.pos, samples[s], cand.radiusKm)) gain += 1
       }
       if (gain > bestGain) {
         bestGain = gain
@@ -232,15 +335,16 @@ export function suggestLayout(
       break
     }
 
-    const pick = candidates[bestIdx]
-    chosen.push(pick)
+    const picked = candidates[bestIdx]
+    chosen.push(picked.pos)
     candidates.splice(bestIdx, 1)
     for (let s = 0; s < samples.length; s += 1) {
-      if (!covered[s] && withinRadius(pick, samples[s])) covered[s] = true
+      if (!covered[s] && withinRadius(picked.pos, samples[s], picked.radiusKm)) covered[s] = true
     }
   }
 
-  const docks = chosen.map(([lon, lat]) => makeDock(lon, lat, droneModel))
+  const newDocks = chosen.map(([lon, lat]) => makeDock(lon, lat, droneModel))
+  const docks = [...existingDocks, ...newDocks]
   const exact = computeCoverage(setDocks(plan, docks))
   return { docks, achievedPct: exact.ok ? exact.coveragePct : 0, stoppedBy }
 }
