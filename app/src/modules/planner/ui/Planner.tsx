@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import MapView from '@/modules/console/map/MapView'
-import { buildBaseStyle } from '@/modules/console/map/style'
 import { useMap } from '@/modules/console/map/MapContext'
 import { useAoiDraw } from '@/modules/planner/map/useAoiDraw'
+import { buildPlannerStyle } from '@/modules/planner/map/plannerStyle'
 
 // Working camera for the planner: the whole UAE in frame at a zoom you can
 // actually place docks at, rather than the console's orbital globe entry.
@@ -81,7 +81,7 @@ export default function Planner() {
       <MapView
         initialCenter={PLANNER_CENTER}
         initialZoom={PLANNER_ZOOM}
-        styleSpec={buildBaseStyle()}
+        styleSpec={buildPlannerStyle()}
       >
         <AoiDrawTrigger />
       </MapView>
