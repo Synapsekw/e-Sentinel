@@ -47,7 +47,17 @@ export function useSimEngine(): EngineContextValue {
       }
     }
     maybeCreate(useAppStore.getState().scene)
-    const unsubscribe = useAppStore.subscribe((state) => maybeCreate(state.scene))
+    // Narrowed to an explicit prev-value compare (rather than re-running
+    // maybeCreate on every store write) so per-second `stats` updates and
+    // other unrelated store writes don't needlessly re-invoke this — mirrors
+    // the prev-value-compare pattern in useOffline.ts / useBasemap.ts.
+    let prevScene = useAppStore.getState().scene
+    const unsubscribe = useAppStore.subscribe((state) => {
+      if (state.scene !== prevScene) {
+        prevScene = state.scene
+        maybeCreate(state.scene)
+      }
+    })
     return unsubscribe
   }, [])
 
