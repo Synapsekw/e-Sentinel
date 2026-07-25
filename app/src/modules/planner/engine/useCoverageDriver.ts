@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { computeCoverage } from '../domain/coverage'
 import { usePlanStore } from '../store/planStore'
 
@@ -11,31 +11,42 @@ export function shouldApply(resultRev: number, currentRev: number): boolean {
 
 export function useCoverageDriver(): void {
   const plan = usePlanStore((s) => s.plan)
-  const revRef = useRef(plan.rev)
-  revRef.current = plan.rev
 
-  // Important 8 (final whole-branch review): this effect used to depend on
-  // `plan` itself, so it re-ran (and, after COVERAGE_DEBOUNCE_MS, re-ran the
-  // full O(n^2) turf pipeline in computeCoverage) on EVERY plan edit,
-  // including a plan-name or customer keystroke in PlanTree.tsx that never
-  // touches `aois`, `docks` or `params`. Keying the effect off those three
-  // fields instead means a cosmetic edit -- which `bump()` (domain/plan.ts)
-  // always carries the existing aois/docks/params array/object references
-  // through unchanged -- does not schedule a new computation at all.
-  // shouldApply/revRef are UNCHANGED: they still compare plain plan.rev
-  // numbers, so the staleness guard's own contract (and its existing tests)
-  // is untouched. The only difference the dependency change makes to
-  // staleness is timing-shaped, not correctness-shaped: this effect now
-  // simply runs less often.
+  // Important 8 (final whole-branch review, since re-broken and re-fixed by
+  // Important 1 -- see below) keys this effect's scheduling off
+  // aois/docks/params rather than `plan` itself, so a cosmetic-only edit --
+  // which domain/plan.ts's bump() always carries the existing aois/docks/
+  // params array/object references through unchanged -- does not
+  // reschedule a new computation at all.
+  //
+  // Important 1 (final whole-branch review): that dependency change broke
+  // the staleness guard, because the timer body used to capture `const rev
+  // = plan.rev` from THIS render's closure at schedule time and compare it
+  // against a `revRef` reassigned on every render. A cosmetic edit within
+  // the debounce window bumps `plan.rev` (and so `revRef.current`) WITHOUT
+  // rescheduling the timer (its deps are unchanged), so when the timer
+  // fired it computed coverage from the stale pre-cosmetic-edit `plan`
+  // closure, then compared that stale rev against the now-newer revRef and
+  // (correctly, per the guard's own contract) discarded it -- but nothing
+  // was left to schedule another run, so the discarded result was gone for
+  // good and the strip kept showing pre-edit coverage indefinitely.
+  //
+  // The fix: never compute from a value closed over at schedule time. Read
+  // the plan LIVE, inside the timeout, and derive both the coverage and the
+  // revision the guard checks from that exact same snapshot -- the two
+  // values the guard compares can then never come from different renders.
+  // A snapshot that is itself superseded by the time computeCoverage
+  // returns (simulated in the test with a synchronous store update inside
+  // the mocked computeCoverage) is still caught: the guard re-reads
+  // getState().plan.rev AFTER the computation, not before.
   useEffect(() => {
-    const rev = plan.rev
     const t = setTimeout(() => {
-      const result = computeCoverage(plan)
-      if (shouldApply(rev, revRef.current)) {
+      const snapshot = usePlanStore.getState().plan
+      const result = computeCoverage(snapshot)
+      if (shouldApply(snapshot.rev, usePlanStore.getState().plan.rev)) {
         usePlanStore.getState().setCoverage(result)
       }
     }, COVERAGE_DEBOUNCE_MS)
     return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan.aois, plan.docks, plan.params])
 }

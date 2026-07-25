@@ -235,6 +235,55 @@ describe('useCoverageDriver', () => {
     expect(mockComputeCoverage).not.toHaveBeenCalled()
   })
 
+  it('applies coverage computed after a cosmetic rev bump lands within the debounce window of a geometry edit (Important 1)', () => {
+    // The exact regression: drag a dock (a genuine geometry edit, rev 1),
+    // then -- before the 150ms debounce elapses -- type into the plan Name
+    // field (a cosmetic edit, rev 2, with the SAME aois/docks/params
+    // references, so the effect's dependency array does not see it and the
+    // pending timer is neither cleared nor rescheduled). Before this fix,
+    // the timer fired having closed over rev 1 at schedule time, so
+    // shouldApply(1, revRef.current=2) discarded the result even though it
+    // was computed from the geometry-edited plan, and nothing ever
+    // scheduled another run -- the strip was stuck showing pre-drag
+    // coverage forever. The fix reads the plan live at fire time instead,
+    // so the revision the guard checks and the plan coverage is computed
+    // from can never diverge.
+    renderHook(() => useCoverageDriver())
+
+    const geometryEditedPlan = makePlan(1)
+    const cosmeticPlan = {
+      ...geometryEditedPlan,
+      name: 'Renamed Mid-Drag',
+      rev: 2,
+    }
+
+    // computeCoverage is mocked, so tie its return value to the exact plan
+    // object it was called with (by reference), not just its rev, so this
+    // proves the APPLIED result really is the one computed from the
+    // geometry-edited plan, not some other stand-in.
+    const geometryResult: CoverageResult = { ok: false, reason: 'no-docks' }
+    const otherResult: CoverageResult = { ok: false, reason: 'degenerate' }
+    mockComputeCoverage.mockImplementation((plan: DeploymentPlan) =>
+      plan === geometryEditedPlan || plan === cosmeticPlan ? geometryResult : otherResult,
+    )
+    const setCoverageSpy = vi.spyOn(usePlanStore.getState(), 'setCoverage')
+
+    act(() => {
+      usePlanStore.setState({ plan: geometryEditedPlan })
+    })
+    act(() => {
+      vi.advanceTimersByTime(50) // well within the 150ms debounce window
+    })
+    act(() => {
+      usePlanStore.setState({ plan: cosmeticPlan })
+    })
+    act(() => {
+      vi.advanceTimersByTime(COVERAGE_DEBOUNCE_MS)
+    })
+
+    expect(setCoverageSpy).toHaveBeenCalledWith(geometryResult)
+  })
+
   it('still recomputes once a genuine geometry/params edit follows a run of cosmetic ones', () => {
     renderHook(() => useCoverageDriver())
     const base = makePlan(0)
