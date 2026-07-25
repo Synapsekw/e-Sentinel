@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { TerraDraw } from 'terra-draw'
 import MapView from '@/modules/console/map/MapView'
 import { buildBaseStyle } from '@/modules/console/map/style'
 import { useMap } from '@/modules/console/map/MapContext'
@@ -38,7 +39,16 @@ function AoiDrawTrigger() {
     >
       <button
         type="button"
-        onClick={() => controls.setMode('polygon')}
+        onClick={() => {
+          // TEMP-DIAGNOSTIC (browser-gate investigation, revert after use):
+          // reads the mode straight off the window-exposed draw instance
+          // (see useAoiDraw.ts) so the controller can confirm setMode is
+          // actually reaching terra-draw and changing its internal state.
+          const w = window as unknown as { __plannerDraw?: TerraDraw }
+          console.log('[planner] mode before setMode', w.__plannerDraw?.getMode())
+          controls.setMode('polygon')
+          console.log('[planner] mode after setMode', w.__plannerDraw?.getMode())
+        }}
         style={{
           font: '700 13px/1 system-ui, sans-serif',
           letterSpacing: '.05em',
