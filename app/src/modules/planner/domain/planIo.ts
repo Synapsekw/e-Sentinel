@@ -5,6 +5,7 @@
 // build doesn't understand.
 
 import { PLAN_SCHEMA_VERSION } from './plan'
+import { isValidAoiGeometry } from './geometry'
 import type { DeploymentPlan } from './types'
 
 export function serializePlan(plan: DeploymentPlan): string {
@@ -106,5 +107,29 @@ export function parsePlan(json: string): ParseResult {
   // element there fails safely downstream (computeCoverage's try/catch, the
   // INVALID-AOI badge) rather than crashing render or hanging a loop the way
   // a missing/out-of-range params did.
-  return { ok: true, plan: p as DeploymentPlan }
+  const plan = p as DeploymentPlan
+
+  // Minor 4 (final whole-branch review): this is the one function BOTH
+  // paths that admit a plan from outside the current session -- ui/
+  // Planner.tsx's loadAutosave() and its IMPORT PLAN handler -- already
+  // call, so re-deriving aoi.valid HERE covers both at once rather than
+  // needing the same fix twice. Before this, `aoi.valid` was accepted
+  // verbatim from the file: a plan autosaved by a pre-fix build (or a
+  // hand-edited/IMPORTed one) could carry a self-intersecting AOI recorded
+  // as `valid: true`, which then reached computeCoverage exactly as if
+  // Important 4's isValidAoiGeometry check had never been applied to it at
+  // all, collapsing the entire coverage result to `{ ok: false, reason:
+  // 'degenerate' }` for the whole plan, not just the one bad AOI. The
+  // KML-import (io/kml.ts) and draw-commit (ui/Planner.tsx's
+  // handleDrawFinish) paths already compute this correctly at the point an
+  // AOI is minted, so re-deriving it again here is redundant but harmless
+  // for those; it is load-bearing for a plan that arrives with `valid`
+  // already set by something other than this build's own AOI-entry paths.
+  return {
+    ok: true,
+    plan: {
+      ...plan,
+      aois: plan.aois.map((aoi) => ({ ...aoi, valid: isValidAoiGeometry(aoi.geometry) })),
+    },
+  }
 }
