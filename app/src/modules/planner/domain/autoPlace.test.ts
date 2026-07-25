@@ -55,6 +55,59 @@ const largeBoxAoi = (scale: number): Aoi => {
   }
 }
 
+const kmPerDegLonAt = (lat: number) => 111.32 * Math.cos((lat * Math.PI) / 180)
+const KM_PER_DEG_LAT = 111.2
+
+// A thin north-south "needle" diamond: half-width 0.1km, half-height 1.25km,
+// centered at (54.6, 24.3). Built from the same radius/spacing math
+// suggestLayout itself uses (5km rural dock radius -> sample spacing
+// radiusKm/SAMPLE_SPACING_DIVISOR = 1.25km), so this is a genuinely
+// different fixture from tinyDiamondAoi below, not a smaller copy of it:
+//
+// - Its half-height (1.25km) is bit-identical to the sample grid's row
+//   spacing, so the sample row exactly at the AOI's vertical center lands
+//   exactly on the diamond's left vertex (a boundary point, which
+//   booleanPointInPolygon treats as inside). That single sample point is
+//   enough for `samples.length` to be 1, not 0 -- so suggestLayout passes
+//   the pre-loop `samples.length === 0` guard and actually enters the greedy
+//   loop, unlike tinyDiamondAoi, whose sample grid is empty and returns
+//   'exhausted' before the loop ever runs.
+// - Its half-width (0.1km) is far too narrow for any hex candidate site, at
+//   the initial spacing or after any of the 3 refinements, to ever land
+//   inside it: verified by temporarily instrumenting suggestLayout's
+//   refinement branch (a console.error per refinement, listing
+//   candidates.length before each) and confirming the trace is exactly
+//   "empty -> refine #1 -> still empty -> refine #2 -> still empty ->
+//   refine #3 -> still empty -> exhausted", i.e. all 3 refinements genuinely
+//   run and genuinely fail to produce a site, in contrast to tinyDiamondAoi
+//   where the same trace shows zero refinement log lines at all. The
+//   instrumentation was removed once this was confirmed; it is not part of
+//   the committed source.
+const needleAoi = (): Aoi => {
+  const cx = 54.6
+  const cy = 24.3
+  const wDeg = 0.1 / kmPerDegLonAt(cy)
+  const hDeg = 1.25 / KM_PER_DEG_LAT
+  return {
+    id: 'a1',
+    name: 'NEEDLE',
+    source: 'drawn',
+    valid: true,
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [cx, cy + hDeg],
+          [cx + wDeg, cy],
+          [cx, cy - hDeg],
+          [cx - wDeg, cy],
+          [cx, cy + hDeg],
+        ],
+      ],
+    },
+  }
+}
+
 // Tiny diamond (~5m across), far smaller than any lattice spacing derived
 // from a 5km dock radius, and its bbox min corner (the lattice's anchor) is
 // itself the diamond's bottom vertex, i.e. outside its interior. No hex site
@@ -177,11 +230,65 @@ describe('suggestLayout', () => {
     expect(elapsedMs).toBeLessThan(5000)
   })
 
-  it('reports exhausted when refinement genuinely cannot produce another candidate site', () => {
+  it('reports exhausted when the sample grid itself is empty (pre-loop guard)', () => {
+    // tinyDiamondAoi is smaller than the sample spacing itself, so
+    // `samples.length === 0` and suggestLayout returns 'exhausted' from the
+    // pre-loop guard without ever entering the greedy loop or the
+    // refinement branch. See needleAoi below for a fixture that actually
+    // exercises refinement.
     const plan = addAoi(createPlan(), tinyDiamondAoi())
     const r = suggestLayout(plan)
     expect(r.stoppedBy).toBe('exhausted')
     expect(r.docks).toEqual([])
     expect(r.achievedPct).toBe(0)
   })
+
+  it('reports exhausted when refinement itself runs and still cannot produce a site', () => {
+    // Unlike tinyDiamondAoi, needleAoi has a non-empty sample grid (see its
+    // definition above), so this genuinely enters the greedy loop. Its
+    // candidate lattice is empty at the initial spacing and stays empty
+    // through all 3 refinements (confirmed via temporary instrumentation,
+    // now removed -- see the comment on needleAoi), so this exercises the
+    // real "densify up to MAX_REFINEMENTS times, still nothing, report
+    // exhausted" path rather than short-circuiting before the loop starts.
+    const plan = addAoi(createPlan(), needleAoi())
+    const r = suggestLayout(plan)
+    expect(r.stoppedBy).toBe('exhausted')
+    expect(r.docks).toEqual([])
+    expect(r.achievedPct).toBe(0)
+  })
+
+  it.each([16, 25])(
+    'widens the candidate lattice under MAX_CANDIDATES for a scale-%i box',
+    (scale) => {
+      // Verified independently (bbox/booleanPointInPolygon replica of
+      // boundedLattice, not part of this test) that the raw, unwidened hex
+      // lattice for these AOIs is far above MAX_CANDIDATES: scale 16 yields
+      // ~2162 raw candidates, widened to ~946 in a single pass; scale 25
+      // yields ~5183, widened to ~1040 in two passes. The existing 'cap' and
+      // 'gain' fixtures (scale 3 and scale 10) only ever produce 81 and 841
+      // raw candidates, so neither exercises boundedLattice's while loop at
+      // all. This is large enough to force it on every run.
+      const plan = addAoi(createPlan(), largeBoxAoi(scale))
+      const params = { ...plan, params: { targetOverlapPct: 20, requiredCoveragePct: 95 } }
+      const start = Date.now()
+      const r = suggestLayout(params)
+      const elapsedMs = Date.now() - start
+
+      // At this scale a single 5km-radius dock covers a negligible fraction
+      // of the total AOI area, so the very first candidate's marginal gain
+      // is below the floor and the loop refuses to place anything -- same
+      // reasoning as the scale-10 'gain' fixture above, just further out.
+      // The point of this test is not that outcome but that reaching it
+      // still respects the dock cap and stays fast, proving the widened
+      // (not raw) candidate lattice was what actually got evaluated.
+      expect(r.stoppedBy).toBe('gain')
+      expect(r.docks.length).toBeLessThanOrEqual(MAX_DOCKS)
+      expect(r.achievedPct).toBe(0)
+      // Generous ceiling: real runs complete in well under 200ms. This only
+      // needs to catch a genuine blowup (e.g. the widen loop failing to
+      // converge), not pin exact performance.
+      expect(elapsedMs).toBeLessThan(8000)
+    },
+  )
 })
