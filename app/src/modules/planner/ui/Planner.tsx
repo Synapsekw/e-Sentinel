@@ -21,7 +21,7 @@ import { usePlannerLayers } from '@/modules/planner/map/usePlannerLayers'
 import { useCoverageDriver } from '@/modules/planner/engine/useCoverageDriver'
 import { buildPlannerStyle } from '@/modules/planner/map/plannerStyle'
 import { usePlanStore } from '@/modules/planner/store/planStore'
-import { addAoi, nextId, setDocks } from '@/modules/planner/domain/plan'
+import { addAoi, adoptIdsFrom, nextId, setDocks } from '@/modules/planner/domain/plan'
 import { suggestLayout } from '@/modules/planner/domain/autoPlace'
 import { serializePlan, parsePlan } from '@/modules/planner/domain/planIo'
 import { importAoiFile } from '@/modules/planner/io/kml'
@@ -55,7 +55,12 @@ function loadAutosave(): DeploymentPlan | null {
     const raw = localStorage.getItem(AUTOSAVE_KEY)
     if (!raw) return null
     const result = parsePlan(raw)
-    return result.ok ? result.plan : null
+    if (!result.ok) return null
+    // This plan's ids were minted by a counter from a prior process; adopt
+    // them into this session's counter before anything else mints an id,
+    // or a restored aoi-1/aoi-2 collides with the next freshly drawn AOI.
+    adoptIdsFrom(result.plan)
+    return result.plan
   } catch (err) {
     console.error('[planner] could not read autosave', err)
     return null
@@ -152,6 +157,10 @@ function PlannerShell() {
       setImportMessage({ level: 'error', text: result.message })
       return
     }
+    // Same reasoning as loadAutosave: this plan's ids came from some other
+    // session's counter (or were hand-edited), so adopt them before this
+    // session mints anything new against the imported plan.
+    adoptIdsFrom(result.plan)
     usePlanStore.getState().setPlan(result.plan)
     setImportMessage({ level: 'info', text: 'PLAN IMPORTED' })
   }

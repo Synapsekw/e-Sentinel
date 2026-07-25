@@ -14,6 +14,30 @@ export function resetIdsForTest(): void {
   seq = 0
 }
 
+// The counter above is process-local and resets on every page load, while a
+// plan can outlive the process (localStorage autosave, IMPORT PLAN, KML
+// import) or arrive from another session entirely. Ids are shaped
+// `prefix-N`, but seq itself is NOT prefix-scoped -- every prefix mints off
+// the same counter -- so the only thing that matters to avoid a collision is
+// the highest N used by ANY id already in the plan, regardless of its
+// prefix. Call this on every path that hands the app a plan it did not mint
+// itself, before any further nextId() calls happen against it.
+function highestSuffix(id: string): number {
+  const dash = id.lastIndexOf('-')
+  if (dash === -1 || dash === id.length - 1) return -1
+  const suffix = id.slice(dash + 1)
+  if (!/^\d+$/.test(suffix)) return -1
+  const n = Number(suffix)
+  return Number.isSafeInteger(n) ? n : -1
+}
+
+export function adoptIdsFrom(plan: Pick<DeploymentPlan, 'aois' | 'docks'>): void {
+  let maxSeen = -1
+  for (const aoi of plan.aois) maxSeen = Math.max(maxSeen, highestSuffix(aoi.id))
+  for (const dock of plan.docks) maxSeen = Math.max(maxSeen, highestSuffix(dock.id))
+  seq = Math.max(seq, maxSeen)
+}
+
 // Wall-clock reads make the otherwise-pure domain layer non-reproducible, which
 // is the same problem nextId solves for ids. Tests pin this so a mutation can be
 // asserted byte-for-byte; production leaves it alone.

@@ -9,8 +9,10 @@ import {
   resetIdsForTest,
   setNowForTest,
   resetNowForTest,
+  nextId,
+  adoptIdsFrom,
 } from './plan'
-import type { PlannedDock } from './types'
+import type { Aoi, DeploymentPlan, PlannedDock } from './types'
 
 const dock = (id: string): PlannedDock => ({
   id,
@@ -20,6 +22,41 @@ const dock = (id: string): PlannedDock => ({
   droneModel: 'M4TD',
   environment: 'urban',
   source: 'manual',
+})
+
+const aoi = (id: string): Aoi => ({
+  id,
+  name: id,
+  source: 'drawn',
+  valid: true,
+  geometry: {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [54.5, 24.2],
+        [54.7, 24.2],
+        [54.7, 24.4],
+        [54.5, 24.4],
+        [54.5, 24.2],
+      ],
+    ],
+  },
+})
+
+// Deliberately does not call createPlan(): that itself calls nextId('plan'),
+// which would perturb the very counter these tests are pinning down. This
+// builds a fixture plan shape without touching seq.
+const planWith = (aois: Aoi[], docks: PlannedDock[]): DeploymentPlan => ({
+  id: 'fixture-plan',
+  name: 'FIXTURE',
+  customer: '',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  schemaVersion: 1,
+  aois,
+  docks,
+  params: { targetOverlapPct: 20, requiredCoveragePct: 95 },
+  rev: 0,
 })
 
 describe('plan mutations', () => {
@@ -103,6 +140,56 @@ describe('plan mutations', () => {
       params.targetOverlapPct = 999
 
       expect(p1.params.targetOverlapPct).toBe(10)
+    })
+  })
+
+  describe('adoptIdsFrom', () => {
+    afterEach(() => {
+      resetIdsForTest()
+    })
+
+    it('advances the counter past ids restored from a prior session, so newly minted ids never collide', () => {
+      resetIdsForTest()
+      const restored = planWith([aoi('aoi-1'), aoi('aoi-2')], [dock('dock-1')])
+
+      adoptIdsFrom(restored)
+      const minted = [nextId('aoi'), nextId('aoi'), nextId('dock')]
+
+      const restoredIds = new Set([
+        ...restored.aois.map((a) => a.id),
+        ...restored.docks.map((d) => d.id),
+      ])
+      for (const id of minted) expect(restoredIds.has(id)).toBe(false)
+    })
+
+    it('ignores ids it cannot parse instead of throwing, while still protecting the parseable ones', () => {
+      resetIdsForTest()
+      const plan = planWith([aoi('custom-abc'), aoi(''), aoi('aoi-'), aoi('aoi-3')], [])
+
+      expect(() => adoptIdsFrom(plan)).not.toThrow()
+      const minted = nextId('aoi')
+      expect(minted).toBe('aoi-4')
+    })
+
+    it('never moves the counter backwards', () => {
+      resetIdsForTest()
+      nextId('aoi') // seq -> 1
+      nextId('aoi') // seq -> 2
+      nextId('aoi') // seq -> 3, so the next mint would be aoi-4
+
+      adoptIdsFrom(planWith([aoi('aoi-1')], []))
+
+      expect(nextId('aoi')).toBe('aoi-4')
+    })
+
+    it('regression: restoring a plan containing aoi-2 and then drawing a new AOI must not reissue aoi-2', () => {
+      resetIdsForTest()
+      const restored = planWith([aoi('aoi-1'), aoi('aoi-2')], [])
+
+      adoptIdsFrom(restored)
+      const minted = nextId('aoi')
+
+      expect(minted).not.toBe('aoi-2')
     })
   })
 })
