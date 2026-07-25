@@ -12,29 +12,23 @@
 // than React state: FX pulses are queued by imperative dock-launch code —
 // Phase 1C's live engine binding pushes onto this array when a drone
 // launches — and drained by the animation loop itself every frame, never by
-// a render. It is empty in Phase 1B (no launches wired yet); this hook is
-// the plumbing the later phase pushes into.
+// a render.
+//
+// FX_PULSE_* / fxPulses moved to ./fx (Phase 1C / Task 2) so the live-engine
+// binding's launch-pulse push (fx.ts's pushLaunchPulse) and this driver's
+// drain/prune share the same array without either file depending on the
+// other. Imported below instead of declared locally; no other behavior
+// change.
 
 import { useEffect } from 'react'
 import type { Feature, FeatureCollection, Point } from 'geojson'
 import type { GeoJSONSource, Source } from 'maplibre-gl'
 import { useMap } from './MapContext'
 import { useAppStore } from '@/shared/store'
+import { fxPulses, FX_PULSE_LIFE_MS, FX_PULSE_RINGS, FX_PULSE_STAGGER_MS } from './fx'
 
 const PERIOD_MS = 1600
 const TRACK_PING_PERIOD_MS = 2200 // slower than the dock ping: attention, not alarm
-
-const FX_PULSE_LIFE_MS = 1200
-const FX_PULSE_RINGS = 3
-const FX_PULSE_STAGGER_MS = 150
-
-export interface FxPulse {
-  coords: [number, number]
-  start: number
-}
-
-// Module-scoped, mirrors legacy's `const fxPulses = []` (map.js:398).
-export const fxPulses: FxPulse[] = []
 
 function emptyFC(): FeatureCollection<Point> {
   return { type: 'FeatureCollection', features: [] }
