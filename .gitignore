@@ -3,3 +3,9 @@ node_modules/
 .claude/
 .mcp.json
 _frames/
+
+# React app (Phase 0+) build + local env
+app/dist/
+dist/
+.env
+.env.local
