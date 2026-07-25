@@ -147,7 +147,12 @@ type CoverageResult =
       overlapPct: number;
       uncovered: GeoJSON.MultiPolygon;
       gapCount: number;
-      perDock: { dockId: string; contributionKm2: number }[];
+      // grossContributionKm2 is each dock's own buffer intersected with the AOI,
+      // counted on its own. Overlapping docks each report their full share of
+      // shared ground, so summing this field across perDock can and routinely
+      // does exceed the actual covered area (aoiKm2 * coveragePct / 100). It
+      // must not be summed or presented as a share of coveragePct.
+      perDock: { dockId: string; grossContributionKm2: number }[];
     };
 ```
 
@@ -291,7 +296,10 @@ Nothing throws into React; nothing degrades silently.
   simplified geometry is what gets stored, drawn *and* measured, so the number on screen always
   describes the shape on screen. A coverage number quietly computed against a different shape than
   the one displayed is the worst failure available here.
-- **Degenerate geometry** (empty union, null intersect) lands in `CoverageResult.ok === false`.
+- **Degenerate geometry** (empty union, null intersect, or a thrown error from the turf pipeline
+  itself) lands in `CoverageResult.ok === false, reason: 'degenerate'`. `computeCoverage` wraps the
+  whole geometry pipeline in a try/catch precisely because malformed KML can make turf throw
+  instead of returning null.
 - **Self-intersecting rings** are validated on commit — terra-draw guards live drawing, but
   imported KML can arrive self-intersecting. An invalid AOI is excluded from the math and flagged
   in the list rather than poisoning the total.

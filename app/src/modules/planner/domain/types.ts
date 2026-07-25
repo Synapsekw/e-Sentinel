@@ -50,5 +50,13 @@ export type CoverageResult =
       overlapPct: number
       uncovered: GeoJSON.MultiPolygon
       gapCount: number
-      perDock: { dockId: string; contributionKm2: number }[]
+      perDock: {
+        dockId: string
+        // Gross area: this dock's own buffer intersected with the AOI, counted
+        // on its own. Docks whose buffers overlap each other each report their
+        // full share of that shared ground, so the sum across perDock can and
+        // routinely does exceed the actual covered area (aoiKm2 * coveragePct / 100).
+        // Do not sum this field and do not present it as a share of coveragePct.
+        grossContributionKm2: number
+      }[]
     }

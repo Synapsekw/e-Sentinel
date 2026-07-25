@@ -6,7 +6,7 @@ import area from '@turf/area'
 import { featureCollection, feature } from '@turf/helpers'
 import type { Feature, MultiPolygon, Polygon } from 'geojson'
 import { effectiveRadius } from './catalog'
-import type { CoverageResult, DeploymentPlan, PlannedDock } from './types'
+import type { Aoi, CoverageResult, DeploymentPlan, PlannedDock } from './types'
 
 // Circles at 8 steps (turf's default) are visibly octagonal at working zoom.
 export const BUFFER_STEPS = 64
@@ -35,6 +35,22 @@ export function computeCoverage(plan: DeploymentPlan): CoverageResult {
   if (valid.length === 0) return { ok: false, reason: 'no-aoi' }
   if (plan.docks.length === 0) return { ok: false, reason: 'no-docks' }
 
+  // Imported KML/KMZ AOIs routinely carry self-intersecting rings or bad
+  // coordinates. turf does not always return null for those; some of its
+  // functions (union in particular) throw. A thrown error here would
+  // propagate into React and blank the whole module, which is worse than a
+  // wrong number, so every turf call in this pipeline is covered by this
+  // try/catch and folded into the same degenerate result the null-checks
+  // below already produce. The error is logged so it stays debuggable.
+  try {
+    return computeCoverageGeometry(plan, valid)
+  } catch (err) {
+    console.error('[planner] coverage geometry pipeline threw, treating as degenerate', err)
+    return { ok: false, reason: 'degenerate' }
+  }
+}
+
+function computeCoverageGeometry(plan: DeploymentPlan, valid: Aoi[]): CoverageResult {
   const aoiGeom = unionAll(valid.map((a) => feature(a.geometry)))
   if (!aoiGeom) return { ok: false, reason: 'degenerate' }
   const aoiKm2 = km2(aoiGeom)
@@ -75,7 +91,7 @@ export function computeCoverage(plan: DeploymentPlan): CoverageResult {
 
   const perDock = buffers.map((b) => ({
     dockId: b.dock.id,
-    contributionKm2: km2(intersect(featureCollection([b.geom, aoiGeom]))),
+    grossContributionKm2: km2(intersect(featureCollection([b.geom, aoiGeom]))),
   }))
 
   return {
