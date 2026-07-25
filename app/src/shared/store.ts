@@ -1,6 +1,4 @@
 import { create } from 'zustand'
-import { appendCapped } from '@/modules/console/hud/tickerModel'
-import type { TickerEventInput } from '@/modules/console/hud/tickerModel'
 
 export type Scene = 'globe' | 'console'
 export type MapLayer = 'dark' | 'light' | 'sat' | 'terrain'
@@ -37,9 +35,27 @@ export interface TickerEvent {
   droneId: string | null
 }
 
+// The shape a caller (tickerModel.ts's mapEngineEvent) supplies to
+// pushTickerEvent: everything on TickerEvent except the id, which
+// pushTickerEvent assigns itself from the module-scoped counter below.
+export type TickerEventInput = Omit<TickerEvent, 'id'>
+
 // panels.js:2390's `while (stream.children.length > 30) ...` cap, so a long
 // sim run can't grow the ticker (and thus this store slice) without bound.
 const TICKER_CAP = 30
+
+// Bounded newest-first insert (pushEvent, panels.js:2384+2390: `insertBefore
+// (..., stream.firstChild)` then `while (stream.children.length > 30)
+// stream.removeChild(stream.lastChild)`). Generic (and DOM-free) so it's
+// unit-testable without constructing TickerEvent values. Lives here (shared)
+// rather than in the console feature's tickerModel.ts — pushTickerEvent
+// below is its only real caller, and shared code must not import from a
+// feature module (tickerModel.ts imports TickerEventInput from here instead,
+// the other direction).
+export function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
+  const next = [item, ...list]
+  return next.length > cap ? next.slice(0, cap) : next
+}
 
 export interface AppState {
   scene: Scene

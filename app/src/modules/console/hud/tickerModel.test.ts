@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { eventLevel, appendCapped, mapEngineEvent } from './tickerModel'
+import { eventLevel, mapEngineEvent } from './tickerModel'
+// appendCapped lives in shared/store.ts (Phase 1C review: shared code must
+// not be imported from a feature module, so it moved out of tickerModel.ts).
+import { appendCapped } from '@/shared/store'
 import type { SimEvent } from '@/modules/console/domain'
 
 describe('ticker model', () => {

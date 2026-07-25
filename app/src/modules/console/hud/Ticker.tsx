@@ -4,7 +4,7 @@
 // prepend) and :2209-2234 (startTickerDriver's auto-scroll rAF).
 //
 // `tickerEvents` from the store is already newest-first (see
-// shared/store.ts's pushTickerEvent -> tickerModel.ts's appendCapped), so
+// shared/store.ts's pushTickerEvent -> its own appendCapped), so
 // mapping it in array order reproduces pushEvent's `insertBefore(...,
 // stream.firstChild)` without needing to prepend manually.
 //
@@ -61,23 +61,46 @@ export default function Ticker() {
     return () => cancelAnimationFrame(rafId)
   }, [])
 
-  // pushEvent's scroll-steady compensation (panels.js:2386-2389): a chip
-  // prepended at the left edge would otherwise shift a scrolled/hovered view
-  // right under the reader; only compensate when not already parked at the
-  // newest end (scrollLeft 0), so the live newest chip staying visible is
-  // unaffected. Runs synchronously before paint (useLayoutEffect) so the
-  // compensating scroll happens in the same frame as the DOM insert, with no
-  // visible jump.
+  // pushEvent's scroll-steady compensation (panels.js:2386-2389): each
+  // prepended chip would otherwise shift a scrolled/hovered view right under
+  // the reader, so legacy adds `el.offsetWidth + TICK_GAP` to scrollLeft
+  // *per pushEvent call*. React 18 batches multiple pushTickerEvent calls
+  // that land in the same tick (e.g. several engine events drained together
+  // by useLiveLayers) into a single render, so this effect must compensate
+  // for ALL chips prepended since the last render — not just one — or a
+  // batched arrival under-compensates and the reader sees a leftward jump.
+  //
+  // The count of newly-prepended chips is the index of the previous render's
+  // first-event id within the current (newest-first) `events` array: any
+  // events ahead of it in the array are new. Only compensate when not
+  // already parked at the newest end (scrollLeft 0), matching legacy exactly.
+  // Runs synchronously before paint (useLayoutEffect) so the compensating
+  // scroll happens in the same frame as the DOM insert, with no visible jump.
   useLayoutEffect(() => {
     const stream = streamRef.current
     const newFirstId = events.length > 0 ? events[0].id : null
-    const isFreshInsert =
-      newFirstId !== null &&
-      prevFirstIdRef.current !== null &&
-      newFirstId !== prevFirstIdRef.current
-    if (stream && isFreshInsert && stream.scrollLeft > 0) {
-      const first = stream.firstElementChild as HTMLElement | null
-      if (first) stream.scrollLeft += first.offsetWidth + TICK_GAP
+    const prevId = prevFirstIdRef.current
+
+    if (stream && prevId !== null && newFirstId !== null && newFirstId !== prevId) {
+      const prevIndex = events.findIndex((ev) => ev.id === prevId)
+      // Normally prevIndex *is* the number of chips prepended since the last
+      // render (everything ahead of the old-first chip in the newest-first
+      // array is new). If the previous first id isn't found at all, every
+      // chip visible last render has fallen off the 30-cap in one batch —
+      // there's no way to recover exactly how many chips are new, so fall
+      // back to compensating for all currently-rendered chips. That's an
+      // approximation (it under-compensates if the batch exceeded the cap),
+      // but it's strictly closer to steady than compensating for just one
+      // chip, and this path is only reachable by an extreme same-tick batch.
+      const insertedCount = prevIndex === -1 ? events.length : prevIndex
+      if (insertedCount > 0 && stream.scrollLeft > 0) {
+        const children = stream.children
+        let delta = 0
+        for (let i = 0; i < insertedCount && i < children.length; i++) {
+          delta += (children[i] as HTMLElement).offsetWidth + TICK_GAP
+        }
+        if (delta > 0) stream.scrollLeft += delta
+      }
     }
     prevFirstIdRef.current = newFirstId
   }, [events])

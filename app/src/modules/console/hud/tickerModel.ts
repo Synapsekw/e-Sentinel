@@ -7,9 +7,15 @@
 // — the store's `pushTickerEvent` (shared/store.ts) assigns that itself from a
 // module-scoped counter, the one piece of required mutable state, so this
 // module can stay a pure function of its inputs.
+//
+// `appendCapped` (the bounded newest-first insert pushTickerEvent uses) and
+// the `TickerEventInput` type live in shared/store.ts, not here — this is a
+// console-feature module, and shared code must not depend on it (layering:
+// Phase 1C final review). This module consumes `TickerEventInput` from
+// shared as the return type of `mapEngineEvent` below.
 
 import type { SimEvent } from '@/modules/console/domain'
-import type { TickerEvent } from '@/shared/store'
+import type { TickerEvent, TickerEventInput } from '@/shared/store'
 
 export type TickerEventLevel = TickerEvent['level']
 
@@ -41,10 +47,6 @@ export function nowClockStr(): string {
   return new Date().toLocaleTimeString('en-GB', { hour12: false })
 }
 
-// The shape mapEngineEvent produces: everything pushTickerEvent needs except
-// the id it assigns itself.
-export type TickerEventInput = Omit<TickerEvent, 'id'>
-
 export function mapEngineEvent(ev: SimEvent, clock: () => string): TickerEventInput {
   return {
     time: clock(),
@@ -53,14 +55,4 @@ export function mapEngineEvent(ev: SimEvent, clock: () => string): TickerEventIn
     level: eventLevel(ev.level),
     droneId: droneIdFromSource(ev.source),
   }
-}
-
-// Bounded newest-first insert (pushEvent, panels.js:2384+2390: `insertBefore
-// (..., stream.firstChild)` then `while (stream.children.length > 30)
-// stream.removeChild(stream.lastChild)`). Generic so it can be exercised
-// without constructing TickerEvent values in tests; shared/store.ts's
-// pushTickerEvent calls it with cap 30.
-export function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
-  const next = [item, ...list]
-  return next.length > cap ? next.slice(0, cap) : next
 }
