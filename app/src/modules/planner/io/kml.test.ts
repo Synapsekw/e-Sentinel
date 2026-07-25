@@ -57,6 +57,35 @@ describe('parseKmlText', () => {
     expect(r.code).toBe('NO_AREAS')
     expect(r.message).toContain('1')
   })
+
+  // Reproduces a real turf/simplify failure mode: a ring with more than
+  // SIMPLIFY_VERTEX_THRESHOLD vertices (so parseKmlText actually enters the
+  // simplify branch) whose coordinates have all collapsed to a single point
+  // (a realistic KML export artifact from GPS rounding or bad coordinate
+  // parsing). Against the installed @turf/simplify this throws synchronously
+  // ("invalid polygon, fewer than 4 points") instead of returning null. Before
+  // the try/catch in maybeSimplify was added, that throw propagated straight
+  // out of parseKmlText. This test proves it no longer does, and that the
+  // resulting AOI is kept (not dropped) but marked invalid so it is excluded
+  // from coverage math while still being visible to the user.
+  it('keeps a degenerate collapsed-point ring as an invalid AOI instead of throwing when simplify fails', () => {
+    const vertexCount = 2000 // > SIMPLIFY_VERTEX_THRESHOLD (1500)
+    const collapsedPoint = '54.6,24.3'
+    const coords = Array.from({ length: vertexCount }, () => collapsedPoint).join(' ')
+    const degenerateKml = `<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+      <Placemark><name>Degenerate</name><Polygon><outerBoundaryIs><LinearRing><coordinates>
+        ${coords}
+      </coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+      </Document></kml>`
+
+    const r = parseKmlText(degenerateKml)
+
+    if (!r.ok) throw new Error(`expected ok, got ${r.code}`)
+    expect(r.aois).toHaveLength(1)
+    expect(r.aois[0].valid).toBe(false)
+    expect(r.aois[0].simplifiedFrom).toBeUndefined()
+    expect(r.aois[0].geometry).toBeDefined()
+  })
 })
 
 describe('importAoiFile', () => {

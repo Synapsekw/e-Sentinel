@@ -20,17 +20,35 @@ function countVertices(g: Polygon | MultiPolygon): number {
 
 // Simplification is applied to the STORED geometry, not just the drawn one,
 // so the coverage number always describes the shape on screen.
+//
+// Imported KML/KMZ rings occasionally collapse to a degenerate shape (GPS
+// rounding, a self-intersecting export, bad coordinate parsing). turf's
+// simplify() throws synchronously on some of these ("invalid polygon, fewer
+// than 4 points") instead of returning null. A thrown error here would
+// propagate out of parseKmlText and importAoiFile, blanking the whole import
+// flow, which is worse than one bad AOI. So the call is guarded: on failure
+// the original (un-simplified) geometry is kept and the AOI is marked
+// invalid, the same signal computeCoverage already uses to exclude bad
+// geometry from the math while still listing it for the user. The error is
+// logged so it stays debuggable, matching how computeCoverage handles its
+// own caught turf throws.
 function maybeSimplify(g: Polygon | MultiPolygon): {
   geometry: Polygon | MultiPolygon
   from?: number
+  simplifyFailed?: boolean
 } {
   const before = countVertices(g)
   if (before <= SIMPLIFY_VERTEX_THRESHOLD) return { geometry: g }
-  const out = simplify(feature(g), {
-    tolerance: SIMPLIFY_TOLERANCE,
-    highQuality: false,
-  })
-  return { geometry: out.geometry, from: before }
+  try {
+    const out = simplify(feature(g), {
+      tolerance: SIMPLIFY_TOLERANCE,
+      highQuality: false,
+    })
+    return { geometry: out.geometry, from: before }
+  } catch (err) {
+    console.error('[planner] simplify threw on imported geometry, keeping raw shape', err)
+    return { geometry: g, simplifyFailed: true }
+  }
 }
 
 export function parseKmlText(xml: string): ImportResult {
@@ -56,13 +74,13 @@ export function parseKmlText(xml: string): ImportResult {
   for (const f of collection.features) {
     const g = f.geometry
     if (g && (g.type === 'Polygon' || g.type === 'MultiPolygon')) {
-      const { geometry, from } = maybeSimplify(g)
+      const { geometry, from, simplifyFailed } = maybeSimplify(g)
       aois.push({
         id: nextId('aoi'),
         name: String(f.properties?.name ?? 'IMPORTED AREA').toUpperCase(),
         geometry,
         source: 'kml',
-        valid: true,
+        valid: !simplifyFailed,
         ...(from != null ? { simplifiedFrom: from } : {}),
       })
     } else {
