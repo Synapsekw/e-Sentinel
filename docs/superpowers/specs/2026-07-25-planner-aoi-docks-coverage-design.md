@@ -223,10 +223,19 @@ counts is tens of milliseconds and sits behind the same debounce.
 
 - Hex lattice anchored to the AOI bbox corner (never a random or centroid-derived origin).
 - Spacing `r · √3 · (1 − targetOverlapPct)`.
-- Candidates filtered to those inside the AOI via `booleanPointInPolygon`.
+- Candidates filtered to those inside the AOI via `booleanPointInPolygon`, then bounded to
+  `MAX_CANDIDATES` by widening the spacing deterministically (same technique as the sample grid)
+  until the count fits.
 - Greedy: repeatedly take the candidate adding the most uncovered area; stop at
   `requiredCoveragePct`, when marginal gain falls below **0.25% of AOI area**, or at the dock cap.
-- Stable coordinate ordering (lat then lon, ascending) as tie-break.
+- **Densify on exhaustion:** if the candidate lattice runs dry (every site has been taken) while
+  coverage is still short of `requiredCoveragePct` and the dock cap has not been reached, the
+  lattice is refined: spacing is halved from whatever spacing produced the current lattice (same
+  bbox-minimum-corner anchor, same stable sort, re-bounded to `MAX_CANDIDATES` if needed), any site
+  duplicating an already-chosen dock is dropped, and the greedy loop continues. This repeats up to
+  `MAX_REFINEMENTS` times, so it always terminates.
+- Stable coordinate ordering (lat then lon, ascending) as tie-break, re-applied after every
+  refinement.
 
 **Named constants** — all live in `autoPlace.ts`, all exported so tests pin them:
 
@@ -236,15 +245,34 @@ counts is tens of milliseconds and sits behind the same debounce.
 | `MIN_MARGINAL_GAIN_PCT` | 0.25 | Below this, the next dock is not worth placing |
 | `SAMPLE_SPACING_DIVISOR` | 4 | Sample grid spacing = `radiusKm / 4` |
 | `MAX_SAMPLE_POINTS` | 20000 | Spacing widens to respect this on very large AOIs |
+| `MAX_CANDIDATES` | 2000 | Candidate lattice spacing widens to respect this on very large AOIs |
+| `MAX_REFINEMENTS` | 3 | Hard cap on how many times the lattice is halved to densify |
 
 **Perf:** the greedy loop scores marginal gain on a **rasterized sample grid**, not exact polygon
 operations — hundreds of exact unions in a loop would hang the tab. One exact coverage computation
-runs at the end over the chosen set. Because the sample grid is derived deterministically from the
-AOI bbox and radius, widening the spacing to respect `MAX_SAMPLE_POINTS` does not break
-reproducibility.
+runs at the end over the chosen set. Because both the sample grid and the candidate lattice are
+derived deterministically from the AOI bbox and radius, widening either's spacing to respect its
+`MAX_*_POINTS`/`MAX_CANDIDATES` bound does not break reproducibility. Without a candidate bound,
+a large but plausible AOI (a few hundred km across at a small dock radius) could push the candidate
+count into the thousands, and the greedy loop's `O(docks × candidates × samples)` cost would defeat
+the entire reason sampling was chosen over exact polygon ops; `MAX_CANDIDATES` keeps that bounded
+the same way `MAX_SAMPLE_POINTS` already bounds the sample side.
 
 Results are ordinary `PlannedDock`s with `source: 'auto'` and are fully editable afterwards.
-Partial outcomes are reported honestly: `STOPPED AT 78% · 40 DOCK CAP`.
+Partial outcomes are reported honestly via `stoppedBy`, one of four values:
+
+| `stoppedBy` | Meaning |
+|---|---|
+| `'target'` | Reached `requiredCoveragePct` |
+| `'cap'` | Hit `MAX_DOCKS` before reaching target |
+| `'gain'` | The best remaining candidate's marginal gain fell below `MIN_MARGINAL_GAIN_PCT`, with candidates still on the table: it genuinely was not worth placing another dock |
+| `'exhausted'` | No candidate sites remain, even after `MAX_REFINEMENTS` rounds of densification |
+
+`'gain'` and `'exhausted'` are deliberately distinct: the former means the next dock was not worth
+it, the latter means there was no next dock to consider. Conflating them (as an earlier version of
+this code did, reporting `'gain'` whenever the coarse lattice ran out) reads as "further docks
+would not have helped," which is false when densification would have found more useful sites.
+Reported as e.g. `STOPPED AT 78% · 40 DOCK CAP`.
 
 ## 9. Data flow
 
