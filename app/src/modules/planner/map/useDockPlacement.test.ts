@@ -228,7 +228,31 @@ describe('useDockPlacement drag', () => {
     unmount()
     window.dispatchEvent(new MouseEvent('mouseup'))
 
+    // Unmounting mid-drag must not leave the map permanently unpannable:
+    // nothing else will ever call .enable() on this instance again once
+    // the cleanup has run. The unmount discards the in-progress move
+    // rather than committing it (setPlan is still never called) -- an
+    // unmount is not the same intent as the user releasing the mouse.
+    expect(fakeMap.dragPanEnable).toHaveBeenCalledOnce()
     expect(setPlanSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not touch dragPan or throw when cleanup runs mid-drag against an already torn-down map', () => {
+    fakeMap.queryRenderedFeatures.mockReturnValue([{ properties: { id: 'dock-1' } }])
+    const { unmount } = renderHook(() => useDockPlacement(mapRef, true))
+
+    fakeMap.fire('mousedown', { point: [0, 0], lngLat: { lng: 54.6, lat: 24.3 } })
+    expect(fakeMap.dragPanDisable).toHaveBeenCalledOnce()
+
+    // Simulate MapView's parent cleanup (map.remove()) having already run
+    // before this hook's cleanup, same as isMapUsable's other callers --
+    // MapLibre's remove() nulls the internal Style this probes for.
+    // One cast: mutating a field the public maplibregl.Map type doesn't
+    // expose is exactly what isMapUsable itself does internally.
+    delete (fakeMap.map as unknown as { style?: unknown }).style
+
+    expect(() => unmount()).not.toThrow()
+    expect(fakeMap.dragPanEnable).not.toHaveBeenCalled()
   })
 })
 

@@ -168,6 +168,17 @@ export function useDockPlacement(
       map.off('mousedown', onDown)
       map.off('mousemove', onMove)
       map.off('mouseup', onUp)
+      // A drag still in progress when this effect tears down (the hook
+      // unmounting mid-gesture, or `ready` flipping and this effect
+      // re-running) must not leave dragPan disabled forever: nothing else
+      // will ever call .enable() on this map instance again once these
+      // handlers are gone. Restore pan state directly rather than routing
+      // through endDrag: this is teardown, not a user releasing the
+      // button, so the in-progress move is discarded, not committed. The
+      // component tree (and the panels a commit would re-render) may
+      // itself be mid-unmount, and writing to the store from a cleanup
+      // is exactly the kind of side effect React teardown should avoid.
+      if (dragId) map.dragPan.enable()
     }
   }, [mapRef, ready])
 
