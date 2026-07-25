@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   suggestLayout,
   MAX_DOCKS,
-  MIN_MARGINAL_GAIN_PCT,
+  MIN_MARGINAL_GAIN_FRACTION_OF_FOOTPRINT,
   MAX_CANDIDATES,
   MAX_REFINEMENTS,
 } from './autoPlace'
@@ -136,7 +136,15 @@ describe('suggestLayout', () => {
 
   it('exposes its tuning constants for tests to pin', () => {
     expect(MAX_DOCKS).toBe(40)
-    expect(MIN_MARGINAL_GAIN_PCT).toBe(0.25)
+    // Defect 1 fix: the floor used to be MIN_MARGINAL_GAIN_PCT (0.25% of
+    // *total AOI area*), which is not scale-invariant -- a rural dock's own
+    // ~78.5km^2 footprint falls below that floor for any AOI over roughly
+    // 31,400km^2, so the greedy loop rejected its very first candidate and
+    // suggestLayout silently returned zero docks (see the "places docks on
+    // a very large AOI" test below for the measured regression). The floor
+    // is now expressed relative to one dock's own footprint instead, so it
+    // no longer depends on total AOI size at all.
+    expect(MIN_MARGINAL_GAIN_FRACTION_OF_FOOTPRINT).toBe(0.02)
     expect(MAX_CANDIDATES).toBe(2000)
     expect(MAX_REFINEMENTS).toBe(3)
   })
@@ -210,24 +218,77 @@ describe('suggestLayout', () => {
     expect(r.achievedPct).toBeLessThan(90)
   })
 
-  it('stops on gain only when the best remaining candidate truly is not worth it', () => {
-    // A few-hundred-km AOI at a 5km dock radius (the scenario Finding 2 is
-    // about): even the single best candidate site covers under 0.25% of the
-    // total AOI area, so the greedy loop should refuse the very first dock.
-    // This is a real, plentiful candidate lattice (hundreds of in-AOI hex
-    // sites at this spacing) scoring below the floor, not an empty one, so
-    // it must report 'gain' and never 'exhausted'.
+  it('places docks on a ~200km-wide AOI instead of refusing the first candidate (Defect 1 regression)', () => {
+    // A few-hundred-km AOI at a 5km dock radius -- under the OLD
+    // percent-of-total-area floor (MIN_MARGINAL_GAIN_PCT = 0.25% of total
+    // AOI area), even the single best candidate site's entire footprint
+    // covered under 0.25% of this AOI's area, so the greedy loop refused the
+    // very first candidate and returned zero docks with stoppedBy: 'gain'
+    // (this was Finding 2's exact scenario). With the floor now expressed as
+    // a fraction of one dock's own footprint instead of total area, the
+    // first candidate's near-full-footprint gain clears it easily, and the
+    // loop places docks all the way up to MAX_DOCKS -- this AOI needs far
+    // more than 40 docks to blanket at a tight 20% overlap, so the cap is
+    // the genuine, unambiguous stopping reason, not silence.
     const plan = addAoi(createPlan(), largeBoxAoi(10))
     const params = { ...plan, params: { targetOverlapPct: 20, requiredCoveragePct: 95 } }
     const start = Date.now()
     const r = suggestLayout(params)
     const elapsedMs = Date.now() - start
-    expect(r.stoppedBy).toBe('gain')
-    expect(r.docks).toEqual([])
-    expect(r.achievedPct).toBe(0)
+    expect(r.stoppedBy).toBe('cap')
+    expect(r.docks.length).toBe(MAX_DOCKS)
+    expect(r.achievedPct).toBeGreaterThan(0)
+    expect(r.achievedPct).toBeLessThan(95)
     // MAX_CANDIDATES keeps the lattice (and so this run) bounded even though
     // the AOI is hundreds of km across; this must stay interactive.
     expect(elapsedMs).toBeLessThan(5000)
+  })
+
+  it('places docks on a >50,000km2 AOI that used to return zero under the old area-relative floor (Defect 1 regression)', () => {
+    // The measured failure this task started from: drawing an AOI this
+    // large and clicking SUGGEST LAYOUT produced zero docks and no
+    // explanation at all. largeBoxAoi(14.36) is ~82,500km^2 (scale^2 *
+    // squareAoi's ~400km^2), comfortably past the ~31,400km^2 point where a
+    // single 5km-radius dock's whole footprint already falls under the old
+    // 0.25%-of-total-area floor. Default plan params (20% overlap, 95%
+    // required coverage, see DEFAULT_PARAMS in domain/plan.ts) are used
+    // deliberately -- no tight/adversarial tuning -- because the live bug
+    // report reproduced with an ordinary drawn AOI and default parameters.
+    const plan = addAoi(createPlan(), largeBoxAoi(14.36))
+    const start = Date.now()
+    const r = suggestLayout(plan)
+    const elapsedMs = Date.now() - start
+    expect(r.docks.length).toBeGreaterThan(0)
+    expect(r.docks.length).toBeLessThanOrEqual(MAX_DOCKS)
+    // At this scale, MAX_DOCKS worth of 5km-radius docks cannot come close
+    // to fully blanketing ~82,500km^2, so hitting the dock cap -- not a
+    // silent 'gain'/'exhausted' -- is the honest, expected outcome.
+    expect(r.stoppedBy).toBe('cap')
+    expect(r.docks.length).toBe(MAX_DOCKS)
+    expect(r.achievedPct).toBeGreaterThan(0)
+    // Generous ceiling matching the other large-AOI perf assertions in this
+    // file; this only needs to catch a genuine blowup, not pin exact timing.
+    expect(elapsedMs).toBeLessThan(8000)
+  })
+
+  it('still stops on a genuinely negligible marginal gain, not silence, once coverage is nearly total', () => {
+    // A real 'gain' scenario under the new, scale-invariant floor: pushing
+    // the 20km box to a near-total 99.9% target with a loose 50% overlap
+    // means the last docks the coarse lattice can offer each add only a
+    // sliver of new ground -- genuinely under 2% of one dock's own
+    // footprint -- while candidates remain on the table and the cap is
+    // nowhere close. This is the same honest-labelling contract as before
+    // (see the design doc section 8): 'gain' still means "the next dock
+    // was not worth it", it is just no longer confused with "this AOI is
+    // too big for the floor to ever clear".
+    const plan = addAoi(createPlan(), squareAoi())
+    const params = { ...plan, params: { targetOverlapPct: 50, requiredCoveragePct: 99.9 } }
+    const r = suggestLayout(params)
+    expect(r.stoppedBy).toBe('gain')
+    expect(r.docks.length).toBeGreaterThan(0)
+    expect(r.docks.length).toBeLessThan(MAX_DOCKS)
+    expect(r.achievedPct).toBeGreaterThan(90)
+    expect(r.achievedPct).toBeLessThan(99.9)
   })
 
   it('reports exhausted when the sample grid itself is empty (pre-loop guard)', () => {
@@ -275,17 +336,22 @@ describe('suggestLayout', () => {
       const r = suggestLayout(params)
       const elapsedMs = Date.now() - start
 
-      // At this scale a single 5km-radius dock covers a negligible fraction
-      // of the total AOI area, so the very first candidate's marginal gain
-      // is below the floor and the loop refuses to place anything -- same
-      // reasoning as the scale-10 'gain' fixture above, just further out.
-      // The point of this test is not that outcome but that reaching it
-      // still respects the dock cap and stays fast, proving the widened
-      // (not raw) candidate lattice was what actually got evaluated.
-      expect(r.stoppedBy).toBe('gain')
+      // Under the OLD area-relative floor, a single 5km-radius dock covered
+      // a negligible fraction of this much total AOI area, so the very
+      // first candidate's marginal gain was below the floor and the loop
+      // refused to place anything at all (stoppedBy: 'gain', zero docks --
+      // the same silent-failure shape as the scale-10 fixture above). With
+      // the floor now relative to one dock's own footprint, the first
+      // candidate clears it easily and the loop places docks up to the cap
+      // instead. The point of this test is not that outcome specifically
+      // but that reaching it still respects the dock cap and stays fast,
+      // proving the widened (not raw) candidate lattice was what actually
+      // got evaluated even at this scale.
+      expect(r.stoppedBy).toBe('cap')
+      expect(r.docks.length).toBe(MAX_DOCKS)
       expect(r.docks.length).toBeLessThanOrEqual(MAX_DOCKS)
-      expect(r.achievedPct).toBe(0)
-      // Generous ceiling: real runs complete in well under 200ms. This only
+      expect(r.achievedPct).toBeGreaterThan(0)
+      // Generous ceiling: real runs complete in well under it. This only
       // needs to catch a genuine blowup (e.g. the widen loop failing to
       // converge), not pin exact performance.
       expect(elapsedMs).toBeLessThan(8000)

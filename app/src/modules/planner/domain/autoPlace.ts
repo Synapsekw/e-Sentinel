@@ -9,7 +9,26 @@ import { nextId, setDocks } from './plan'
 import type { DeploymentPlan, DroneModelId, PlannedDock } from './types'
 
 export const MAX_DOCKS = 40
-export const MIN_MARGINAL_GAIN_PCT = 0.25
+// The old MIN_MARGINAL_GAIN_PCT floor measured a candidate's marginal gain
+// as a percentage of *total AOI area*. That is not scale-invariant: a rural
+// dock's own footprint (pi * radiusKm^2, ~78.5km^2 at the 5km rural radius)
+// is a fixed quantity, so as the AOI grows past ~31,400km^2 a single dock's
+// entire footprint is already below 0.25% of the total area -- the loop
+// rejected its first candidate and returned zero docks with no explanation
+// (see the design doc section 8 and the "places docks on a very large AOI"
+// test below for the measured failure). The fix expresses the floor
+// relative to what one dock can actually contribute -- a dock that would
+// add less than some small fraction of its own unobstructed footprint of
+// genuinely new ground is not worth placing, regardless of how large the
+// AOI around it is.
+//
+// 0.02 (2% of one dock's own footprint) is calibrated, not arbitrary: it is
+// the value that reproduces the 20km-box fixture's pre-existing, already-
+// validated quality (11 docks, 97.63% coverage, stoppedBy 'target' -- see
+// the "covers a 20km box"/"reaches the default required coverage" tests)
+// while also being a fixed, AOI-size-independent quantity, so it no longer
+// blows up on a large AOI the way the old percent-of-total-area floor did.
+export const MIN_MARGINAL_GAIN_FRACTION_OF_FOOTPRINT = 0.02
 export const SAMPLE_SPACING_DIVISOR = 4
 export const MAX_SAMPLE_POINTS = 20000
 export const MAX_CANDIDATES = 2000
@@ -143,6 +162,15 @@ export function suggestLayout(
   let refinements = 0
   const total = samples.length
 
+  // One dock's own unobstructed footprint, expressed in sample-grid cells at
+  // this run's (possibly widened, see the resampling loop above) sample
+  // spacing -- fixed for the remainder of this run since sampleSpacingKm
+  // itself does not change again after this point (only the candidate
+  // lattice densifies). Scale-invariant: it depends on radiusKm and the
+  // sample resolution, never on total AOI area.
+  const dockFootprintSamples = (Math.PI * radiusKm * radiusKm) / (sampleSpacingKm * sampleSpacingKm)
+  const minGainSamples = MIN_MARGINAL_GAIN_FRACTION_OF_FOOTPRINT * dockFootprintSamples
+
   for (;;) {
     if (chosen.length >= MAX_DOCKS) {
       stoppedBy = 'cap'
@@ -184,7 +212,7 @@ export function suggestLayout(
       }
     }
 
-    if (bestIdx < 0 || (bestGain / total) * 100 < MIN_MARGINAL_GAIN_PCT) {
+    if (bestIdx < 0 || bestGain < minGainSamples) {
       stoppedBy = 'gain'
       break
     }

@@ -30,6 +30,8 @@ import PlannerTopbar from './PlannerTopbar'
 import PlanTree from './PlanTree'
 import Inspector from './Inspector'
 import SummaryStrip from './SummaryStrip'
+import { describeSuggestOutcome } from './suggestOutcome'
+import type { SuggestOutcome } from './suggestOutcome'
 import './planner.css'
 
 // Working camera for the planner: the whole UAE in frame at a zoom you can
@@ -68,6 +70,7 @@ function PlannerShell() {
   const coverage = usePlanStore((s) => s.coverage)
   const [drawMode, setDrawMode] = useState<AoiDrawMode>('idle')
   const [importMessage, setImportMessage] = useState<ImportMessage>(null)
+  const [layoutStatus, setLayoutStatus] = useState<SuggestOutcome | null>(null)
 
   useCoverageDriver()
   usePlannerLayers(mapRef, ready, plan, coverage)
@@ -161,6 +164,11 @@ function PlannerShell() {
     const state = usePlanStore.getState()
     const result = suggestLayout(state.plan)
     state.setPlan(setDocks(state.plan, result.docks))
+    // Defect 2: suggestLayout's achievedPct/stoppedBy used to be thrown away
+    // here, so a partial or failed layout (zero docks, capped short of
+    // target, marginal gain too low) looked identical to a full success --
+    // see suggestOutcome.ts for why that matters and how the message reads.
+    setLayoutStatus(describeSuggestOutcome(result))
   }
 
   return (
@@ -195,7 +203,7 @@ function PlannerShell() {
       <aside className="pl-rpanel">
         <Inspector />
       </aside>
-      <SummaryStrip coverage={coverage} dockCount={plan.docks.length} />
+      <SummaryStrip coverage={coverage} dockCount={plan.docks.length} layoutStatus={layoutStatus} />
     </>
   )
 }

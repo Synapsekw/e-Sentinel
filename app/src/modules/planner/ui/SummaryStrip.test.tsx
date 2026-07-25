@@ -38,4 +38,34 @@ describe('SummaryStrip', () => {
     expect(screen.getByText('6')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
   })
+
+  it('surfaces a partial SUGGEST LAYOUT outcome instead of staying silent (Defect 2)', () => {
+    // Before this, suggestLayout's achievedPct/stoppedBy were thrown away by
+    // the UI entirely, so a layout that stopped short of the requested
+    // coverage (capped, gain floor, exhausted) rendered no differently from
+    // a full success or from nothing having run at all.
+    render(
+      <SummaryStrip
+        coverage={{
+          ok: true,
+          aoiKm2: 40006,
+          coveragePct: 7.9,
+          overlapPct: 20,
+          uncovered: { type: 'MultiPolygon', coordinates: [] },
+          gapCount: 5,
+          perDock: [],
+        }}
+        dockCount={40}
+        layoutStatus={{ text: 'STOPPED AT 8% · 40 DOCK CAP', tone: 'alert' }}
+      />,
+    )
+    expect(screen.getByText('STOPPED AT 8% · 40 DOCK CAP')).toBeInTheDocument()
+  })
+
+  it('renders nothing extra when no SUGGEST LAYOUT has run yet', () => {
+    render(
+      <SummaryStrip coverage={{ ok: false, reason: 'no-aoi' }} dockCount={0} layoutStatus={null} />,
+    )
+    expect(screen.queryByText(/DOCK CAP|TARGET MET|NO SITES/)).not.toBeInTheDocument()
+  })
 })
