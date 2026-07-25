@@ -170,32 +170,41 @@ export function buildBaseStyle(): StyleSpecification {
   }
 }
 
+// The three UAE cartography layers sit MID-array in the console style,
+// between the coverage layers and drone-trails, so buildStyle cannot simply
+// append its simulation layers after the base ones. Selecting them by id
+// rather than by array position means a future insertion, removal or
+// reorder inside buildBaseStyle cannot silently rebind these to the wrong
+// layers. See style.test.ts's golden snapshot for the exact id sequence.
+const UAE_LAYER_IDS = ['uae-border-line', 'uae-roads', 'uae-places'] as const
+
+// LayerSpecification.id is a plain `string`; narrowing it against the
+// `readonly` tuple above needs a type-only cast (no runtime effect) since
+// `Array<T>.includes` otherwise rejects an argument wider than `T`.
+function isUaeLayerId(id: string): id is (typeof UAE_LAYER_IDS)[number] {
+  return (UAE_LAYER_IDS as readonly string[]).includes(id)
+}
+
 // The full MapLibre style: buildBaseStyle() plus docks/sites/coverage
 // (seeded from features.ts), the live-empty sim sources, and every layer
 // rendering them. NOTE: the legacy layer order (preserved here verbatim)
 // interleaves the sim coverage-fill/coverage-line/coverage-line-hi layers
 // and the base uae-border-line/uae-roads/uae-places layers between the
 // world landmass and drone-trails layers, so this is not a plain
-// base-then-sim concatenation — the base layers are destructured back into
-// their original positions. See style.test.ts's golden snapshot for the
-// exact id sequence. Called fresh each time (matching the legacy
-// EC2.initMap, which rebuilds `style` on every map (re)creation).
+// base-then-sim concatenation — the UAE_LAYER_IDS layers are spliced back
+// into their original mid-array position by id. See style.test.ts's golden
+// snapshot for the exact id sequence. Called fresh each time (matching the
+// legacy EC2.initMap, which rebuilds `style` on every map (re)creation).
 export function buildStyle(): StyleSpecification {
   const base = buildBaseStyle()
-  const [
-    bg,
-    rasterDark,
-    rasterLight,
-    rasterSat,
-    rasterTerrain,
-    darkGreens,
-    darkWater,
-    worldLandFill,
-    worldLandLine,
-    uaeBorderLine,
-    uaeRoads,
-    uaePlaces,
-  ] = base.layers
+  const baseLayers = base.layers.filter((l) => !isUaeLayerId(l.id))
+  const uaeLayers = UAE_LAYER_IDS.map((id) => {
+    const layer = base.layers.find((l) => l.id === id)
+    if (!layer) {
+      throw new Error(`buildBaseStyle() is missing expected layer "${id}"`)
+    }
+    return layer
+  })
 
   return {
     ...base,
@@ -214,15 +223,7 @@ export function buildStyle(): StyleSpecification {
       'wizard-preview': { type: 'geojson', data: emptyFC() },
     },
     layers: [
-      bg,
-      rasterDark,
-      rasterLight,
-      rasterSat,
-      rasterTerrain,
-      darkGreens,
-      darkWater,
-      worldLandFill,
-      worldLandLine,
+      ...baseLayers,
       // Coverage rings (docks + tower sites; urban 3 km / rural 5 km). Cool
       // cyan reads as "sensor reach", deliberately avoiding brand red
       // (reserved for brand + alert). coverage-fill and coverage-line-hi
@@ -268,9 +269,7 @@ export function buildStyle(): StyleSpecification {
           'line-width': 1,
         },
       },
-      uaeBorderLine,
-      uaeRoads,
-      uaePlaces,
+      ...uaeLayers,
       // Breadcrumb history sits under the route lines: faint, non-competing.
       {
         id: 'drone-trails',
