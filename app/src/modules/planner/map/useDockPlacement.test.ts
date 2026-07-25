@@ -237,6 +237,37 @@ describe('useDockPlacement drag', () => {
     expect(setPlanSpy).not.toHaveBeenCalled()
   })
 
+  it('does not start a drag while a draw mode is active (Important 5)', () => {
+    // Regression: with DRAW · POLYGON active, a vertex click landing on an
+    // existing dock marker used to start a dock drag (this same
+    // queryRenderedFeatures/DOCK_LAYER_ID probe) while terra-draw was
+    // simultaneously consuming the same clicks as polygon vertices.
+    fakeMap.queryRenderedFeatures.mockReturnValue([{ properties: { id: 'dock-1' } }])
+    const setPlanSpy = vi.spyOn(usePlanStore.getState(), 'setPlan')
+    renderHook(() => useDockPlacement(mapRef, true, false))
+
+    fakeMap.fire('mousedown', { point: [0, 0], lngLat: { lng: 54.6, lat: 24.3 } })
+    fakeMap.fire('mousemove', { point: [1, 0], lngLat: { lng: 54.7, lat: 24.3 } })
+    fakeMap.fire('mouseup', { point: [1, 0], lngLat: { lng: 54.7, lat: 24.3 } })
+
+    expect(fakeMap.dragPanDisable).not.toHaveBeenCalled()
+    expect(setPlanSpy).not.toHaveBeenCalled()
+  })
+
+  it('resumes dragging once the draw mode returns to idle', () => {
+    fakeMap.queryRenderedFeatures.mockReturnValue([{ properties: { id: 'dock-1' } }])
+    const { rerender } = renderHook(({ idle }) => useDockPlacement(mapRef, true, idle), {
+      initialProps: { idle: false },
+    })
+
+    fakeMap.fire('mousedown', { point: [0, 0], lngLat: { lng: 54.6, lat: 24.3 } })
+    expect(fakeMap.dragPanDisable).not.toHaveBeenCalled()
+
+    rerender({ idle: true })
+    fakeMap.fire('mousedown', { point: [0, 0], lngLat: { lng: 54.6, lat: 24.3 } })
+    expect(fakeMap.dragPanDisable).toHaveBeenCalledOnce()
+  })
+
   it('does not touch dragPan or throw when cleanup runs mid-drag against an already torn-down map', () => {
     fakeMap.queryRenderedFeatures.mockReturnValue([{ properties: { id: 'dock-1' } }])
     const { unmount } = renderHook(() => useDockPlacement(mapRef, true))

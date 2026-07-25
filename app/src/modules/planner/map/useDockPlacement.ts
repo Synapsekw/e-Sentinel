@@ -43,6 +43,17 @@ const DOCK_LAYER_ID = 'planner-docks-circle'
 export function useDockPlacement(
   mapRef: MutableRefObject<maplibregl.Map | null>,
   ready: boolean,
+  // Important 5 (final whole-branch review): this effect used to attach its
+  // mousedown/mousemove/mouseup handlers unconditionally, with no knowledge
+  // of AOI drawing. With DRAW · POLYGON active, a vertex click landing on an
+  // existing dock marker started a dock drag (queryRenderedFeatures against
+  // the same DOCK_LAYER_ID a placement click also probes), disabling
+  // dragPan, while terra-draw was simultaneously consuming the same clicks
+  // as polygon vertices -- the two features fought each other. Defaulting to
+  // true keeps every existing caller/test (none of which know about draw
+  // mode) working unchanged; PlannerShell (ui/Planner.tsx), which owns both
+  // `drawMode` and this hook, passes `drawMode === 'idle'` explicitly.
+  drawModeIdle = true,
 ): DockPlacement {
   const [placing, setPlacing] = useState(false)
   const placingRef = useRef(placing)
@@ -105,7 +116,10 @@ export function useDockPlacement(
   // recompute via useCoverageDriver).
   useEffect(() => {
     const map = mapRef.current
-    if (!ready || !isMapUsable(map)) return
+    // Important 5: gate the whole drag effect on the draw mode being idle,
+    // not just skip a single handler -- see drawModeIdle's parameter comment
+    // above.
+    if (!ready || !isMapUsable(map) || !drawModeIdle) return
     let dragId: string | null = null
     let lastLngLat: LngLatLike | null = null
 
@@ -191,7 +205,7 @@ export function useDockPlacement(
       // is exactly the kind of side effect React teardown should avoid.
       if (dragId) map.dragPan.enable()
     }
-  }, [mapRef, ready])
+  }, [mapRef, ready, drawModeIdle])
 
   const startPlacing = useCallback(() => setPlacing(true), [])
   const cancel = useCallback(() => setPlacing(false), [])
