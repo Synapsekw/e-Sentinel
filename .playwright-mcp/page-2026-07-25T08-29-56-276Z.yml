@@ -1,0 +1,214 @@
+- generic [ref=f1e2]:
+  - generic [ref=f1e3]:
+    - region "Map" [ref=f1e4]
+    - group [ref=f1e5]:
+      - generic "Toggle attribution" [ref=f1e6] [cursor=pointer]
+      - generic [ref=f1e7]: © OpenStreetMap contributors © CARTO
+  - generic: ACQUIRING BASEMAP
+  - banner [ref=f1e13]:
+    - generic [ref=f1e14]:
+      - img "e&" [ref=f1e15]
+      - generic [ref=f1e16]: SENTINEL
+    - generic [ref=f1e18]: GRID ONLINE
+    - button "DOCKS 104 ▾" [active] [ref=f1e20] [cursor=pointer]:
+      - text: DOCKS
+      - generic [ref=f1e21]: "104"
+      - generic [ref=f1e22]: ▾
+    - generic [ref=f1e23]:
+      - text: AIRBORNE
+      - generic [ref=f1e24]: "7"
+    - button "LAYERS · DARK ▾" [ref=f1e25] [cursor=pointer]
+    - button "FILTER ▾" [ref=f1e26] [cursor=pointer]
+    - button "OPS" [ref=f1e27] [cursor=pointer]
+    - button "MISSIONS ▾" [disabled] [ref=f1e28]
+    - button "+ NEW MISSION" [disabled] [ref=f1e29]
+    - button "MEDIA" [disabled] [ref=f1e30]
+    - button "GLOBE" [ref=f1e31] [cursor=pointer]
+    - generic [ref=f1e32]: 11:29:55 GST
+  - complementary [ref=f1e33]:
+    - button "Live network · 19 sites 13 LIVE · 4 PLANNED · 2 REPLACE" [ref=f1e34] [cursor=pointer]:
+      - heading "Live network · 19 sites" [level=4] [ref=f1e35]
+      - generic [ref=f1e36]: 13 LIVE · 4 PLANNED · 2 REPLACE
+    - generic [ref=f1e37]:
+      - heading "National grid" [level=4] [ref=f1e38]
+      - generic [ref=f1e39]:
+        - generic [ref=f1e40]:
+          - generic [ref=f1e41]: "97"
+          - generic [ref=f1e42]: Ready
+        - generic [ref=f1e43]:
+          - generic [ref=f1e44]: "7"
+          - generic [ref=f1e45]: Flying
+        - generic [ref=f1e46]:
+          - generic [ref=f1e47]: "0"
+          - generic [ref=f1e48]: Charging
+        - generic [ref=f1e49]:
+          - generic [ref=f1e50]: "0"
+          - generic [ref=f1e51]: Alerts
+    - generic [ref=f1e52]:
+      - heading "Flight requests 1" [level=4] [ref=f1e53]:
+        - text: Flight requests
+        - generic [ref=f1e54]: "1"
+      - generic [ref=f1e56]:
+        - generic [ref=f1e57]: New
+        - button "ROUTINE ADP T+0:42 SECURITY PATROL · HILI" [ref=f1e1045] [cursor=pointer]:
+          - generic [ref=f1e60]:
+            - generic [ref=f1e61]: ROUTINE
+            - generic [ref=f1e62]: ADP
+            - generic [ref=f1e63]: T+0:42
+          - generic [ref=f1e64]: SECURITY PATROL · HILI
+  - complementary [ref=f1e65]:
+    - generic [ref=f1e67]:
+      - generic [ref=f1e68]: Ops digest · national activity
+      - generic [ref=f1e69]: AIRBORNE 7 · READY 97 · TRACKS 0 · ALERTS 0
+      - generic [ref=f1e70]: Active missions
+      - generic [ref=f1e71]:
+        - button "CONSTRUCTION SURVEY ETA 46:40 M-AAN-003-7 · AAN-003" [ref=f1e1046] [cursor=pointer]:
+          - generic [ref=f1e1047]:
+            - generic [ref=f1e1048]: CONSTRUCTION SURVEY
+            - generic [ref=f1e1049]: ETA 46:40
+          - generic [ref=f1e1050]: M-AAN-003-7 · AAN-003
+        - button "DELIVERY RUN ETA 3:13 M-AUH-026-6 · AUH-026" [ref=f1e1052] [cursor=pointer]:
+          - generic [ref=f1e1053]:
+            - generic [ref=f1e1054]: DELIVERY RUN
+            - generic [ref=f1e1055]: ETA 3:13
+          - generic [ref=f1e1056]: M-AUH-026-6 · AUH-026
+        - button "CONSTRUCTION SURVEY ETA 36:16 M-SHJ-004-5 · SHJ-004" [ref=f1e142] [cursor=pointer]:
+          - generic [ref=f1e143]:
+            - generic [ref=f1e144]: CONSTRUCTION SURVEY
+            - generic [ref=f1e145]: ETA 36:16
+          - generic [ref=f1e146]: M-SHJ-004-5 · SHJ-004
+        - button "DELIVERY RUN ETA 2:26 M-DXB-012-4 · DXB-012" [ref=f1e1058] [cursor=pointer]:
+          - generic [ref=f1e149]:
+            - generic [ref=f1e150]: DELIVERY RUN
+            - generic [ref=f1e151]: ETA 2:26
+          - generic [ref=f1e152]: M-DXB-012-4 · DXB-012
+        - button "VEGETATION SURVEY ETA 28:41 M-AUH-014-3 · AUH-014" [ref=f1e127] [cursor=pointer]:
+          - generic [ref=f1e128]:
+            - generic [ref=f1e129]: VEGETATION SURVEY
+            - generic [ref=f1e130]: ETA 28:41
+          - generic [ref=f1e131]: M-AUH-014-3 · AUH-014
+        - button "CONSTRUCTION SURVEY ETA 32:34 M-DXB-017-2 · DXB-017" [ref=f1e72] [cursor=pointer]:
+          - generic [ref=f1e73]:
+            - generic [ref=f1e74]: CONSTRUCTION SURVEY
+            - generic [ref=f1e75]: ETA 32:34
+          - generic [ref=f1e76]: M-DXB-017-2 · DXB-017
+        - button "DELIVERY RUN ETA 2:38 M-FUJ-004-1 · FUJ-004" [ref=f1e1060] [cursor=pointer]:
+          - generic [ref=f1e79]:
+            - generic [ref=f1e80]: DELIVERY RUN
+            - generic [ref=f1e81]: ETA 2:38
+          - generic [ref=f1e82]: M-FUJ-004-1 · FUJ-004
+      - generic [ref=f1e84]: Last detections
+      - generic [ref=f1e85]:
+        - generic [ref=f1e1061]:
+          - generic [ref=f1e1062]: T+00:54
+          - generic [ref=f1e1063]: D-DXB-012
+          - generic [ref=f1e1064]: PAYLOAD STATUS NOMINAL
+        - generic [ref=f1e1065]:
+          - generic [ref=f1e1066]: T+00:53
+          - generic [ref=f1e1067]: D-FUJ-004
+          - generic [ref=f1e1068]: PAYLOAD STATUS NOMINAL
+  - button "Collapse left panel" [expanded] [ref=f1e87] [cursor=pointer]
+  - button "Collapse right panel" [expanded] [ref=f1e89] [cursor=pointer]
+  - contentinfo [ref=f1e91]:
+    - generic [ref=f1e92]: EVENTS
+    - generic [ref=f1e93]:
+      - generic [ref=f1e1069]:
+        - generic [ref=f1e1070]: 11:29:54
+        - generic [ref=f1e1071]: OPS
+        - generic [ref=f1e1072]: NETWORK · E& 5G 99.98% · GCAA SYNC OK
+      - generic [ref=f1e1073] [cursor=pointer]:
+        - generic [ref=f1e1074]: 11:29:54
+        - generic [ref=f1e1075]: D-AAN-003
+        - generic [ref=f1e1076]: D-AAN-003 LAUNCHED · CONSTRUCTION SURVEY FROM AL JIMI
+      - generic [ref=f1e1077] [cursor=pointer]:
+        - generic [ref=f1e1078]: 11:29:52
+        - generic [ref=f1e1079]: D-DXB-012
+        - generic [ref=f1e1080]: D-DXB-012 PAYLOAD STATUS NOMINAL
+      - generic [ref=f1e1081] [cursor=pointer]:
+        - generic [ref=f1e1082]: 11:29:52
+        - generic [ref=f1e1083]: D-FUJ-004
+        - generic [ref=f1e1084]: D-FUJ-004 PAYLOAD STATUS NOMINAL
+      - generic [ref=f1e1085]:
+        - generic [ref=f1e1086]: 11:29:50
+        - generic [ref=f1e1087]: OPS
+        - generic [ref=f1e1088]: GRID · 6 AIRBORNE · 98 READY
+      - generic [ref=f1e156]:
+        - generic [ref=f1e157]: 11:29:46
+        - generic [ref=f1e158]: OPS
+        - generic [ref=f1e159]: UTM · FLIGHT PLANS SYNCED · ZERO CONFLICTS
+      - generic [ref=f1e160] [cursor=pointer]:
+        - generic [ref=f1e161]: 11:29:46
+        - generic [ref=f1e162]: D-AUH-026
+        - generic [ref=f1e163]: D-AUH-026 LAUNCHED · DELIVERY RUN FROM KHALIFA CITY
+      - generic [ref=f1e164]:
+        - generic [ref=f1e165]: 11:29:42
+        - generic [ref=f1e166]: OPS
+        - generic [ref=f1e167]: DOCK DXB-023 · BATTERY 100% · NOMINAL
+      - generic [ref=f1e168] [cursor=pointer]:
+        - generic [ref=f1e169]: 11:29:42
+        - generic [ref=f1e170]: D-FUJ-004
+        - generic [ref=f1e171]: MISSION M-FUJ-004-1 10% COMPLETE
+      - generic [ref=f1e172]:
+        - generic [ref=f1e173]: 11:29:38
+        - generic [ref=f1e174]: OPS
+        - generic [ref=f1e175]: NETWORK · E& 5G 99.98% · GCAA SYNC OK
+      - generic [ref=f1e176] [cursor=pointer]:
+        - generic [ref=f1e177]: 11:29:38
+        - generic [ref=f1e178]: D-SHJ-004
+        - generic [ref=f1e179]: D-SHJ-004 LAUNCHED · CONSTRUCTION SURVEY FROM KALBA
+      - generic [ref=f1e180]:
+        - generic [ref=f1e181]: 11:29:34
+        - generic [ref=f1e182]: OPS
+        - generic [ref=f1e183]: GRID · 4 AIRBORNE · 100 READY
+      - generic [ref=f1e184]:
+        - generic [ref=f1e185]: 11:29:30
+        - generic [ref=f1e186]: OPS
+        - generic [ref=f1e187]: UTM · FLIGHT PLANS SYNCED · ZERO CONFLICTS
+      - generic [ref=f1e188] [cursor=pointer]:
+        - generic [ref=f1e189]: 11:29:30
+        - generic [ref=f1e190]: D-DXB-012
+        - generic [ref=f1e191]: D-DXB-012 LAUNCHED · DELIVERY RUN FROM DUBAILAND
+      - generic [ref=f1e192]:
+        - generic [ref=f1e193]: 11:29:27
+        - generic [ref=f1e194]: OPS
+        - generic [ref=f1e195]: DOCK AUH-018 · BATTERY 100% · NOMINAL
+      - generic [ref=f1e133]:
+        - generic [ref=f1e134]: 11:29:22
+        - generic [ref=f1e135]: OPS
+        - generic [ref=f1e136]: NETWORK · E& 5G 99.98% · GCAA SYNC OK
+      - generic [ref=f1e137] [cursor=pointer]:
+        - generic [ref=f1e138]: 11:29:22
+        - generic [ref=f1e139]: D-AUH-014
+        - generic [ref=f1e140]: D-AUH-014 LAUNCHED · VEGETATION SURVEY FROM AL SAMHA
+      - generic [ref=f1e94]:
+        - generic [ref=f1e95]: 11:29:18
+        - generic [ref=f1e96]: OPS
+        - generic [ref=f1e97]: GRID · 2 AIRBORNE · 102 READY
+      - generic [ref=f1e98]:
+        - generic [ref=f1e99]: 11:29:15
+        - generic [ref=f1e100]: OPS
+        - generic [ref=f1e101]: UTM · FLIGHT PLANS SYNCED · ZERO CONFLICTS
+      - generic [ref=f1e102] [cursor=pointer]:
+        - generic [ref=f1e103]: 11:29:15
+        - generic [ref=f1e104]: D-DXB-017
+        - generic [ref=f1e105]: D-DXB-017 LAUNCHED · CONSTRUCTION SURVEY FROM LEHBAB
+      - generic [ref=f1e106]:
+        - generic [ref=f1e107]: 11:29:13
+        - generic [ref=f1e108]: OPS
+        - generic [ref=f1e109]: FLIGHT REQUEST · ADP · SECURITY PATROL · HILI
+      - generic [ref=f1e110]:
+        - generic [ref=f1e111]: 11:29:10
+        - generic [ref=f1e112]: OPS
+        - generic [ref=f1e113]: DOCK AJM-003 · BATTERY 100% · NOMINAL
+      - generic [ref=f1e114]:
+        - generic [ref=f1e115]: 11:29:06
+        - generic [ref=f1e116]: OPS
+        - generic [ref=f1e117]: NETWORK · E& 5G 99.98% · GCAA SYNC OK
+      - generic [ref=f1e118] [cursor=pointer]:
+        - generic [ref=f1e119]: 11:29:06
+        - generic [ref=f1e120]: D-FUJ-004
+        - generic [ref=f1e121]: D-FUJ-004 LAUNCHED · DELIVERY RUN FROM MASAFI
+      - generic [ref=f1e122]:
+        - generic [ref=f1e123]: 11:29:02
+        - generic [ref=f1e124]: OPS
+        - generic [ref=f1e125]: GRID · 0 AIRBORNE · 104 READY

@@ -49,12 +49,29 @@ export default function BasemapChip() {
       setVisible(false)
     }
 
+    // DELIBERATE DIVERGENCE from legacy (map.js:960-963), which hid the chip
+    // on 'idle' alone. 'idle' only fires once the map has nothing left to
+    // render, and Phase 1C's render loop calls setData on the live sources
+    // every single frame, so on this port the map is never idle and a chip
+    // shown once would stay up forever. Hiding on the raster source's own
+    // completion ('sourcedata' with isSourceLoaded) is the same signal
+    // 'idle' was standing in for, without depending on the whole map going
+    // quiet. 'idle' is kept as the belt-and-braces path (globe scene, where
+    // the live layers are not being fed).
+    const onSourceData = (e: { sourceId?: string; isSourceLoaded?: boolean }) => {
+      if (!e.sourceId || e.sourceId.indexOf('raster-') !== 0) return
+      if (!e.isSourceLoaded) return
+      onIdle()
+    }
+
     map.on('sourcedataloading', onSourceDataLoading)
+    map.on('sourcedata', onSourceData)
     map.on('idle', onIdle)
 
     return () => {
       if (showTimer !== null) clearTimeout(showTimer)
       map.off('sourcedataloading', onSourceDataLoading)
+      map.off('sourcedata', onSourceData)
       map.off('idle', onIdle)
     }
   }, [mapRef, ready])

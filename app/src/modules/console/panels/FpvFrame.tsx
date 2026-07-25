@@ -19,7 +19,7 @@
 // it while keeping the effect's own dependency array (just `[live]`)
 // exhaustive-deps-clean.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Drone } from '@/modules/console/domain'
 import { nowClockStr, padHeading } from '@/modules/console/chrome/format'
 import { fpvCruising } from './dronePanel'
@@ -42,7 +42,21 @@ function safePlay(v: HTMLVideoElement): void {
 }
 
 export default function FpvFrame({ drone, sources }: FpvFrameProps) {
-  const live = fpvCruising(drone) && sources.length > 0
+  // DELIBERATE ADDITION beyond legacy. panels.js:506-510 advanced to the next
+  // clip on 'error', which silently degrades to a black frame once every clip
+  // in the playlist is unreachable — and today only the `security` mission
+  // type has its videos shipped (the other six still show the PENDING
+  // GENERATION placeholder in the legacy debrief), so an unreachable playlist
+  // is the COMMON case, not an edge case. Once every entry has failed, fall
+  // back to the standby frame ("ACQUIRING DOWNLINK") instead, which is the
+  // state the frame was designed to show when there is no usable feed.
+  const playlistKey = sources.join(',')
+  const [feedFailed, setFeedFailed] = useState(false)
+  useEffect(() => {
+    setFeedFailed(false)
+  }, [playlistKey, drone.id])
+
+  const live = fpvCruising(drone) && sources.length > 0 && !feedFailed
   const videoRef = useRef<HTMLVideoElement | null>(null)
   // Updated synchronously on every render (not inside an effect), so the
   // 'ended'/'error' handlers below always see the current playlist without
@@ -62,7 +76,6 @@ export default function FpvFrame({ drone, sources }: FpvFrameProps) {
     if (list.length === 0) return
     v.src = list[0]
     safePlay(v)
-    if (list.length < 2) return undefined // single clip loops via the `loop` attribute
 
     const advance = () => {
       const current = sourcesRef.current
@@ -70,11 +83,27 @@ export default function FpvFrame({ drone, sources }: FpvFrameProps) {
       v.src = current[idx]
       safePlay(v)
     }
-    v.addEventListener('ended', advance)
-    v.addEventListener('error', advance)
+
+    // Every distinct clip that failed to load. Once that covers the whole
+    // playlist there is no usable feed left, so stop cycling and hand the
+    // frame back to the standby overlay (see the feedFailed note above).
+    const failed = new Set<string>()
+    const onError = () => {
+      failed.add(sourcesRef.current[idx])
+      if (failed.size >= sourcesRef.current.length) {
+        setFeedFailed(true)
+        return
+      }
+      advance()
+    }
+
+    // 'ended' only fires for a multi-clip playlist: a single clip carries the
+    // `loop` attribute (panels.js:441-442), which suppresses the event.
+    if (list.length > 1) v.addEventListener('ended', advance)
+    v.addEventListener('error', onError)
     return () => {
       v.removeEventListener('ended', advance)
-      v.removeEventListener('error', advance)
+      v.removeEventListener('error', onError)
     }
   }, [live])
 

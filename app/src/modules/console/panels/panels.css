@@ -465,3 +465,15 @@ button.dg-det-track:hover .msg,
 button.dg-det-track:focus-visible .msg {
   color: var(--amber);
 }
+
+/* Manual-control alt-nudge row (console.css:305-306). `.rp-actions` sets
+   `display:flex`, which would otherwise beat the `[hidden]` attribute's UA
+   `display:none` and leave the row visible outside manual control, so the
+   explicit `[hidden]` rule below is load-bearing, not decorative. The row
+   itself stays inert until Phase 1E lands manual control. */
+.rp-alt-row {
+  align-items: center;
+}
+.rp-alt-row[hidden] {
+  display: none;
+}
