@@ -14,8 +14,21 @@ export function resetIdsForTest(): void {
   seq = 0
 }
 
+// Wall-clock reads make the otherwise-pure domain layer non-reproducible, which
+// is the same problem nextId solves for ids. Tests pin this so a mutation can be
+// asserted byte-for-byte; production leaves it alone.
+let now = (): string => new Date().toISOString()
+
+export function setNowForTest(fn: () => string): void {
+  now = fn
+}
+
+export function resetNowForTest(): void {
+  now = () => new Date().toISOString()
+}
+
 function bump(plan: DeploymentPlan, patch: Partial<DeploymentPlan>): DeploymentPlan {
-  return { ...plan, ...patch, rev: plan.rev + 1, updatedAt: new Date().toISOString() }
+  return { ...plan, ...patch, rev: plan.rev + 1, updatedAt: now() }
 }
 
 export function createPlan(opts?: {
@@ -23,13 +36,13 @@ export function createPlan(opts?: {
   customer?: string
   now?: string
 }): DeploymentPlan {
-  const now = opts?.now ?? new Date().toISOString()
+  const createdAt = opts?.now ?? now()
   return {
     id: nextId('plan'),
     name: opts?.name ?? 'UNTITLED PLAN',
     customer: opts?.customer ?? '',
-    createdAt: now,
-    updatedAt: now,
+    createdAt,
+    updatedAt: createdAt,
     schemaVersion: PLAN_SCHEMA_VERSION,
     aois: [],
     docks: [],
@@ -47,6 +60,6 @@ export const removeDock = (p: DeploymentPlan, id: string) =>
   bump(p, { docks: p.docks.filter((d) => d.id !== id) })
 export const updateDock = (p: DeploymentPlan, id: string, patch: Partial<PlannedDock>) =>
   bump(p, { docks: p.docks.map((d) => (d.id === id ? { ...d, ...patch } : d)) })
-export const setDocks = (p: DeploymentPlan, docks: PlannedDock[]) => bump(p, { docks })
+export const setDocks = (p: DeploymentPlan, docks: PlannedDock[]) => bump(p, { docks: [...docks] })
 export const setParams = (p: DeploymentPlan, params: DeploymentPlan['params']) =>
-  bump(p, { params })
+  bump(p, { params: { ...params } })

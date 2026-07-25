@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest'
-import { createPlan, addDock, updateDock, removeDock } from './plan'
+import { describe, it, expect, afterEach } from 'vitest'
+import {
+  createPlan,
+  addDock,
+  updateDock,
+  removeDock,
+  setDocks,
+  setParams,
+  resetIdsForTest,
+  setNowForTest,
+  resetNowForTest,
+} from './plan'
 import type { PlannedDock } from './types'
 
 const dock = (id: string): PlannedDock => ({
@@ -47,5 +57,52 @@ describe('plan mutations', () => {
   it('removes a dock by id', () => {
     const p = addDock(addDock(createPlan(), dock('d1')), dock('d2'))
     expect(removeDock(p, 'd1').docks.map((d) => d.id)).toEqual(['d2'])
+  })
+
+  describe('determinism with pinned clock and ids', () => {
+    afterEach(() => {
+      resetNowForTest()
+      resetIdsForTest()
+    })
+
+    it('produces byte-identical output for the same mutation sequence', () => {
+      const run = (): ReturnType<typeof addDock> => {
+        resetIdsForTest()
+        setNowForTest(() => '2026-01-01T00:00:00.000Z')
+        const p0 = createPlan({ name: 'Reproducible' })
+        const p1 = addDock(p0, dock('d1'))
+        const p2 = addDock(p1, dock('d2'))
+        return updateDock(p2, 'd1', { radiusKmOverride: 3 })
+      }
+
+      const resultA = run()
+      const resultB = run()
+
+      expect(resultA).toEqual(resultB)
+      expect(resultA.updatedAt).toBe('2026-01-01T00:00:00.000Z')
+    })
+  })
+
+  describe('setDocks / setParams defensive copies', () => {
+    it('setDocks does not alias the caller array', () => {
+      const p0 = createPlan()
+      const docks = [dock('d1')]
+      const p1 = setDocks(p0, docks)
+
+      docks.push(dock('d2'))
+
+      expect(p1.docks).toHaveLength(1)
+      expect(p1.docks[0].id).toBe('d1')
+    })
+
+    it('setParams does not alias the caller object', () => {
+      const p0 = createPlan()
+      const params = { targetOverlapPct: 10, requiredCoveragePct: 90 }
+      const p1 = setParams(p0, params)
+
+      params.targetOverlapPct = 999
+
+      expect(p1.params.targetOverlapPct).toBe(10)
+    })
   })
 })
