@@ -12,6 +12,14 @@
 // EngineProvider+MapView. No .tsx/React rendering is actually needed for
 // this coverage — the file keeps the .tsx extension only because it lives
 // alongside useLiveLayers.ts's module (a plain .ts would do equally well).
+//
+// PHASE 1D / TASK 8: the ticker-push assertion that used to live here
+// ("(d2) routes each engine event through mapEngineEvent into
+// pushTickerEvent") moved to EngineProvider.test.tsx along with the
+// production code it covers (attachTickerPush) — see this file's
+// useLiveLayers.ts header comment. What's left here ((d)/(d2) below) covers
+// the half that stayed: the subscribe/unsubscribe lifecycle and the
+// MISSION_LAUNCHED -> pushLaunchPulse (fxPulses) branch.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import type maplibregl from 'maplibre-gl'
@@ -19,6 +27,8 @@ import type { Engine, SimEvent } from '@/modules/console/domain'
 import type { LiveLayerUpdater } from '@/modules/console/map/updateLiveLayers'
 import { useAppStore } from '@/shared/store'
 import type { AppState } from '@/shared/store'
+import { fxPulses } from '@/modules/console/map/fx'
+import { DATA_DOCKS } from '@/modules/console/domain'
 import { startRenderLoop, attachEngineEvents, STATS_INTERVAL_MS } from './useLiveLayers'
 
 function createFakeMap(): maplibregl.Map {
@@ -204,13 +214,39 @@ describe('render loop + event subscription (useLiveLayers.ts)', () => {
     expect(engine._subscribers.length).toBe(0)
   })
 
-  it('(d2) routes each engine event through mapEngineEvent into pushTickerEvent', () => {
+  it('(d2) routes a MISSION_LAUNCHED event into pushLaunchPulse (fxPulses)', () => {
     const engine = createFakeEngine()
-    const mapRef = { current: null }
-    const pushTickerEventSpy = vi.fn()
-    useAppStore.setState({ pushTickerEvent: pushTickerEventSpy })
+    const map = createFakeMap()
+    const mapRef = { current: map }
+    const dockId = DATA_DOCKS[0].id
+    const startLen = fxPulses.length
 
     const detach = attachEngineEvents(engine, mapRef, true)
+    const ev: SimEvent = {
+      time: 12,
+      level: 'info',
+      source: dockId,
+      message: dockId + ' MISSION LAUNCHED',
+      code: 'MISSION_LAUNCHED',
+      dockId,
+    }
+    engine._subscribers[0](ev)
+
+    expect(fxPulses.length).toBe(startLen + 1)
+    fxPulses.length = startLen // don't leak a pulse into later tests
+
+    detach()
+    engine._subscribers.forEach((cb) => cb(ev)) // no-op: array is empty post-detach
+    expect(fxPulses.length).toBe(startLen)
+  })
+
+  it('(d3) a non-launch event does not push a pulse', () => {
+    const engine = createFakeEngine()
+    const map = createFakeMap()
+    const mapRef = { current: map }
+    const startLen = fxPulses.length
+
+    attachEngineEvents(engine, mapRef, true)
     const ev: SimEvent = {
       time: 12,
       level: 'alert',
@@ -219,16 +255,6 @@ describe('render loop + event subscription (useLiveLayers.ts)', () => {
     }
     engine._subscribers[0](ev)
 
-    expect(pushTickerEventSpy).toHaveBeenCalledTimes(1)
-    expect(pushTickerEventSpy.mock.calls[0][0]).toMatchObject({
-      level: 'alert',
-      source: 'D-AUH01',
-      message: 'D-AUH01 BATTERY 8% · FORCED RTB',
-      droneId: 'D-AUH01',
-    })
-
-    detach()
-    engine._subscribers.forEach((cb) => cb(ev)) // no-op: array is empty post-detach
-    expect(pushTickerEventSpy).toHaveBeenCalledTimes(1)
+    expect(fxPulses.length).toBe(startLen)
   })
 })

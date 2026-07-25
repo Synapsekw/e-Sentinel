@@ -14,9 +14,13 @@
 // separate file, since both concerns need the identical engine+map+ready
 // inputs and the brief's file list only calls for this one hook.
 //
-// The ticker-push half of onEvent (main.js:57, `EC2.ui.pushEvent`) was a
-// deliberate seam left for Task 4 (`pushTickerEvent` didn't exist on the
-// store yet); it's filled in below via tickerModel.ts's mapEngineEvent.
+// The ticker-push half of onEvent (main.js:57, `EC2.ui.pushEvent`) moved to
+// EngineProvider.tsx's `attachTickerPush` in Phase 1D / Task 8: it needs
+// neither the map nor `ready`, so subscribing there (above the router,
+// where the engine lives for the app's whole lifetime) lets ticker events
+// accumulate even while the user is on another route. Only the
+// MISSION_LAUNCHED -> pushLaunchPulse branch stays here, since it needs the
+// map.
 //
 // TASK 4 EXTRA (test coverage): the event subscription and the rAF render
 // loop are pulled out into `attachEngineEvents` / `startRenderLoop` below —
@@ -39,12 +43,12 @@ import { createLiveLayerUpdater } from '@/modules/console/map/updateLiveLayers'
 import type { LiveLayerUpdater } from '@/modules/console/map/updateLiveLayers'
 import { pushLaunchPulse } from '@/modules/console/map/fx'
 import { computeCounts } from './refreshCounts'
-import { mapEngineEvent, nowClockStr } from '@/modules/console/hud/tickerModel'
 
 export const STATS_INTERVAL_MS = 1000 // main.js:90's 1000ms refreshCounts throttle
 
-// Engine event subscription: ticker push (tickerModel.ts's mapEngineEvent)
-// + launch FX pulse (main.js:56-59). `engine.onEvent` (domain/engine.ts)
+// Engine event subscription: launch FX pulse only (main.js:56-59's other
+// half, the ticker push, now lives in EngineProvider.tsx's attachTickerPush
+// — see this file's header comment). `engine.onEvent` (domain/engine.ts)
 // hands back the same callback it was given, which the returned cleanup
 // passes to `engine.offEvent` to remove it by identity.
 export function attachEngineEvents(
@@ -53,7 +57,6 @@ export function attachEngineEvents(
   ready: boolean,
 ): () => void {
   const cb = engine.onEvent((ev) => {
-    useAppStore.getState().pushTickerEvent(mapEngineEvent(ev, nowClockStr))
     if (ev.code === 'MISSION_LAUNCHED' && ev.dockId) {
       pushLaunchPulse(ev.dockId, mapRef.current, useAppStore.getState().scene, ready)
     }

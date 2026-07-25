@@ -1,12 +1,13 @@
 /* Ported (Phase 1C / Task 4, `.panel` renamed from the placeholder
-   `.hud-panel` + Task 8's #ticker inset restored + Phase 1D / Task 6's dead
-   fixed-panel positioning removed) from assets/css/console.css:154-155
-   (.panel/.panel h4), :165-168 (.stats/.st/.st .n/.st .c), and :386-404
-   (#ticker, #ticker>.lbl, #tickstream(::-webkit-scrollbar), .tick-ev and its
-   .tt/.src/.warn/.alert modifiers). The is-active/is-past/clickable/drone-ev
-   modifiers (console.css:404,410-413) are intentionally NOT transcribed —
-   they style Phase 1D's click-through-to-drone behavior, which Ticker.tsx
-   does not build yet.
+   `.hud-panel` + Phase 1D / Task 6's dead fixed-panel positioning removed +
+   Task 8's #ticker inset restored to its real position alongside side/rpanel
+   + the is-active/is-past/clickable/drone-ev click-through styling) from
+   assets/css/console.css:154-155 (.panel/.panel h4), :165-168
+   (.stats/.st/.st .n/.st .c), :386-395 (#ticker's real inset + collapse
+   reflow + transition), :396-403 (#ticker>.lbl, #tickstream
+   (::-webkit-scrollbar), .tick-ev and its .tt/.src/.warn/.alert modifiers)
+   and :404-413 (.tick-ev.clickable/.is-active/.drone-ev.is-past — Task 8's
+   drone click-through, now built in Ticker.tsx).
 
    `.panel`/`.panel h4` are the real console.html class (console.html:45,49,
    58 all use `class="panel ..."`) -- Task 6 renames them here from the
@@ -70,11 +71,11 @@
 }
 #ticker {
   position: fixed;
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
+  left: 318px;
+  right: 340px;
+  bottom: 0;
   height: 34px;
-  z-index: 900;
+  z-index: 800;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -82,9 +83,18 @@
   background: var(--chrome);
   backdrop-filter: var(--chrome-blur);
   -webkit-backdrop-filter: var(--chrome-blur);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border-top: 1px solid var(--line);
   overflow: hidden;
+  transition:
+    left 0.28s ease,
+    right 0.28s ease,
+    opacity 0.2s ease;
+}
+body.side-collapsed #ticker {
+  left: 0;
+}
+body.rpanel-collapsed #ticker {
+  right: 0;
 }
 #ticker > .lbl {
   flex: none;
@@ -120,4 +130,29 @@
 }
 .tick-ev.alert {
   color: var(--red);
+}
+.tick-ev.clickable {
+  cursor: pointer;
+}
+.tick-ev.clickable:hover .msg {
+  color: #fff;
+  text-decoration: underline;
+}
+/* Drone-sourced events (see hud/Ticker.tsx's focusDroneFromEvent/
+   isDroneActive): a live/airborne drone reads green + is clickable (jumps
+   to that drone); once it has landed the line dims to read as history. Only
+   the source id is tinted so warn/alert message colors above still show
+   through. */
+.tick-ev.is-active {
+  cursor: pointer;
+}
+.tick-ev.is-active .src {
+  color: var(--green, #4ade80);
+}
+.tick-ev.is-active:hover .msg {
+  color: #fff;
+  text-decoration: underline;
+}
+.tick-ev.drone-ev.is-past {
+  opacity: 0.5;
 }

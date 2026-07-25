@@ -160,3 +160,114 @@ describe('Ticker auto-scroll (hud/Ticker.tsx)', () => {
     expect(stream.scrollLeft).toBe(0)
   })
 })
+
+// PHASE 1D / TASK 8: drone click-through (panels.js:2172-2203's
+// eventDroneId/focusDroneFromEvent/applyDroneActivity, :2374-2385's drone
+// chip tagging). `engine`/`map` are passed in directly (the optional-prop-
+// defaulting-to-context pattern from Tasks 5-7) so this suite needs no
+// <EngineProvider>/<MapView> harness — a fake engine exposing just
+// `.drones` (a real Map, since isDroneActive/focusDroneFromEvent only ever
+// call `.get()` on it) is enough.
+describe('Ticker drone click-through (hud/Ticker.tsx)', () => {
+  let originalState: Pick<AppState, 'tickerEvents' | 'selection' | 'followDroneId'>
+
+  beforeEach(() => {
+    const s = useAppStore.getState()
+    originalState = {
+      tickerEvents: s.tickerEvents,
+      selection: s.selection,
+      followDroneId: s.followDroneId,
+    }
+    useAppStore.setState({ tickerEvents: [], selection: null, followDroneId: null })
+
+    // The auto-scroll rAF loop isn't the subject of this suite; stub rAF so
+    // it never actually schedules real callbacks that could outlive a test.
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn(() => 0),
+    )
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    useAppStore.setState(originalState)
+  })
+
+  function fakeEngine(drones: Record<string, { state: string; pos: [number, number] }>) {
+    return {
+      drones: new Map(Object.entries(drones)),
+    } as unknown as import('@/modules/console/domain').Engine
+  }
+
+  it('a chip for a live (non-docked) drone carries is-active and jumps to it on click', () => {
+    const engine = fakeEngine({ 'D-AUH01': { state: 'transit', pos: [54.1, 24.2] } })
+    const easeToSpy = vi.fn()
+    const map = { easeTo: easeToSpy } as unknown as import('maplibre-gl').Map
+    useAppStore.getState().pushTickerEvent({
+      time: '00:00:01',
+      source: 'D-AUH01',
+      message: 'D-AUH01 LAUNCH',
+      level: 'info',
+      droneId: 'D-AUH01',
+    })
+
+    const { container } = render(<Ticker engine={engine} map={map} />)
+    const chip = container.querySelector('.tick-ev') as HTMLElement
+    expect(chip.className).toContain('drone-ev')
+    expect(chip.className).toContain('is-active')
+    expect(chip.className).not.toContain('is-past')
+
+    act(() => {
+      fireEvent.click(chip)
+    })
+
+    expect(useAppStore.getState().followDroneId).toBe('D-AUH01')
+    expect(useAppStore.getState().selection).toEqual({ type: 'drone', id: 'D-AUH01' })
+    expect(easeToSpy).toHaveBeenCalledTimes(1)
+    expect(easeToSpy.mock.calls[0][0]).toMatchObject({ center: [54.1, 24.2], zoom: 12.5 })
+  })
+
+  it('a chip for a docked/absent drone carries is-past and does nothing on click', () => {
+    const engine = fakeEngine({ 'D-AUH01': { state: 'docked', pos: [54.1, 24.2] } })
+    const easeToSpy = vi.fn()
+    const map = { easeTo: easeToSpy } as unknown as import('maplibre-gl').Map
+    useAppStore.getState().pushTickerEvent({
+      time: '00:00:02',
+      source: 'D-AUH01',
+      message: 'D-AUH01 LANDED',
+      level: 'info',
+      droneId: 'D-AUH01',
+    })
+
+    const { container } = render(<Ticker engine={engine} map={map} />)
+    const chip = container.querySelector('.tick-ev') as HTMLElement
+    expect(chip.className).toContain('drone-ev')
+    expect(chip.className).toContain('is-past')
+    expect(chip.className).not.toContain('is-active')
+
+    act(() => {
+      fireEvent.click(chip)
+    })
+
+    expect(useAppStore.getState().followDroneId).toBe(null)
+    expect(useAppStore.getState().selection).toBe(null)
+    expect(easeToSpy).not.toHaveBeenCalled()
+  })
+
+  it('a non-drone chip carries neither drone-ev class', () => {
+    useAppStore.getState().pushTickerEvent({
+      time: '00:00:03',
+      source: 'AUH-01',
+      message: 'AUH-01 DOCK READY',
+      level: 'info',
+      droneId: null,
+    })
+    const { container } = render(<Ticker engine={null} map={null} />)
+    const chip = container.querySelector('.tick-ev') as HTMLElement
+    expect(chip.className).not.toContain('drone-ev')
+    expect(chip.className).not.toContain('is-active')
+    expect(chip.className).not.toContain('is-past')
+  })
+})

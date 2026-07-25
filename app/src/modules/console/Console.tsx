@@ -1,27 +1,34 @@
-// Ported (Phase 1B / Task 5, chrome added Phase 1D / Task 2). The composed
-// `/console` route: a single <MapView> wrapping the globe overlay (Task 4),
-// the ping/FX driver, the basemap + offline chips (Tasks 3/5), and the real
-// console chrome shell (<ConsoleChrome>, Phase 1D / Task 2's port of
-// console.html:24-80's `#topbar`/`#side`/`#rpanel`/panel-toggle/`#ticker`
-// skeleton). ConsoleChrome is mounted unconditionally (not scene-gated) so
+// Ported (Phase 1B / Task 5, chrome added Phase 1D / Task 2, fully composed
+// Phase 1D / Task 8). The composed `/console` route: a single <MapView>
+// wrapping the globe overlay (Task 4), the ping/FX driver, the basemap chip
+// (Task 3), and the real console chrome shell (<ConsoleChrome>, Phase 1D /
+// Task 2's port of console.html:24-80's
+// `#topbar`/`#side`/`#rpanel`/panel-toggle/`#ticker` skeleton) now filled in
+// with the real <Topbar>/<Sidebar>/<RightPanel>/<Ticker> content built by
+// Tasks 4-7. ConsoleChrome is mounted unconditionally (not scene-gated) so
 // its own useChromeFade hides/reveals it with the same 220ms/double-rAF fade
 // legacy's wireScene drove — gating it on `scene === 'console'` would
 // unmount it on every scene flip and lose that transition entirely.
 //
-// useBasemap()/useOffline() are already wired inside <MapView> itself
-// (Task 3); this component's child only adds the scene-level hooks
-// (useGlobe, usePingDriver) that need to run alongside the overlay/chrome,
-// matching the shape of Task 3/4's verification scaffold in App.tsx (which
-// this component replaces).
+// <TopMenus/> (the DOCKS/FILTER/LAYERS dropdowns, Task 5) is mounted
+// alongside ConsoleChrome rather than nested inside Topbar: each menu
+// portals to `document.body` (TopMenu.tsx), so where it's declared in the
+// tree only matters for context resolution (useEngine()/useMap() need to
+// resolve for DockList's live battery/state + flyTo) — which this
+// component's position inside <MapView> (and beneath App.tsx's
+// <EngineProvider>) already satisfies.
 //
-// ConsoleChrome's topbar/sidebar/rightPanel slots are still `null` — Tasks
-// 3-7 build the real topbar/sidebar/right-panel contents and are wired in
-// here as each lands; until then the layer-switching/exit-to-orbit controls
-// that used to live in a bare placeholder div here have no home (Task 4's
-// real Topbar restores them via `#btn-layers`/`#btn-globe`). <GridStats/>
-// stays scene-gated on its own for now (Task 5 moves it into the sidebar
-// slot); <Ticker/> moves into ConsoleChrome's `ticker` slot so it shares the
-// same always-mounted/fade-managed lifecycle as the rest of the shell.
+// useBasemap()/useOffline() are already wired inside <MapView> itself
+// (Task 3); this component's child adds the scene-level hooks (useGlobe,
+// usePingDriver, useLiveLayers) plus the selection state machine's two
+// driver hooks (useMapSelection for map-click -> selectEntity,
+// useFollowDriver for the FOLLOW camera), matching the shape of Task 3/4's
+// verification scaffold in App.tsx (which this component replaces).
+//
+// The standalone <OfflineChip/> and <GridStats/> mounts from earlier tasks
+// are gone: OfflineChip now renders inside <Topbar> (Task 4) and GridStats
+// inside <Sidebar> (Task 6) — mounting either again here would duplicate
+// the DOM node.
 
 import { useEffect, useRef } from 'react'
 import MapView from './map/MapView'
@@ -30,15 +37,19 @@ import GlobeOverlay from './globe/GlobeOverlay'
 import { useGlobe } from './globe/useGlobe'
 import { usePingDriver } from './map/usePingDriver'
 import { useLiveLayers } from './engine/useLiveLayers'
-import OfflineChip from './OfflineChip'
-import GridStats from './hud/GridStats'
 import Ticker from './hud/Ticker'
 import ConsoleChrome from './chrome/ConsoleChrome'
+import Topbar from './chrome/Topbar'
+import Sidebar from './chrome/Sidebar'
+import TopMenus from './chrome/TopMenus'
+import RightPanel from './panels'
+import { useMapSelection, useFollowDriver, clearSelection } from './selection'
 import { useAppStore } from '@/shared/store'
 
-// Calls the hooks that need useMap() (useGlobe, usePingDriver, useLiveLayers)
-// and renders the globe overlay plus the console chrome. Must live inside
-// <MapView> so useMap() resolves. useLiveLayers() also needs useEngine(),
+// Calls the hooks that need useMap() (useGlobe, usePingDriver, useLiveLayers,
+// useMapSelection, useFollowDriver) and renders the globe overlay plus the
+// console chrome. Must live inside <MapView> so useMap() resolves.
+// useLiveLayers()/useMapSelection()/useFollowDriver() also need useEngine(),
 // which resolves here too since <EngineProvider> is mounted above the router
 // in App.tsx (see EngineProvider.tsx) — outside, and thus above, this entire
 // route subtree.
@@ -46,11 +57,25 @@ function ConsoleScene() {
   const tagRef = useRef<HTMLButtonElement | null>(null)
   const altRef = useRef<HTMLDivElement | null>(null)
   const enterBtnRef = useRef<HTMLButtonElement | null>(null)
-  const { enterTheater } = useGlobe({ tagRef, altRef, enterBtnRef })
+  const { enterTheater, exitToOrbit } = useGlobe({ tagRef, altRef, enterBtnRef })
   usePingDriver()
   useLiveLayers()
+  useMapSelection()
+  useFollowDriver()
 
   const scene = useAppStore((s) => s.scene)
+  const setOpenMenu = useAppStore((s) => s.setOpenMenu)
+
+  // panels.js:2617-2629 (wireScene's globe-scene teardown): leaving the
+  // console scene stands down selection/FOLLOW/the right panel and closes
+  // any open top-menu dropdown, since #topbar's dropdowns portal to
+  // <body> and would otherwise hang open over the (hidden) globe scene.
+  useEffect(() => {
+    if (scene !== 'console') {
+      clearSelection()
+      setOpenMenu(null)
+    }
+  }, [scene, setOpenMenu])
 
   return (
     <>
@@ -61,9 +86,13 @@ function ConsoleScene() {
         onEnter={enterTheater}
       />
       <BasemapChip />
-      <OfflineChip />
-      <ConsoleChrome topbar={null} sidebar={null} rightPanel={null} ticker={<Ticker />} />
-      {scene === 'console' ? <GridStats /> : null}
+      <ConsoleChrome
+        topbar={<Topbar onExitToOrbit={exitToOrbit} />}
+        sidebar={<Sidebar />}
+        rightPanel={<RightPanel />}
+        ticker={<Ticker />}
+      />
+      <TopMenus />
     </>
   )
 }

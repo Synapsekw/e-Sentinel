@@ -16,17 +16,23 @@
 //
 // No map access here by design: useMap() only resolves inside <MapView>'s
 // subtree (below the router, inside the console route), while this provider
-// sits above it. The engine's onEvent subscription (ticker push + launch FX
-// pulse) needs the map, so it is wired in useLiveLayers.ts instead, called
-// from inside the map subtree where useEngine() + useMap() both resolve.
-// This component is left owning only engine creation/ticking + context,
-// matching legacy's single `window.__engine` responsibility split across two
-// React-appropriate homes.
+// sits above it. The launch-FX-pulse half of the engine's onEvent
+// subscription needs the map, so it is wired in useLiveLayers.ts instead,
+// called from inside the map subtree where useEngine() + useMap() both
+// resolve. This component owns engine creation/ticking + context, plus (as
+// of Phase 1D / Task 8) the ticker-push half of that same onEvent
+// subscription — moved here from useLiveLayers.ts specifically because it
+// needs neither the map nor `ready`, so subscribing here means engine
+// events accumulate in the ticker even while the user is on another route
+// (before <Console>/<MapView> has ever mounted), matching how a page-lifetime
+// `window.__engine.onEvent` behaved in legacy regardless of which screen was
+// showing.
 
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { EngineContext } from './EngineContext'
 import { useSimEngine } from './useSimEngine'
+import { attachTickerPush } from './attachTickerPush'
 
 export interface EngineProviderProps {
   children?: ReactNode
@@ -38,6 +44,16 @@ export default function EngineProvider({ children }: EngineProviderProps) {
   // context object identity on every render that doesn't actually change
   // engineRef or started.
   const value = useMemo(() => ({ engineRef, started }), [engineRef, started])
+
+  // Attaches once the engine exists (guarded on `started`) and detaches on
+  // unmount / engine identity change — same shape as useLiveLayers.ts's
+  // event-subscription effect, minus the map/ready inputs this half doesn't
+  // need.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!started || !engine) return
+    return attachTickerPush(engine)
+  }, [started, engineRef])
 
   return <EngineContext.Provider value={value}>{children}</EngineContext.Provider>
 }
