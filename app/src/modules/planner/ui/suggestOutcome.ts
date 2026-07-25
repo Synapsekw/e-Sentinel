@@ -19,8 +19,12 @@ export interface SuggestOutcome {
   tone: SuggestOutcomeTone
 }
 
-export function describeSuggestOutcome(result: SuggestResult): SuggestOutcome {
+export function describeSuggestOutcome(
+  result: SuggestResult,
+  requiredCoveragePct: number,
+): SuggestOutcome {
   const pct = Math.round(result.achievedPct)
+  const dockLabel = `${result.docks.length} DOCK${result.docks.length === 1 ? '' : 'S'}`
 
   if (result.docks.length === 0) {
     // Genuinely nothing could be placed -- a real failure, not silence.
@@ -28,9 +32,26 @@ export function describeSuggestOutcome(result: SuggestResult): SuggestOutcome {
   }
 
   if (result.stoppedBy === 'target') {
+    // Important 2 (final whole-branch review): `stoppedBy: 'target'` is
+    // decided in autoPlace.ts from the rasterized sample grid the greedy
+    // loop scores against, while `achievedPct` here comes from a SEPARATE,
+    // exact `computeCoverage` call over the same docks. The two can
+    // legitimately disagree near the target boundary (a raster is an
+    // approximation of the exact turf geometry), so `stoppedBy` alone is
+    // not sufficient evidence the target was actually reached -- re-check
+    // the exact number before ever printing "TARGET MET". Without this, the
+    // strip could read "94% COVERAGE * TARGET MET" against a 95% required
+    // target, contradicting its own number on screen next to the live
+    // COVERAGE stat.
+    if (result.achievedPct >= requiredCoveragePct) {
+      return {
+        text: `LAYOUT: ${dockLabel} · ${pct}% COVERAGE · TARGET MET`,
+        tone: 'ok',
+      }
+    }
     return {
-      text: `LAYOUT: ${result.docks.length} DOCK${result.docks.length === 1 ? '' : 'S'} · ${pct}% COVERAGE · TARGET MET`,
-      tone: 'ok',
+      text: `LAYOUT: ${dockLabel} · ${pct}% COVERAGE · BELOW TARGET`,
+      tone: 'alert',
     }
   }
 

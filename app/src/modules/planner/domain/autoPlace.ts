@@ -238,17 +238,31 @@ export function suggestLayout(
   // the tab; one exact coverage computation runs at the end instead.
   let sampleSpacingKm = minRadiusKm / SAMPLE_SPACING_DIVISOR
   let samples: [number, number][] = []
-  for (;;) {
-    samples = []
-    const sLat = sampleSpacingKm / KM_PER_DEG_LAT
-    const sLon = sampleSpacingKm / kmPerDegLon(midLat)
-    for (let lat = minLat; lat <= maxLat; lat += sLat) {
-      for (let lon = minLon; lon <= maxLon; lon += sLon) {
-        if (booleanPointInPolygon(point([lon, lat]), aoiGeom)) samples.push([lon, lat])
+  // Minor 3 (final whole-branch review): mirrors buildLattice's own
+  // defensive bail above. minRadiusKm is not reachable as 0 or negative
+  // through the current static catalog (every catalog radius is a fixed
+  // positive constant), but nothing in this function's own types rules it
+  // out, and sampleSpacingKm derives from it exactly the way
+  // initialSpacingKm derives from the same minRadiusKm. Without this guard,
+  // a zero-or-negative sampleSpacingKm would make sLat/sLon zero or
+  // negative, and `lat += sLat` below would never advance past maxLat --
+  // hanging the tab exactly the way the candidate lattice used to before
+  // buildLattice's guard was added. Leaving `samples` empty here routes
+  // through the existing `samples.length === 0` guard just below, the same
+  // honest 'exhausted' outcome the lattice's own guard produces.
+  if (sampleSpacingKm > 0) {
+    for (;;) {
+      samples = []
+      const sLat = sampleSpacingKm / KM_PER_DEG_LAT
+      const sLon = sampleSpacingKm / kmPerDegLon(midLat)
+      for (let lat = minLat; lat <= maxLat; lat += sLat) {
+        for (let lon = minLon; lon <= maxLon; lon += sLon) {
+          if (booleanPointInPolygon(point([lon, lat]), aoiGeom)) samples.push([lon, lat])
+        }
       }
+      if (samples.length <= MAX_SAMPLE_POINTS) break
+      sampleSpacingKm *= 1.5 // widen deterministically, then re-sample
     }
-    if (samples.length <= MAX_SAMPLE_POINTS) break
-    sampleSpacingKm *= 1.5 // widen deterministically, then re-sample
   }
   if (samples.length === 0) return { docks: [], achievedPct: 0, stoppedBy: 'exhausted' }
 
