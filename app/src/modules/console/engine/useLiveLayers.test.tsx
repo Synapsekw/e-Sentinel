@@ -40,6 +40,10 @@ function createFakeEngine(): Engine {
       subscribers.push(cb)
       return cb
     },
+    offEvent(cb: (ev: SimEvent) => void) {
+      const i = subscribers.indexOf(cb)
+      if (i !== -1) subscribers.splice(i, 1)
+    },
   } as unknown as Engine
 }
 

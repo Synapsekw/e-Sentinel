@@ -44,10 +44,9 @@ import { mapEngineEvent, nowClockStr } from '@/modules/console/hud/tickerModel'
 export const STATS_INTERVAL_MS = 1000 // main.js:90's 1000ms refreshCounts throttle
 
 // Engine event subscription: ticker push (tickerModel.ts's mapEngineEvent)
-// + launch FX pulse (main.js:56-59). `engine.onEvent` (domain/engine.ts) has
-// no separate unsubscribe return — it pushes the callback onto
-// `engine._subscribers` and hands the same callback back — so the returned
-// cleanup removes it from that array by identity, same handle.
+// + launch FX pulse (main.js:56-59). `engine.onEvent` (domain/engine.ts)
+// hands back the same callback it was given, which the returned cleanup
+// passes to `engine.offEvent` to remove it by identity.
 export function attachEngineEvents(
   engine: Engine,
   mapRef: MutableRefObject<maplibregl.Map | null>,
@@ -60,10 +59,7 @@ export function attachEngineEvents(
     }
   })
 
-  return () => {
-    const idx = engine._subscribers.indexOf(cb)
-    if (idx !== -1) engine._subscribers.splice(idx, 1)
-  }
+  return () => engine.offEvent(cb)
 }
 
 // rAF render loop (main.js:87-96): keeps live map layers in sync with engine
