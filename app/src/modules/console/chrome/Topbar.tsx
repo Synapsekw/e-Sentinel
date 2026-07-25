@@ -21,12 +21,23 @@
 // DOCKS/FILTER/LAYERS only toggle the store's `openMenu` field here — the
 // dropdown menus themselves (TopMenu/DocksMenu/FilterMenu/LayersMenu) are a
 // different task's scope; this component never renders their contents.
+//
+// PHASE 1E / TASK 1: #btn-newmission / #btn-missions stop being
+// unconditionally disabled. Their disabled/title now come from
+// control/controlModel.ts's newMissionButtonState/missionsButtonState
+// (control.js:56-84), driven by the store's `controlMode`. The buttons'
+// actual behavior (opening the wizard / toggling the MISSIONS dropdown)
+// is Tasks 3 and 4's scope; until those land, the two buttons take
+// optional `onNewMission`/`onToggleMissions` props defaulting to no-ops so
+// this component compiles and reviews standing alone. #btn-media stays
+// disabled outright — Task 6 owns it.
 
 import { useAppStore } from '@/shared/store'
 import type { TopMenuName } from '@/shared/store'
 import { DATA_DOCKS } from '@/modules/console/domain'
 import { useCountUp } from '@/modules/console/hud/useCountUp'
 import { clearSelection } from '@/modules/console/selection'
+import { newMissionButtonState, missionsButtonState } from '@/modules/console/control/controlModel'
 import Clock from './Clock'
 import OfflineChip from '../OfflineChip'
 
@@ -43,17 +54,26 @@ const LAYER_LABELS: Record<string, string> = {
 
 export interface TopbarProps {
   onExitToOrbit: () => void
+  onNewMission?: () => void
+  onToggleMissions?: () => void
 }
 
-export default function Topbar({ onExitToOrbit }: TopbarProps) {
+export default function Topbar({
+  onExitToOrbit,
+  onNewMission = () => {},
+  onToggleMissions = () => {},
+}: TopbarProps) {
   const stats = useAppStore((s) => s.stats)
   const dockFilter = useAppStore((s) => s.dockFilter)
   const layer = useAppStore((s) => s.layer)
   const openMenu = useAppStore((s) => s.openMenu)
   const setOpenMenu = useAppStore((s) => s.setOpenMenu)
+  const controlMode = useAppStore((s) => s.controlMode)
 
   const airborne = useCountUp(stats.flying)
   const alerts = useCountUp(stats.alert)
+  const newMissionState = newMissionButtonState(controlMode)
+  const missionsState = missionsButtonState(controlMode)
 
   // panels.js:1863-1936 (topMenus): a single `openMenu` field already
   // guarantees only one dropdown is open at a time; each trigger just
@@ -132,27 +152,31 @@ export default function Topbar({ onExitToOrbit }: TopbarProps) {
       >
         OPS
       </button>
-      {/* Phase 1E: enabled once the predefined-mission dropdown (and the
-          mission wizard it launches into, EC2.control.enterWizard) lands. */}
+      {/* Phase 1E / Task 4 wires onToggleMissions to the MISSIONS dropdown
+          (control.js:774-847's buildMissionsMenu); disabled/title already
+          track control.js:73-83 via missionsButtonState. */}
       <button
         className="tbtn"
         id="btn-missions"
         type="button"
-        title="LAUNCH A PREDEFINED MISSION"
+        title={missionsState.title}
         aria-haspopup="true"
-        aria-expanded="false"
-        disabled
+        aria-expanded={openMenu === 'missions'}
+        disabled={missionsState.disabled}
+        onClick={onToggleMissions}
       >
         MISSIONS ▾
       </button>
-      {/* Phase 1E: enabled once the mission wizard (control.js enterWizard)
-          lands. */}
+      {/* Phase 1E / Task 3 wires onNewMission to control.enterWizard
+          (control.js:502-521); disabled/title already track control.js:56-69
+          via newMissionButtonState. */}
       <button
         className="tbtn"
         id="btn-newmission"
         type="button"
-        title="CREATE A NEW MISSION"
-        disabled
+        title={newMissionState.title}
+        disabled={newMissionState.disabled}
+        onClick={onNewMission}
       >
         + NEW MISSION
       </button>

@@ -14,11 +14,14 @@
 // (panels.js:2409-2415); there is no analogue of that clearing code here by
 // design.
 //
-// Phase 1E widens shared/store.ts's RightPanelState union with 'request' |
-// 'track' | 'debrief' | 'media' | 'wizard' modes; this switch grows a case
-// for each as they land. Until then, any mode this switch doesn't
-// recognize (today: only 'empty') falls through to the `default` branch,
-// matching legacy's `panelRenderers[mode] || panelRenderers.empty`
+// Phase 1E / Task 1 widened shared/store.ts's RightPanelState union with
+// 'wizard' | 'debrief' | 'media' | 'request' | 'track' modes. Each gets an
+// explicit case below (rather than just falling through to `default`) so
+// the mode -> owning-task mapping is visible here; every one of them
+// renders <OpsDigest/> as a temporary placeholder until its task lands and
+// replaces the case body with the real panel component. 'empty' (and any
+// future mode this switch doesn't yet know about) falls through to
+// `default`, matching legacy's `panelRenderers[mode] || panelRenderers.empty`
 // (panels.js:2423).
 //
 // The ops-digest and drone components below live in files named
@@ -56,6 +59,21 @@ export default function RightPanel({ engine: engineProp, map: mapProp }: RightPa
       return <DronePanel id={rightPanel.id} engine={engine} map={map} />
     case 'site':
       return <SitePanel id={rightPanel.id} engine={engine} map={map} />
+    case 'wizard':
+      // Phase 1E Task 3 builds this (WizardPanel.tsx).
+      return <OpsDigest engine={engine} map={map} />
+    case 'debrief':
+      // Phase 1E Task 5 builds this (DebriefPanel.tsx).
+      return <OpsDigest engine={engine} map={map} />
+    case 'media':
+      // Phase 1E Task 6 builds this (MediaPanel.tsx).
+      return <OpsDigest engine={engine} map={map} />
+    case 'request':
+      // Phase 1E Task 7 builds this (RequestPanel.tsx).
+      return <OpsDigest engine={engine} map={map} />
+    case 'track':
+      // Phase 1E Task 7 builds this (TrackPanel.tsx).
+      return <OpsDigest engine={engine} map={map} />
     default:
       return <OpsDigest engine={engine} map={map} />
   }

@@ -32,14 +32,13 @@
 // is now just two effects that resolve the real engine/map/updater and hand
 // them to these functions — no behavior changed, only where the logic lives.
 
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import type { MutableRefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 import type { Engine } from '@/modules/console/domain'
 import { useEngine } from './EngineContext'
 import { useMap } from '@/modules/console/map/MapContext'
 import { useAppStore } from '@/shared/store'
-import { createLiveLayerUpdater } from '@/modules/console/map/updateLiveLayers'
 import type { LiveLayerUpdater } from '@/modules/console/map/updateLiveLayers'
 import { pushLaunchPulse } from '@/modules/console/map/fx'
 import { computeCounts } from './refreshCounts'
@@ -92,17 +91,16 @@ export function startRenderLoop(
   return () => cancelAnimationFrame(rafId)
 }
 
-export function useLiveLayers(): void {
+// CONTROLLER DECISION (Phase 1E / Task 1): the updater instance used to be
+// created and owned inside this hook (a lazy `useRef` per mount). It now
+// lives one level up, in Console.tsx, which also provides it through
+// UpdaterContext.ts so `setRangeHighlight(dockId)` is reachable from the
+// manual-control (Task 2) and mission-wizard (Task 3) hooks without either
+// of them calling useLiveLayers() themselves. This hook just consumes the
+// instance it's handed — no behavior change to the render loop itself.
+export function useLiveLayers(updater: LiveLayerUpdater): void {
   const { engineRef, started } = useEngine()
   const { mapRef, ready } = useMap()
-
-  // Single updater instance for this hook's lifetime (mirrors
-  // updateLiveLayers.ts's closure-per-mount design) — lazily created once
-  // via the `if (!ref.current)` guard rather than `useRef(createLiveLayerUpdater())`,
-  // so a re-render never evaluates (and immediately discards) a second
-  // TrailStore/closure.
-  const updaterRef = useRef<LiveLayerUpdater | null>(null)
-  if (!updaterRef.current) updaterRef.current = createLiveLayerUpdater()
 
   // Attaches once the engine exists (guarded on `started`) and detaches on
   // unmount / engine identity change.
@@ -119,9 +117,8 @@ export function useLiveLayers(): void {
     if (!started || !ready) return
     const engine = engineRef.current
     const map = mapRef.current
-    const updater = updaterRef.current
-    if (!engine || !map || !updater) return
+    if (!engine || !map) return
 
     return startRenderLoop(engine, map, updater, ready)
-  }, [started, ready, engineRef, mapRef])
+  }, [started, ready, engineRef, mapRef, updater])
 }

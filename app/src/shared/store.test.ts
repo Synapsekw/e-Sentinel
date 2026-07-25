@@ -14,6 +14,12 @@ describe('useAppStore', () => {
       sideCollapsed: false,
       rpanelCollapsed: false,
       openMenu: null,
+      controlMode: 'normal',
+      controlActiveId: null,
+      controlFollowWasAuto: false,
+      wizard: null,
+      userMissions: [],
+      sessionMissions: [],
     })
   })
 
@@ -68,5 +74,70 @@ describe('useAppStore', () => {
     // Untouched slices from beforeEach stay put.
     expect(s.scene).toBe('globe')
     expect(s.rpanelCollapsed).toBe(false)
+  })
+
+  it('exposes Phase 1E control-slice defaults (control.js:9-19)', () => {
+    const s = useAppStore.getState()
+    expect(s.controlMode).toBe('normal')
+    expect(s.controlActiveId).toBe(null)
+    expect(s.controlFollowWasAuto).toBe(false)
+    expect(s.wizard).toBe(null)
+    expect(s.userMissions).toEqual([])
+    expect(s.sessionMissions).toEqual([])
+  })
+
+  it('setControlMode / setControlFollowWasAuto / setWizard update only their own fields', () => {
+    const wizard = {
+      step: 1 as const,
+      type: null,
+      dockId: 'AUH-01',
+      points: [],
+      spacingM: 150,
+      altM: null,
+      speedMs: null,
+      error: null,
+      rangeWarning: null,
+    }
+    useAppStore.getState().setControlMode('manual', 'D-AUH-01')
+    useAppStore.getState().setControlFollowWasAuto(true)
+    useAppStore.getState().setWizard(wizard)
+    const s = useAppStore.getState()
+    expect(s.controlMode).toBe('manual')
+    expect(s.controlActiveId).toBe('D-AUH-01')
+    expect(s.controlFollowWasAuto).toBe(true)
+    expect(s.wizard).toEqual(wizard)
+    // Untouched slices from beforeEach stay put.
+    expect(s.userMissions).toEqual([])
+    expect(s.scene).toBe('globe')
+  })
+
+  it('addUserMission appends without duplicates', () => {
+    useAppStore.getState().addUserMission('M-001')
+    useAppStore.getState().addUserMission('M-002')
+    useAppStore.getState().addUserMission('M-001')
+    expect(useAppStore.getState().userMissions).toEqual(['M-001', 'M-002'])
+  })
+
+  it('pushSessionMission prepends newest-first and caps at 40', () => {
+    function fakeMission(id: string) {
+      return {
+        id,
+        type: 'security',
+        dockId: 'AUH-01',
+        waypoints: [],
+        params: { altM: 80, speedMs: 12 },
+        progress: 1,
+        state: 'complete',
+        analytics: null,
+        startedAt: 0,
+        distanceKm: 0,
+        durationS: 0,
+        _milestones: {},
+      } as unknown as ReturnType<typeof useAppStore.getState>['sessionMissions'][number]
+    }
+    for (let i = 0; i < 41; i++) useAppStore.getState().pushSessionMission(fakeMission('M-' + i))
+    const s = useAppStore.getState()
+    expect(s.sessionMissions.length).toBe(40)
+    expect(s.sessionMissions[0].id).toBe('M-40')
   })
 })

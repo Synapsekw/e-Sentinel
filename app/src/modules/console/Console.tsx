@@ -29,6 +29,14 @@
 // are gone: OfflineChip now renders inside <Topbar> (Task 4) and GridStats
 // inside <Sidebar> (Task 6) — mounting either again here would duplicate
 // the DOM node.
+//
+// PHASE 1E / TASK 1: this component now also owns the single
+// LiveLayerUpdater instance (previously created lazily inside
+// useLiveLayers() itself — see that file's header comment) so it can be
+// handed both to useLiveLayers() and out through UpdaterContext, making
+// `setRangeHighlight(dockId)` reachable from the manual-control (Task 2)
+// and mission-wizard (Task 3) hooks without either needing to call
+// useLiveLayers() itself.
 
 import { useEffect, useRef } from 'react'
 import MapView from './map/MapView'
@@ -37,6 +45,9 @@ import GlobeOverlay from './globe/GlobeOverlay'
 import { useGlobe } from './globe/useGlobe'
 import { usePingDriver } from './map/usePingDriver'
 import { useLiveLayers } from './engine/useLiveLayers'
+import { UpdaterContext } from './engine/UpdaterContext'
+import { createLiveLayerUpdater } from './map/updateLiveLayers'
+import type { LiveLayerUpdater } from './map/updateLiveLayers'
 import Ticker from './hud/Ticker'
 import ConsoleChrome from './chrome/ConsoleChrome'
 import Topbar from './chrome/Topbar'
@@ -58,8 +69,17 @@ function ConsoleScene() {
   const altRef = useRef<HTMLDivElement | null>(null)
   const enterBtnRef = useRef<HTMLButtonElement | null>(null)
   const { enterTheater, exitToOrbit } = useGlobe({ tagRef, altRef, enterBtnRef })
+
+  // Lazily created once via the `if (!ref.current)` guard rather than
+  // `useRef(createLiveLayerUpdater())`, so a re-render never evaluates
+  // (and immediately discards) a second TrailStore/closure (mirrors
+  // updateLiveLayers.ts's own closure-per-mount design).
+  const updaterRef = useRef<LiveLayerUpdater | null>(null)
+  if (!updaterRef.current) updaterRef.current = createLiveLayerUpdater()
+  const updater = updaterRef.current
+
   usePingDriver()
-  useLiveLayers()
+  useLiveLayers(updater)
   useMapSelection()
   useFollowDriver()
 
@@ -78,7 +98,7 @@ function ConsoleScene() {
   }, [scene, setOpenMenu])
 
   return (
-    <>
+    <UpdaterContext.Provider value={updater}>
       <GlobeOverlay
         tagRef={tagRef}
         altRef={altRef}
@@ -93,7 +113,7 @@ function ConsoleScene() {
         ticker={<Ticker />}
       />
       <TopMenus />
-    </>
+    </UpdaterContext.Provider>
   )
 }
 
