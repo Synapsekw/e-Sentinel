@@ -36,6 +36,7 @@ import { EngineContext } from '@/modules/console/engine/EngineContext'
 import { MapContext } from '@/modules/console/map/MapContext'
 import { useUpdater } from '@/modules/console/engine/UpdaterContext'
 import { useAppStore } from '@/shared/store'
+import { isMapUsable } from '@/modules/console/map/mapLifecycle'
 import { WP_POLL_MS, waypointFeatures } from './manualModel'
 
 // panels.js:1660 via control.js:158 (control.enterManual's own easeTo,
@@ -85,7 +86,7 @@ export function useManualControl(): UseManualControlResult {
   // control.js:102-106 (refreshWaypoints).
   const refreshWaypoints = useCallback(() => {
     const map = getMap()
-    if (!map || !getMapReady()) return
+    if (!isMapUsable(map) || !getMapReady()) return
     const src = asGeoJSONSource(map.getSource('manual-wpts'))
     if (!src) return
     const { controlActiveId } = useAppStore.getState()
@@ -95,7 +96,10 @@ export function useManualControl(): UseManualControlResult {
   // control.js:108-112 (clearWaypointLayer).
   const clearWaypointLayer = useCallback(() => {
     const map = getMap()
-    if (!map || !getMapReady()) return
+    // isMapUsable, not a plain null check: exitManual() runs from an unmount
+    // cleanup too, and React tears a deleted tree down parent-first, so
+    // <MapView> may already have removed this map (see map/mapLifecycle.ts).
+    if (!isMapUsable(map) || !getMapReady()) return
     const src = asGeoJSONSource(map.getSource('manual-wpts'))
     if (src) src.setData(waypointFeatures(null, null))
   }, [getMap, getMapReady])

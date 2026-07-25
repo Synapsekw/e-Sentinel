@@ -72,6 +72,33 @@ export default defineConfig(({ command, isPreview }) => ({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // PHASE 1F: `/console` (App.tsx's lazy(() => import('./modules/
+        // console/Console'))) is the only thing that reaches maplibre-gl and
+        // the baked GEO_WORLD geojson (~200KB source in domain/geo-world.ts),
+        // so both already land outside the entry chunk for free. Without a
+        // manualChunks split, though, Rollup's default dynamic-import
+        // chunking would fold maplibre-gl + geo-world + all console feature
+        // code into one ~1.4MB "Console" chunk. Pulling each into its own
+        // named chunk keeps every emitted file under the 500kB warning
+        // threshold and lets the near-static maplibre-gl/geo-world chunks
+        // cache independently of console feature-code edits. GEO_UAE (roads)
+        // is deliberately NOT split here — useSimEngine.ts reads
+        // `GEO_UAE.roads` synchronously at engine-creation time (a runtime
+        // value, not a type), so it's already part of the small eager entry
+        // chunk regardless of this config, and forcing it into a lazy chunk
+        // would mean either awaiting a dynamic import inside engine creation
+        // or accepting a load-bearing race; at ~16KB source it isn't worth
+        // that complexity.
+        manualChunks(id) {
+          if (id.includes('node_modules/maplibre-gl')) return 'maplibre-gl'
+          if (id.includes('/domain/geo-world.ts')) return 'geo-world'
+        },
+      },
+    },
+  },
   test: {
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],

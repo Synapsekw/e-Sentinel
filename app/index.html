@@ -4,6 +4,30 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SENTINEL · e& Physical Intelligence</title>
+    <!-- %BASE_URL% is substituted by Vite ('/' in dev, '/e-Sentinel/' in a
+         Pages build), so the same tag works in both. Without it the browser
+         requests /favicon.ico and logs a 404 on every load. -->
+    <link rel="icon" type="image/png" href="%BASE_URL%assets/img/eand-logo-white.png" />
+    <script>
+      // Counterpart to public/404.html's redirect shim (see the comment
+      // there). Pages bounced a deep link here as `/?/console`; this rewrites
+      // the address bar back to the real route with replaceState BEFORE the
+      // app bundle runs, so React Router boots on the route the operator
+      // actually asked for instead of the landing page. No-op on a normal
+      // load, where there is no `/?/` prefix.
+      ;(function () {
+        var l = window.location
+        if (l.search[1] !== '/') return
+        var decoded = l.search
+          .slice(1)
+          .split('&')
+          .map(function (s) {
+            return s.replace(/~and~/g, '&')
+          })
+          .join('?')
+        window.history.replaceState(null, '', l.pathname.slice(0, -1) + decoded + l.hash)
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

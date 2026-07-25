@@ -36,6 +36,7 @@ import { nowClockStr } from '@/modules/console/chrome/format'
 import { useOptionalEngine, useOptionalMap } from '@/modules/console/panels/hooks'
 import { useUpdater } from '@/modules/console/engine/UpdaterContext'
 import type { LiveLayerUpdater } from '@/modules/console/map/updateLiveLayers'
+import { isMapUsable } from '@/modules/console/map/mapLifecycle'
 import { selectEntity } from '@/modules/console/selection/selectEntity'
 import {
   wizardFinalWaypoints,
@@ -93,7 +94,7 @@ export function useWizard(): UseWizardResult {
   // update()/applyWizardClick, which lands here as a `wizard` dependency
   // change) rather than each call site calling refresh/clear explicitly.
   useEffect(() => {
-    if (!map) return
+    if (!isMapUsable(map)) return
     const src = asGeoJSONSource(map.getSource('wizard-preview'))
     if (!src) return
     src.setData(wizard ? wizardPreviewFeatures(wizard) : emptyFC())
@@ -108,7 +109,11 @@ export function useWizard(): UseWizardResult {
   // effects for the render that unmounts it, so only the cleanup runs.
   useEffect(() => {
     return () => {
-      if (!map) return
+      // isMapUsable, not a plain null check: on route unmount React tears the
+      // deleted tree down parent-first, so <MapView> has already called
+      // map.remove() by the time this cleanup runs and `map` is a live
+      // reference to a dead instance (see map/mapLifecycle.ts).
+      if (!isMapUsable(map)) return
       const src = asGeoJSONSource(map.getSource('wizard-preview'))
       if (src) src.setData(emptyFC())
     }
