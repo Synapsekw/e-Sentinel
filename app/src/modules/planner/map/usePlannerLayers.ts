@@ -29,9 +29,15 @@ export function usePlannerLayers(
     setData(map, PLANNER_SOURCES.aoi, aoiFeatures(plan))
     setData(map, PLANNER_SOURCES.docks, dockFeatures(plan))
     setData(map, PLANNER_SOURCES.rings, ringFeatures(plan))
-    // `plan` alone is the correct dependency: every mutation returns a new
-    // object, so plan.rev would be a redundant second key on the same change.
-  }, [mapRef, ready, plan])
+    // Important 8 (final whole-branch review): this used to depend on
+    // `plan` itself, so it rebuilt every dock ring buffer (64 steps each, see
+    // domain/coverage.ts's BUFFER_STEPS) on EVERY plan edit, including a
+    // plan name/customer keystroke that never touches aois or docks. Keying
+    // on plan.aois/plan.docks directly instead means a cosmetic-only edit --
+    // which domain/plan.ts's bump() always carries the existing aois/docks
+    // array references through unchanged -- does not touch the map at all.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapRef, ready, plan.aois, plan.docks])
 
   useEffect(() => {
     const map = mapRef.current

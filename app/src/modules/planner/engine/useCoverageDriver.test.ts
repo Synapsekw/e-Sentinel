@@ -28,8 +28,24 @@ const BASE_PLAN: Omit<DeploymentPlan, 'rev'> = {
   params: { targetOverlapPct: 20, requiredCoveragePct: 95 },
 }
 
+// Fresh aois/docks/params references on every call, not just a fresh `rev`
+// -- matching what a real edit through domain/plan.ts's bump() always does
+// (a genuine geometry change always produces a new array/object reference
+// for whichever field changed). Important 8's fix keys useCoverageDriver's
+// effect off exactly these three references instead of plan identity, so a
+// makePlan fixture that reused BASE_PLAN's aois/docks/params across every
+// call (as an earlier revision of this file did) would make the effect
+// think nothing ever changed across this whole suite's rev bumps -- see
+// the "does not recompute when only cosmetic fields change" test below for
+// the case that fixture gap would otherwise mask.
 function makePlan(rev: number): DeploymentPlan {
-  return { ...BASE_PLAN, rev }
+  return {
+    ...BASE_PLAN,
+    aois: [...BASE_PLAN.aois],
+    docks: [...BASE_PLAN.docks],
+    params: { ...BASE_PLAN.params },
+    rev,
+  }
 }
 
 const NO_AOI_RESULT: CoverageResult = { ok: false, reason: 'no-aoi' }
@@ -187,5 +203,57 @@ describe('useCoverageDriver', () => {
 
     expect(mockComputeCoverage).toHaveBeenCalledTimes(1)
     expect(setCoverageSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not recompute when only cosmetic plan fields change (Important 8)', () => {
+    // Before this fix, this effect depended on `plan` itself, so it re-ran
+    // (and, after the debounce, re-ran computeCoverage's full turf pipeline)
+    // on every plan edit whatsoever -- including a plan name/customer
+    // keystroke in PlanTree.tsx that never touches aois, docks or params. At
+    // 40 docks that is 780 pairwise intersects triggered by typing a
+    // customer name, with no geometry having changed at all.
+    renderHook(() => useCoverageDriver())
+    const base = makePlan(0)
+
+    act(() => {
+      usePlanStore.setState({ plan: base })
+    })
+    act(() => {
+      vi.advanceTimersByTime(COVERAGE_DEBOUNCE_MS)
+    })
+    mockComputeCoverage.mockClear()
+
+    act(() => {
+      usePlanStore.setState({
+        plan: { ...base, name: 'Renamed Plan', customer: 'New Customer', rev: base.rev + 1 },
+      })
+    })
+    act(() => {
+      vi.advanceTimersByTime(COVERAGE_DEBOUNCE_MS)
+    })
+
+    expect(mockComputeCoverage).not.toHaveBeenCalled()
+  })
+
+  it('still recomputes once a genuine geometry/params edit follows a run of cosmetic ones', () => {
+    renderHook(() => useCoverageDriver())
+    const base = makePlan(0)
+
+    act(() => {
+      usePlanStore.setState({ plan: { ...base, name: 'Renamed', rev: 1 } })
+    })
+    act(() => {
+      vi.advanceTimersByTime(COVERAGE_DEBOUNCE_MS)
+    })
+    mockComputeCoverage.mockClear()
+
+    act(() => {
+      usePlanStore.setState({ plan: makePlan(2) })
+    })
+    act(() => {
+      vi.advanceTimersByTime(COVERAGE_DEBOUNCE_MS)
+    })
+
+    expect(mockComputeCoverage).toHaveBeenCalledTimes(1)
   })
 })
