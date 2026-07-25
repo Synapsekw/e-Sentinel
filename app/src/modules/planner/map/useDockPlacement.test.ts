@@ -312,4 +312,24 @@ describe('useDockPlacement placement mode', () => {
 
     expect(usePlanStore.getState().plan.docks).toHaveLength(0)
   })
+
+  it('a placement click landing on an existing dock marker neither adds a dock nor stands placement down', () => {
+    // Regression for the carried double-commit nuisance: clicking an
+    // existing dock while placement mode is armed used to fire both the
+    // drag effect's (possibly no-op) position commit AND this addDock, for
+    // one perceived click. queryRenderedFeatures returning a hit here is
+    // exactly what a click landing on the DOCK_LAYER_ID marker looks like.
+    fakeMap.queryRenderedFeatures.mockReturnValue([{ properties: { id: 'existing' } }])
+    const { result } = renderHook(() => useDockPlacement(mapRef, true))
+
+    act(() => result.current.startPlacing())
+    act(() => {
+      fakeMap.fire('click', { point: [5, 5], lngLat: { lng: 54.6, lat: 24.3 } })
+    })
+
+    expect(usePlanStore.getState().plan.docks).toHaveLength(0)
+    // Placement stays armed -- this was a miss, not a use of the click, so
+    // the user should be able to just click again on open ground.
+    expect(result.current.placing).toBe(true)
+  })
 })

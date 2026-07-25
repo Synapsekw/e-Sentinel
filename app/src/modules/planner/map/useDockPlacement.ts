@@ -56,6 +56,17 @@ export function useDockPlacement(
 
     const onClick = (e: maplibregl.MapMouseEvent) => {
       if (!placingRef.current) return
+      // A click that lands on an existing dock marker is the tail end of
+      // that marker's own mousedown/mouseup drag-commit below (queryRendered
+      // Features against the same DOCK_LAYER_ID), not a placement click --
+      // without this guard, arming placement and then clicking an existing
+      // dock fires an extra addDock for the same perceived click, on top of
+      // the drag effect's own (possibly no-op, if the pointer never moved)
+      // position commit. Bail out before touching the store or standing
+      // placement down: neither a dock nor the armed state should be
+      // consumed by a miss like this, so the user can just click again.
+      const hit = map.queryRenderedFeatures(e.point, { layers: [DOCK_LAYER_ID] })[0]
+      if (hit) return
       // Called directly off getState() (not destructured): PlanState
       // declares its setters with method-shorthand signatures, so pulling
       // setPlan out into its own binding trips
