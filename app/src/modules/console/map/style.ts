@@ -8,6 +8,14 @@
 // missions-active, tracks, manual-wpts, wizard-preview) are seeded empty
 // here via `emptyFC()`; Task 3 (imperative map lifecycle) is responsible
 // for calling `map.getSource(id).setData(...)` as the sim drives them.
+//
+// Split (Task 1, Deployment Planner) into buildBaseStyle() (cartography
+// only) and buildStyle() (base + the console's own sim sources/layers), so
+// the planner can build on the cartography without inheriting empty
+// drone/track/wizard layers it would never populate. This is a pure move:
+// no paint/layout/filter/minzoom/literal changed, and the layer array
+// order in buildStyle() is unchanged — see style.test.ts's golden
+// snapshot of the exact id sequence and source key set.
 
 import type { ExpressionSpecification, SourceSpecification, StyleSpecification } from 'maplibre-gl'
 import type { FeatureCollection } from 'geojson'
@@ -32,12 +40,12 @@ function buildRasterSources(): Record<string, SourceSpecification> {
   return sources
 }
 
-// The full MapLibre style: rasters + carto-streets vector overlay + UAE
-// borders/roads/places + docks/sites/coverage (seeded from features.ts) +
-// live-empty sim sources + the world landmass fallback, and 34 layers
-// rendering all of it. Called fresh each time (matching the legacy
-// EC2.initMap, which rebuilds `style` on every map (re)creation).
-export function buildStyle(): StyleSpecification {
+// The base cartography shared by every module that shows a map: rasters,
+// the carto-streets vector overlay, UAE borders/roads/places and the world
+// landmass fallback. Deliberately contains NO simulation state, so the
+// planner (which has no sim) can build on it without inheriting empty
+// drone/track/wizard layers it would never populate.
+export function buildBaseStyle(): StyleSpecification {
   return {
     version: 8,
     glyphs: glyphsUrl(),
@@ -54,17 +62,6 @@ export function buildStyle(): StyleSpecification {
       uae: { type: 'geojson', data: GEO_UAE.borders },
       'uae-roads': { type: 'geojson', data: GEO_UAE.roads },
       'uae-places': { type: 'geojson', data: GEO_UAE.places },
-      docks: { type: 'geojson', data: dockFeatures() },
-      coverage: { type: 'geojson', data: coverageFeatures() },
-      sites: { type: 'geojson', data: siteFeatures() },
-      drones: { type: 'geojson', data: emptyFC() },
-      'drone-leaders': { type: 'geojson', data: emptyFC() },
-      'drone-trails': { type: 'geojson', data: emptyFC() },
-      fx: { type: 'geojson', data: emptyFC() },
-      'missions-active': { type: 'geojson', data: emptyFC() },
-      tracks: { type: 'geojson', data: emptyFC() },
-      'manual-wpts': { type: 'geojson', data: emptyFC() },
-      'wizard-preview': { type: 'geojson', data: emptyFC() },
       world: { type: 'geojson', data: GEO_WORLD },
     },
     layers: [
@@ -128,6 +125,104 @@ export function buildStyle(): StyleSpecification {
         layout: { visibility: 'none' },
         paint: { 'line-color': 'rgba(255,255,255,.14)', 'line-width': 0.6 },
       },
+      {
+        id: 'uae-border-line',
+        type: 'line',
+        source: 'uae',
+        paint: {
+          'line-color': 'rgba(125,134,151,.4)', // neutral steel — red is for alerts, not geography
+          'line-width': 1,
+          'line-dasharray': [2, 3],
+        },
+      },
+      {
+        id: 'uae-roads',
+        type: 'line',
+        source: 'uae-roads',
+        paint: {
+          'line-color': '#7d8697',
+          'line-opacity': 0.5,
+          'line-width': 0.8,
+        },
+      },
+      // Now that basemaps are _nolabels, uae-places is the only place
+      // naming on screen: slightly larger, with a halo so it reads on
+      // every basemap. applyPlaceLabelTheme() (Task 3) retints text/halo
+      // per basemap (dark vs light/terrain).
+      {
+        id: 'uae-places',
+        type: 'symbol',
+        source: 'uae-places',
+        layout: {
+          'text-field': ['upcase', ['get', 'name']] as ExpressionSpecification,
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 11,
+          'text-letter-spacing': 0.3,
+        },
+        paint: {
+          'text-color': '#aeb6c4',
+          'text-halo-color': '#0a0b0e',
+          'text-halo-width': 1.2,
+        },
+        minzoom: 5.5,
+      },
+    ],
+  }
+}
+
+// The full MapLibre style: buildBaseStyle() plus docks/sites/coverage
+// (seeded from features.ts), the live-empty sim sources, and every layer
+// rendering them. NOTE: the legacy layer order (preserved here verbatim)
+// interleaves the sim coverage-fill/coverage-line/coverage-line-hi layers
+// and the base uae-border-line/uae-roads/uae-places layers between the
+// world landmass and drone-trails layers, so this is not a plain
+// base-then-sim concatenation — the base layers are destructured back into
+// their original positions. See style.test.ts's golden snapshot for the
+// exact id sequence. Called fresh each time (matching the legacy
+// EC2.initMap, which rebuilds `style` on every map (re)creation).
+export function buildStyle(): StyleSpecification {
+  const base = buildBaseStyle()
+  const [
+    bg,
+    rasterDark,
+    rasterLight,
+    rasterSat,
+    rasterTerrain,
+    darkGreens,
+    darkWater,
+    worldLandFill,
+    worldLandLine,
+    uaeBorderLine,
+    uaeRoads,
+    uaePlaces,
+  ] = base.layers
+
+  return {
+    ...base,
+    sources: {
+      ...base.sources,
+      docks: { type: 'geojson', data: dockFeatures() },
+      coverage: { type: 'geojson', data: coverageFeatures() },
+      sites: { type: 'geojson', data: siteFeatures() },
+      drones: { type: 'geojson', data: emptyFC() },
+      'drone-leaders': { type: 'geojson', data: emptyFC() },
+      'drone-trails': { type: 'geojson', data: emptyFC() },
+      fx: { type: 'geojson', data: emptyFC() },
+      'missions-active': { type: 'geojson', data: emptyFC() },
+      tracks: { type: 'geojson', data: emptyFC() },
+      'manual-wpts': { type: 'geojson', data: emptyFC() },
+      'wizard-preview': { type: 'geojson', data: emptyFC() },
+    },
+    layers: [
+      bg,
+      rasterDark,
+      rasterLight,
+      rasterSat,
+      rasterTerrain,
+      darkGreens,
+      darkWater,
+      worldLandFill,
+      worldLandLine,
       // Coverage rings (docks + tower sites; urban 3 km / rural 5 km). Cool
       // cyan reads as "sensor reach", deliberately avoiding brand red
       // (reserved for brand + alert). coverage-fill and coverage-line-hi
@@ -173,47 +268,9 @@ export function buildStyle(): StyleSpecification {
           'line-width': 1,
         },
       },
-      {
-        id: 'uae-border-line',
-        type: 'line',
-        source: 'uae',
-        paint: {
-          'line-color': 'rgba(125,134,151,.4)', // neutral steel — red is for alerts, not geography
-          'line-width': 1,
-          'line-dasharray': [2, 3],
-        },
-      },
-      {
-        id: 'uae-roads',
-        type: 'line',
-        source: 'uae-roads',
-        paint: {
-          'line-color': '#7d8697',
-          'line-opacity': 0.5,
-          'line-width': 0.8,
-        },
-      },
-      // Now that basemaps are _nolabels, uae-places is the only place
-      // naming on screen: slightly larger, with a halo so it reads on
-      // every basemap. applyPlaceLabelTheme() (Task 3) retints text/halo
-      // per basemap (dark vs light/terrain).
-      {
-        id: 'uae-places',
-        type: 'symbol',
-        source: 'uae-places',
-        layout: {
-          'text-field': ['upcase', ['get', 'name']] as ExpressionSpecification,
-          'text-font': ['Noto Sans Regular'],
-          'text-size': 11,
-          'text-letter-spacing': 0.3,
-        },
-        paint: {
-          'text-color': '#aeb6c4',
-          'text-halo-color': '#0a0b0e',
-          'text-halo-width': 1.2,
-        },
-        minzoom: 5.5,
-      },
+      uaeBorderLine,
+      uaeRoads,
+      uaePlaces,
       // Breadcrumb history sits under the route lines: faint, non-competing.
       {
         id: 'drone-trails',
