@@ -103,7 +103,9 @@ describe('live sim binding (engine -> map sources)', () => {
     const drones = h.sources.get('drones')?.last
     expect(drones).not.toBeNull()
     for (const f of drones!.features) {
-      const [lon, lat] = (f.geometry as { coordinates: [number, number] }).coordinates
+      expect(f.geometry.type).toBe('Point')
+      if (f.geometry.type !== 'Point') continue // narrows the GeoJSON union
+      const [lon, lat] = f.geometry.coordinates
       expect(Number.isFinite(lon)).toBe(true)
       expect(Number.isFinite(lat)).toBe(true)
       expect(typeof f.properties?.heading).toBe('number')
@@ -126,7 +128,9 @@ describe('live sim binding (engine -> map sources)', () => {
     // twice, so this also proves drones are genuinely travelling, not hovering.
     expect(trails!.features.length).toBeGreaterThan(0)
     for (const f of trails!.features) {
-      const coords = (f.geometry as { coordinates: [number, number][] }).coordinates
+      expect(f.geometry.type).toBe('LineString')
+      if (f.geometry.type !== 'LineString') continue // narrows the GeoJSON union
+      const coords = f.geometry.coordinates
       expect(coords.length).toBeGreaterThanOrEqual(2)
       expect(coords.length).toBeLessThanOrEqual(40) // TRAIL_MAX_POINTS
     }
