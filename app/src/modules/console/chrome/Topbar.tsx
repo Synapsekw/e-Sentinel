@@ -29,14 +29,16 @@
 // actual behavior (opening the wizard / toggling the MISSIONS dropdown)
 // is Tasks 3 and 4's scope; until those land, the two buttons take
 // optional `onNewMission`/`onToggleMissions` props defaulting to no-ops so
-// this component compiles and reviews standing alone. #btn-media stays
-// disabled outright — Task 6 owns it.
+// this component compiles and reviews standing alone. #btn-media opens the
+// MEDIA library panel directly (panels.js:2520-2527) — it needs no
+// callback, since exiting capture modes goes through the same
+// registerCaptureExits registry selectEntity uses.
 
 import { useAppStore } from '@/shared/store'
 import type { TopMenuName } from '@/shared/store'
 import { DATA_DOCKS } from '@/modules/console/domain'
 import { useCountUp } from '@/modules/console/hud/useCountUp'
-import { clearSelection } from '@/modules/console/selection'
+import { clearSelection, openMediaLibrary } from '@/modules/console/selection'
 import { newMissionButtonState, missionsButtonState } from '@/modules/console/control/controlModel'
 import Clock from './Clock'
 import OfflineChip from '../OfflineChip'
@@ -180,8 +182,15 @@ export default function Topbar({
       >
         + NEW MISSION
       </button>
-      {/* Phase 1E: enabled once the MEDIA library panel lands. */}
-      <button className="tbtn" id="btn-media" type="button" title="MISSION MEDIA LIBRARY" disabled>
+      {/* panels.js:2520-2527 (wireTopbar's MEDIA handler): stands down any
+          capture mode, clears the selection and opens the media library. */}
+      <button
+        className="tbtn"
+        id="btn-media"
+        type="button"
+        title="MISSION MEDIA LIBRARY"
+        onClick={() => openMediaLibrary()}
+      >
         MEDIA
       </button>
       <button className="tbtn" id="btn-globe" type="button" onClick={onExitToOrbit}>

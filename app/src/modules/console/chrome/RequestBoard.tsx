@@ -24,6 +24,7 @@ import { EngineContext } from '@/modules/console/engine/EngineContext'
 import { MapContext } from '@/modules/console/map/MapContext'
 import type { Engine, FlightRequest, SimEvent } from '@/modules/console/domain'
 import { inCaptureMode, selectEntity } from '@/modules/console/selection'
+import { useAppStore } from '@/shared/store'
 import {
   REQ_PRI_CLASS,
   missionTypeLabel,
@@ -176,13 +177,14 @@ export default function RequestBoard({ engine: engineProp }: RequestBoardProps =
   const empty =
     buckets.pending.length === 0 && buckets.active.length === 0 && buckets.done.length === 0
 
-  // NEW row click (panels.js:1358-1361): jump the map to the customer site.
-  // The review panel itself is Phase 1E scope -- selection stays as-is,
-  // matching legacy's comment that a request is not a map entity.
+  // NEW row click (panels.js:1358-1361): jump the map to the customer site
+  // and open the review panel. The selection stays as-is, matching legacy's
+  // comment that a request is not a map entity -- the review panel rides on
+  // the panel registry alone, looked up by id.
   function handlePendingClick(req: FlightRequest): void {
-    if (inCaptureMode()) return
+    if (inCaptureMode() || !req.id) return
     if (map && Array.isArray(req.coords)) map.flyTo({ center: req.coords, zoom: 12.2 })
-    // Phase 1E: setRightPanel('request', req.id)
+    useAppStore.getState().setRightPanel({ mode: 'request', id: req.id })
   }
 
   // IN PROGRESS row click (panels.js:1362-1367): select the flying drone.
@@ -199,7 +201,8 @@ export default function RequestBoard({ engine: engineProp }: RequestBoardProps =
     if (inCaptureMode()) return
     const mission = requestMission(engine, req)
     if (!mission) return
-    // Phase 1E: openDebrief(mission)
+    useAppStore.getState().setSelection(null)
+    useAppStore.getState().setRightPanel({ mode: 'debrief', id: mission.id })
   }
 
   return (

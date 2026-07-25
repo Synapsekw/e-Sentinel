@@ -131,11 +131,35 @@ export function selectEntity(
 }
 
 // OPS button / globe-scene exit (panels.js:2504-2512, :2622-2629).
+// Legacy's OPS handler exited whichever capture mode held the map before
+// clearing (panels.js:2506-2507), so a stranded wizard/manual overlay could
+// never outlive the selection it belonged to. Same courtesy here, through
+// the registerCaptureExits registry.
 export function clearSelection(): void {
-  const { setSelection, setFollowDroneId, setRightPanel } = useAppStore.getState()
+  const { controlMode, setSelection, setFollowDroneId, setRightPanel } = useAppStore.getState()
+  if (controlMode === 'manual') captureExits.exitManual()
+  else if (controlMode === 'wizard') captureExits.exitWizard()
   setSelection(null)
   setFollowDroneId(null)
   setRightPanel({ mode: 'empty' })
+}
+
+// MEDIA button (panels.js:2520-2527): identical capture-mode/selection
+// teardown to clearSelection, but landing on the media library instead of
+// the ops digest.
+export function openMediaLibrary(): void {
+  clearSelection()
+  useAppStore.getState().setRightPanel({ mode: 'media' })
+}
+
+// openDebrief (panels.js:1085-1097): same teardown, landing on a mission's
+// debrief. Lives here rather than in panels/ so every entry point (the
+// DEBRIEF READY ticker chip, a MEDIA card, a DELIVERED request row, and
+// useDebriefWatch's auto-open) shares one implementation that stands down
+// manual control / the wizard first, exactly as legacy's did.
+export function openDebrief(missionId: string): void {
+  clearSelection()
+  useAppStore.getState().setRightPanel({ mode: 'debrief', id: missionId })
 }
 
 // A drone selection still "belongs" to a dock row (D-<dockId> -> dockId),

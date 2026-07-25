@@ -72,6 +72,13 @@ export interface TickerEvent {
   message: string
   level: 'info' | 'warn' | 'alert'
   droneId: string | null
+  // Non-null only on the DEBRIEF READY chip (panels.js:1109-1114), which
+  // legacy made clickable by handing pushEvent an `ev.onClick` closure that
+  // opened that mission's debrief. A store slice cannot carry a closure
+  // (it has to stay serialisable and referentially stable), so the mission
+  // id rides here instead and Ticker.tsx builds the handler from it — same
+  // behavior, no function in state. Defaults to null on every other event.
+  missionId?: string | null
 }
 
 // The shape a caller (tickerModel.ts's mapEngineEvent) supplies to

@@ -31,6 +31,7 @@ import { useEffect } from 'react'
 import type { Mission } from '@/modules/console/domain'
 import { useAppStore } from '@/shared/store'
 import { nowClockStr } from '@/modules/console/chrome/format'
+import { openDebrief } from '@/modules/console/selection'
 import { useOptionalEngine } from './hooks'
 import { computeVideoVariant } from './debriefModel'
 import type { DebriefMission } from './debriefModel'
@@ -50,32 +51,25 @@ function recordCompletedMission(mission: Mission): void {
   if (dm._debriefAt) return // already recorded (defensive; engine only emits COMPLETE once per mission)
   dm._debriefAt = new Date()
 
-  const {
-    sessionMissions,
-    userMissions,
-    pushSessionMission,
-    pushTickerEvent,
-    setSelection,
-    setRightPanel,
-  } = useAppStore.getState()
+  const { sessionMissions, userMissions, pushSessionMission, pushTickerEvent } =
+    useAppStore.getState()
 
   const priorOfType = sessionMissions.filter((m) => m.type === mission.type).length
   dm._videoVariant = computeVideoVariant(mission.type, priorOfType)
 
   pushSessionMission(mission)
 
-  // panels.js:1109-1114. TickerEvent (shared/store.ts) carries no `onClick`
-  // field the way legacy's pushEvent did, so the chip's copy/level/source
-  // are transcribed exactly but the click-through to openDebrief() is not
-  // wired here — that would require extending hud/Ticker.tsx's rendering,
-  // which is outside this task's file scope (not one of the seven files
-  // listed in this task's header comment set).
+  // panels.js:1109-1114. Legacy handed pushEvent an `ev.onClick` closure
+  // that opened this mission's debrief; the store cannot hold a closure, so
+  // `missionId` rides on the event instead and hud/Ticker.tsx builds the
+  // same handler from it (see TickerEvent's comment in shared/store.ts).
   pushTickerEvent({
     time: nowClockStr(),
     source: mission.dockId,
     level: 'info',
     message: 'DEBRIEF READY · ' + mission.id,
     droneId: null,
+    missionId: mission.id,
   })
 
   // panels.js:1116-1117: auto-open only for missions the operator
@@ -84,17 +78,12 @@ function recordCompletedMission(mission: Mission): void {
   // panel from whatever the operator is looking at.
   //
   // openDebrief (panels.js:1085-1091) also stands down manual control and
-  // the mission wizard first (EC2.control.exitManual()/exitWizard()) before
-  // swapping the panel. That handoff belongs to Tasks 2/3's hooks
-  // (control/useManualControl.ts, control/useWizard.ts) and this file
-  // cannot reach them without leaving Task 5's scope — Console.tsx (Task 8)
-  // is the one place all of those are already wired together, so a mission
-  // auto-opening its debrief while manual control or the wizard happens to
-  // be engaged on a *different* drone/mission is a gap this hook alone
-  // cannot close.
+  // the mission wizard first, which selection/selectEntity.ts's shared
+  // openDebrief() does via the registerCaptureExits registry — so a mission
+  // auto-opening its debrief while a capture mode is engaged on a different
+  // drone releases that mode cleanly instead of stranding its overlay.
   if (userMissions.includes(mission.id)) {
-    setSelection(null)
-    setRightPanel({ mode: 'debrief', id: mission.id })
+    openDebrief(mission.id)
   }
 }
 

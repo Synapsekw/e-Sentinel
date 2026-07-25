@@ -38,7 +38,7 @@
 // and mission-wizard (Task 3) hooks without either needing to call
 // useLiveLayers() itself.
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import MapView from './map/MapView'
 import BasemapChip from './map/BasemapChip'
 import GlobeOverlay from './globe/GlobeOverlay'
@@ -54,8 +54,23 @@ import Topbar from './chrome/Topbar'
 import Sidebar from './chrome/Sidebar'
 import TopMenus from './chrome/TopMenus'
 import RightPanel from './panels'
-import { useMapSelection, useFollowDriver, clearSelection } from './selection'
+import ManualBanner from './control/ManualBanner'
+import { useManualControl } from './control/useManualControl'
+import { useWizard } from './control/useWizard'
+import { useCaptureKeys } from './control/useCaptureKeys'
+import { useCaptureMapClicks } from './control/useCaptureMapClicks'
+import { applyWizardClick } from './control/wizardModel'
+import useDebriefWatch from './panels/useDebriefWatch'
+import { useOptionalEngine } from './panels/hooks'
+import {
+  useMapSelection,
+  useFollowDriver,
+  useMapTrackInteractions,
+  clearSelection,
+  registerCaptureExits,
+} from './selection'
 import { useAppStore } from '@/shared/store'
+import type { LonLat } from './domain'
 
 // Calls the hooks that need useMap() (useGlobe, usePingDriver, useLiveLayers,
 // useMapSelection, useFollowDriver) and renders the globe overlay plus the
@@ -82,20 +97,64 @@ function ConsoleScene() {
   useLiveLayers(updater)
   useMapSelection()
   useFollowDriver()
+  useMapTrackInteractions()
+  useDebriefWatch()
+
+  // Phase 1E capture modes. Both hooks keep all their state in the store,
+  // so calling them here (as well as inside DroneTelemetryPanel/DockPanel/
+  // WizardPanel) yields the same session, not a second one.
+  const { exitManual } = useManualControl()
+  const { enterWizard, exitWizard } = useWizard()
+  const engine = useOptionalEngine()
+
+  // control.js:687-692 + :545-572 — a step-2 wizard click is a pure state
+  // transition, so the map-click hook routes straight into
+  // wizardModel.applyWizardClick and writes the result back to the store
+  // (useWizard's own effect then re-syncs the 'wizard-preview' source).
+  // applyWizardClick is a no-op outside step 2, so no extra guard here.
+  const onWizardClick = useCallback(
+    (lonlat: LonLat) => {
+      const { wizard, setWizard } = useAppStore.getState()
+      if (!wizard) return
+      setWizard(applyWizardClick(engine, wizard, lonlat))
+    },
+    [engine],
+  )
+  useCaptureMapClicks({ onWizardClick })
+  useCaptureKeys(exitManual, exitWizard)
+
+  // panels.js:2459-2466 — EC2.select stood down whichever capture mode held
+  // the map before switching entity. selectEntity() calls these through a
+  // module-level registry (selection/selectEntity.ts's registerCaptureExits)
+  // so no panel has to import the control hooks.
+  useEffect(() => {
+    registerCaptureExits({ exitManual, exitWizard })
+  }, [exitManual, exitWizard])
 
   const scene = useAppStore((s) => s.scene)
   const setOpenMenu = useAppStore((s) => s.setOpenMenu)
 
+  // control.js:842-846 (wireMissionsMenu): the trigger toggles its own
+  // dropdown. TopMenu's single `openMenu` store field is what guarantees
+  // only one dropdown is ever open (see TopMenu.tsx's header).
+  const toggleMissionsMenu = useCallback(() => {
+    const { openMenu, setOpenMenu: set } = useAppStore.getState()
+    set(openMenu === 'missions' ? null : 'missions')
+  }, [])
+
   // panels.js:2617-2629 (wireScene's globe-scene teardown): leaving the
-  // console scene stands down selection/FOLLOW/the right panel and closes
-  // any open top-menu dropdown, since #topbar's dropdowns portal to
-  // <body> and would otherwise hang open over the (hidden) globe scene.
+  // console scene stands down any capture mode, selection, FOLLOW and the
+  // right panel, and closes any open top-menu dropdown, since #topbar's
+  // dropdowns portal to <body> and would otherwise hang open over the
+  // (hidden) globe scene.
   useEffect(() => {
     if (scene !== 'console') {
+      exitManual()
+      exitWizard()
       clearSelection()
       setOpenMenu(null)
     }
-  }, [scene, setOpenMenu])
+  }, [scene, setOpenMenu, exitManual, exitWizard])
 
   return (
     <UpdaterContext.Provider value={updater}>
@@ -107,12 +166,19 @@ function ConsoleScene() {
       />
       <BasemapChip />
       <ConsoleChrome
-        topbar={<Topbar onExitToOrbit={exitToOrbit} />}
+        topbar={
+          <Topbar
+            onExitToOrbit={exitToOrbit}
+            onNewMission={() => enterWizard(null)}
+            onToggleMissions={toggleMissionsMenu}
+          />
+        }
         sidebar={<Sidebar />}
         rightPanel={<RightPanel />}
         ticker={<Ticker />}
       />
       <TopMenus />
+      <ManualBanner />
     </UpdaterContext.Provider>
   )
 }

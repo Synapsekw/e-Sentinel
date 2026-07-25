@@ -1,0 +1,101 @@
+/* Ported (Phase 1E / Task 6) from assets/css/console.css:368-383
+   (.media-grid/.media-card/.media-card-*) and :498-501 (.media-filters/
+   .media-card-poster/.media-card[hidden]). Scoped to its own file per this
+   task's scope fence (panels/panels.css is another lane's file) and
+   imported directly from MediaPanel.tsx. `.fchip`/`.fchip.on` and
+   `.state-chip` already ship from chrome/chrome.css and panels/panels.css
+   respectively (both already loaded whenever this panel can render), so
+   they are reused here rather than redefined. */
+
+.media-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.media-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 11px;
+  color: var(--txt);
+}
+.media-card:hover {
+  border-color: var(--red);
+  color: #fff;
+}
+.media-card[hidden] {
+  display: none;
+}
+.media-card-type {
+  color: var(--dim);
+}
+.media-card-id {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #fff;
+  letter-spacing: 0.03em;
+}
+.media-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.media-card-meta > span:first-child {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+.media-card-meta .state-chip {
+  margin-top: 0;
+  font-size: 8px;
+  padding: 3px 8px;
+}
+.media-card-analytics {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  color: var(--txt);
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.media-card-poster {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 7px;
+  background: #000;
+  pointer-events: none;
+}
+/* Fallback tile (Task 6, not in legacy): stands in for the poster <video>
+   when VIDEO_MANIFEST has no clip for the mission type, or when the one it
+   names 404s (only videos/security-01..08.mp4 exist on disk — see
+   mediaModel.ts's mediaPosterSrc / MediaPanel.tsx's MediaCardPoster). A
+   plain dark tile with a faint centered glyph reads as "no footage" rather
+   than a broken-image/broken-video icon. */
+.media-card-poster-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+}
+.media-card-poster-fallback::after {
+  content: '\25A1';
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.18);
+}

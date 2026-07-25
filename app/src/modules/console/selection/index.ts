@@ -5,9 +5,12 @@
 export {
   selectEntity,
   clearSelection,
+  openMediaLibrary,
+  openDebrief,
   selectedDockId,
   inCaptureMode,
   registerCaptureExits,
 } from './selectEntity'
 export { useMapSelection } from './useMapSelection'
 export { useFollowDriver } from './useFollowDriver'
+export { useMapTrackInteractions, focusTrack } from './useMapTrackInteractions'
