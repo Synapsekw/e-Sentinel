@@ -1,0 +1,800 @@
+/* Ported (Phase 1D / Task 2) from assets/css/console.css. Covers the console
+   shell: topbar (+ its .chip family), sidebar, collapsible panel toggles,
+   top-menu dropdowns, dock list and request board. Transcribed ranges:
+   :64-155 (chrome-in, #topbar, .t-brand, #clock, .tbtn, #side, #rpanel,
+   #rpanel-body, collapse transitions, .panel-toggle, bright-basemap panel
+   backing), :154-196 (.live-net, .filters, #docklist, .empty-note),
+   :432-449 (.missions-menu/.mm-*), :503-519 (dock-tools search/sort),
+   :536-553 (topbar responsive drop-out), :555-583 (flight requests sidebar
+   list), :619-641 (topbar dropdown triggers + menu variants), :643-654
+   (request board sections/progress/resolved rows).
+
+   Also pulls in the `.chip`/`.chip.ok-chip`/`.chip.warn`/`@keyframes blink`
+   base (console.css:50-62), one section above the cited :64-155 start —
+   Task 4's Topbar and the OfflineChip rewrite both render `.chip`/`.chip
+   warn` elements and rely on this file to supply the look.
+
+   Deliberately NOT transcribed here:
+   1. Rules whose legacy home was console.css but whose subject now lives in
+      another app module: `.tick-ev*`/#ticker stay in hud/hud.css (Task 7
+      moves #ticker back to its real left:318px;right:340px inset there),
+      #basemap-loading stays in map/map.css, #globe-* stays in globe/globe.css.
+   2. `.panel`/`.panel h4` and `.stats`/`.st` (console.css:154-155,165-168)
+      already live in hud/hud.css (Phase 1C) — not duplicated here, so there
+      stays exactly one copy of each.
+   3. `.rp-*`, `.tele-*`, `.fpv-*`, `.digest-*`, `.dg-*`, `.state-chip`,
+      `.batt-bar` belong to panels/panels.css (Task 6/7), not the shell.
+   4. Rules that style the Phase 1E-deferred debrief panel, MEDIA library,
+      flight-request review panel and detection-track review panel
+      (console.css's "debrief route snapshot", "MEDIA library", "Request
+      review panel" and "DETECTION TRACKS" sections) are left unported —
+      those features don't exist yet in this phase (see the plan's Global
+      Constraints); porting their CSS now would be dead weight. */
+
+.chrome-in {
+  transition: opacity 0.2s ease;
+}
+
+/* ---------- chip family (topbar chips) ---------- */
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 6px 12px;
+  color: var(--txt);
+  white-space: nowrap;
+}
+.chip[hidden] {
+  display: none;
+}
+.chip b {
+  color: #fff;
+  font-weight: 700;
+}
+.chip .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
+  animation: blink 2s infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+.chip.ok-chip {
+  color: var(--ok);
+  border-color: rgba(74, 222, 128, 0.3);
+}
+.chip.warn {
+  color: var(--amber);
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+}
+.chip.warn .dot {
+  background: var(--amber);
+  box-shadow: 0 0 8px var(--amber);
+}
+
+/* ---------- top bar ---------- */
+#topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  background: var(--chrome);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  border-bottom: 1px solid var(--line);
+}
+#topbar[hidden] {
+  display: none;
+}
+.t-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.t-logo {
+  height: 23px;
+  width: auto;
+  display: block;
+}
+.t-brand .ttl {
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: #fff;
+  white-space: nowrap;
+}
+.t-brand .lbl {
+  white-space: nowrap;
+}
+#topbar .sp {
+  flex: 1;
+}
+#clock {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  color: var(--txt);
+  white-space: nowrap;
+}
+#clock span {
+  color: var(--dim);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+}
+
+.tbtn {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--txt);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 7px 13px;
+  white-space: nowrap;
+}
+.tbtn:hover:not(:disabled) {
+  border-color: var(--red);
+  color: #fff;
+}
+.tbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------- layout: sidebar / right panel ---------- */
+#side {
+  position: fixed;
+  top: 56px;
+  bottom: 0;
+  left: 0;
+  width: 318px;
+  z-index: 800;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+#side[hidden] {
+  display: none;
+}
+#rpanel {
+  position: fixed;
+  top: 56px;
+  bottom: 0;
+  right: 0;
+  width: 340px;
+  z-index: 800;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+#rpanel[hidden] {
+  display: none;
+}
+#rpanel-body {
+  padding: 14px;
+}
+
+/* ---------- collapsible side panels ---------- */
+/* Each panel slides off its own edge on collapse; a small glass handle tab
+   stays pinned to the panel's inner edge so it's always reachable, and it
+   rides along to the screen edge when collapsed. The ticker (which is inset by
+   the two panel widths) reflows to fill whatever space a collapse frees up. */
+#side,
+#rpanel {
+  transition: transform 0.28s ease;
+}
+body.side-collapsed #side {
+  transform: translateX(-100%);
+}
+body.rpanel-collapsed #rpanel {
+  transform: translateX(100%);
+}
+
+.panel-toggle {
+  position: fixed;
+  z-index: 850;
+  top: 50%;
+  width: 20px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--chrome);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  transition:
+    left 0.28s ease,
+    right 0.28s ease,
+    opacity 0.2s ease,
+    color 0.15s ease;
+}
+.panel-toggle[hidden] {
+  display: none;
+}
+.panel-toggle:hover {
+  color: #fff;
+  border-color: var(--red);
+}
+/* Chevron drawn from two borders of a small box, rotated to point the right
+   way; it flips 180deg between the open (collapse) and collapsed (expand)
+   states. currentColor keeps it in step with the button's hover color. */
+.panel-toggle i {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transition: transform 0.28s ease;
+}
+#side-toggle {
+  left: 318px;
+  transform: translateY(-50%);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+}
+#rpanel-toggle {
+  right: 340px;
+  transform: translateY(-50%);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+}
+#side-toggle i {
+  transform: translateX(1px) rotate(135deg);
+} /* points left = collapse */
+#rpanel-toggle i {
+  transform: translateX(-1px) rotate(-45deg);
+} /* points right = collapse */
+body.side-collapsed #side-toggle {
+  left: 0;
+}
+body.rpanel-collapsed #rpanel-toggle {
+  right: 0;
+}
+body.side-collapsed #side-toggle i {
+  transform: translateX(-1px) rotate(-45deg);
+} /* points right = expand */
+body.rpanel-collapsed #rpanel-toggle i {
+  transform: translateX(1px) rotate(135deg);
+} /* points left = expand */
+
+/* Bright-basemap legibility: #side / #rpanel are near-transparent glass by
+   design (var(--panel)) so the dark map shows through. Over the light, sat and
+   terrain basemaps that glass leaves the light UI text unreadable, so the
+   panels take an opaque dark backing there. Dark mode keeps the original look;
+   the inner translucent-white .panel/.chip/.st tiles read the same over it. */
+:root[data-maplayer='light'] #side,
+:root[data-maplayer='light'] #rpanel,
+:root[data-maplayer='sat'] #side,
+:root[data-maplayer='sat'] #rpanel,
+:root[data-maplayer='terrain'] #side,
+:root[data-maplayer='terrain'] #rpanel {
+  background: var(--chrome);
+}
+
+/* ---------- sidebar tiles ---------- */
+.live-net {
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.live-net:hover {
+  border-color: var(--red);
+}
+.ln-summary {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--txt);
+}
+.ln-summary b {
+  font-weight: 700;
+}
+.ln-ok {
+  color: var(--ok);
+}
+.ln-amber {
+  color: var(--amber);
+}
+.ln-red {
+  color: var(--red);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fchip {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  padding: 5px 10px;
+}
+.fchip.on {
+  background: var(--redd);
+  border-color: var(--redd);
+  color: #fff;
+}
+.fchip:hover:not(.on) {
+  border-color: var(--red);
+  color: #fff;
+}
+
+#docklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+.dock-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  background: var(--panel2);
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: var(--txt);
+}
+.dock-row:hover {
+  border-color: var(--line);
+}
+.dock-row.sel {
+  border-color: var(--red);
+  background: rgba(255, 90, 90, 0.08);
+}
+.dock-row .sd {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ok);
+}
+.dock-row .sd.alert {
+  background: var(--red);
+  box-shadow: 0 0 8px var(--red);
+}
+.dock-row .di {
+  flex: 1;
+  min-width: 0;
+}
+.dock-row .di b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #fff;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dock-row .di i {
+  display: block;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+  margin-top: 2px;
+}
+.dock-row .dr {
+  text-align: right;
+  flex: none;
+}
+.dock-row .dr .model {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+}
+.dock-row .dr .batt {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ok);
+  margin-top: 2px;
+}
+.empty-note {
+  padding: 10px 2px;
+}
+
+/* Predefined-mission dropdown (top bar MISSIONS button) — one-click launch.
+   Also the shared shell for every top-menu dropdown (DOCKS/FILTER/LAYERS
+   reuse .missions-menu as-is, per console.css:625-626). */
+.missions-menu {
+  position: fixed;
+  z-index: 950;
+  min-width: 260px;
+  background: var(--chrome);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+.missions-menu[hidden] {
+  display: none;
+}
+.mm-head {
+  padding: 8px 10px 6px;
+}
+.mm-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 9px 10px;
+  color: var(--txt);
+  text-align: left;
+}
+.mm-item:hover,
+.mm-item:focus-visible {
+  background: var(--panel2);
+  outline: none;
+}
+.mm-label {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+}
+.mm-item:hover .mm-label {
+  color: #fff;
+}
+.mm-pat {
+  white-space: nowrap;
+  color: var(--dim);
+}
+.mm-item:hover .mm-pat {
+  color: var(--red);
+}
+
+/* ---------- dock list search + sort (dock-tools) ---------- */
+#dock-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.dock-search {
+  width: 100%;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  outline: none;
+}
+.dock-search::placeholder {
+  color: var(--dim);
+  letter-spacing: 0.14em;
+}
+.dock-search:focus {
+  border-color: var(--red);
+}
+.dock-sort {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.dock-sort button {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  padding: 6px 0;
+}
+.dock-sort button.on {
+  background: var(--redd);
+  color: #fff;
+}
+.dock-sort button:hover:not(.on) {
+  color: #fff;
+}
+.dock-group {
+  margin: 8px 2px 2px;
+  letter-spacing: 0.18em;
+}
+#docklist .dock-group:first-child {
+  margin-top: 2px;
+}
+
+/* Topbar overflow discipline: nothing may squeeze or clip mid-glyph — every
+   item keeps its natural width and lower-value items drop out first as the
+   viewport narrows (subtitle, then the static DOCKS count, then MEDIA). */
+#topbar > * {
+  flex: none;
+}
+#topbar .sp {
+  flex: 1 1 0;
+  min-width: 8px;
+}
+@media (max-width: 1720px) {
+  #topbar {
+    gap: 10px;
+  }
+  .t-brand .lbl {
+    display: none;
+  }
+}
+@media (max-width: 1500px) {
+  #btn-docks {
+    display: none;
+  }
+}
+@media (max-width: 1340px) {
+  /* GRID ONLINE is decorative reassurance; MEDIA is the library's only
+     entry point, so the chip yields first on narrow projectors. */
+  .ok-chip {
+    display: none;
+  }
+  #topbar {
+    gap: 8px;
+  }
+}
+
+/* ---------- FLIGHT REQUESTS (left panel, customer tasking) ---------- */
+.side-requests h4.lbl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.req-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 99px;
+  background: rgba(251, 191, 36, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: var(--amber);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+#reqlist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.req-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--panel2);
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.req-row:hover {
+  border-color: var(--line);
+}
+.req-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.req-pri {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  padding: 2px 6px;
+  border-radius: 99px;
+  border: 1px solid transparent;
+  text-transform: uppercase;
+}
+.req-pri.urgent {
+  background: rgba(251, 191, 36, 0.16);
+  border-color: rgba(251, 191, 36, 0.5);
+  color: var(--amber);
+}
+.req-pri.priority {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #e8ecf4;
+}
+.req-pri.routine {
+  border-color: var(--line);
+  color: var(--dim);
+}
+.req-cust {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #fff;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.req-age {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+}
+.req-line {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--txt);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- topbar reorg: dropdown triggers + shared menus ---------- */
+/* DOCKS topbar chip-button (native button carrying .chip look) + caret */
+.chip-btn {
+  cursor: pointer;
+  font: inherit;
+}
+.chip-btn:hover {
+  border-color: var(--red);
+  color: #fff;
+}
+.chip-btn .caret,
+.tbtn .caret {
+  color: var(--dim);
+  font-size: 9px;
+}
+
+/* shared topbar dropdowns — each menu carries BOTH .missions-menu (glass,
+   border, radius, z-index — reused as-is) and .top-menu + a specific class */
+.top-menu {
+  min-width: 240px;
+}
+
+/* DOCKS dropdown: fixed width, scrollable dock network */
+.docks-menu {
+  width: 330px;
+  max-height: 65vh;
+  overflow-y: auto;
+  padding: 10px;
+}
+.docks-menu .mm-head {
+  padding: 2px 2px 8px;
+}
+
+/* FILTER dropdown (compact chip sizing re-homed from the removed dock panel) */
+.filter-menu {
+  max-width: 280px;
+  padding: 10px;
+}
+.filter-menu .filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.filter-menu .fchip {
+  font-size: 8.5px;
+  padding: 3px 7px;
+  letter-spacing: 0.08em;
+}
+
+/* LAYERS dropdown: checkmark column */
+.layers-menu {
+  min-width: 200px;
+}
+.mm-check {
+  flex: none;
+  color: var(--red);
+  font-size: 11px;
+  min-width: 14px;
+  text-align: right;
+}
+
+/* ---------- REQUEST BOARD: sections, progress + resolved rows ---------- */
+#reqboard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.req-sec[hidden] {
+  display: none;
+}
+.req-sec-h {
+  letter-spacing: 0.18em;
+  margin-bottom: 6px;
+}
+.req-sec-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.req-bar {
+  display: block;
+  height: 3px;
+  margin-top: 6px;
+  border-radius: 99px;
+  background: var(--panel2);
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.req-bar i {
+  display: block;
+  height: 100%;
+  background: var(--red);
+  border-radius: 99px;
+  transition: width 0.6s linear;
+}
+.req-eta {
+  color: var(--txt);
+}
+.req-done .req-age {
+  color: var(--ok);
+}
+.req-declined {
+  opacity: 0.55;
+}
+.req-declined .req-age {
+  color: var(--dim);
+}
+.req-inert {
+  cursor: default;
+  opacity: 0.75;
+}
+.req-inert:hover {
+  border-color: transparent;
+}

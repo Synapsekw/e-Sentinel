@@ -1,0 +1,479 @@
+/* Ported (Phase 1D / Task 7) from assets/css/console.css:197-296 (right
+   panel content: .rp-*, .batt-bar, .state-chip, .rp-actions, .tele-*,
+   .fpv-*), :473-492 (ops digest: .digest-*, .dg-*), :594-595
+   (.state-chip.steel / .dim) and :609-617 (button.dg-det-track). One
+   deliberate addition outside those cited ranges: the `.batt-bar i`
+   transition from console.css:522 ("battery bar width tween") — it is a
+   `.batt-bar` rule (this file's territory) that the cited ranges happen to
+   miss, and dropping it would visibly break the battery bar's animated
+   width change on DockPanel/DronePanel's periodic refresh.
+   Imported once, from RightPanel.tsx (Vite bundles CSS per import). */
+
+/* ---------- right panel content ---------- */
+.rp-id {
+  font-family: var(--mono);
+  font-size: 16px;
+  color: #fff;
+  letter-spacing: 0.03em;
+}
+.rp-name {
+  font-size: 13px;
+  color: var(--txt);
+  margin-top: 2px;
+}
+.rp-emirate {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-top: 6px;
+}
+.rp-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.rp-kv .k {
+  color: var(--dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 9.5px;
+}
+.rp-kv .v {
+  color: #fff;
+}
+.batt-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel2);
+  overflow: hidden;
+  margin-top: 8px;
+}
+.batt-bar i {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+  border-radius: 3px;
+  transition: width 0.6s ease; /* console.css:522 */
+}
+.state-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ok);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: 99px;
+  padding: 5px 11px;
+}
+.state-chip.amber {
+  color: var(--amber);
+  border-color: rgba(251, 191, 36, 0.3);
+}
+.state-chip.red {
+  color: var(--red);
+  border-color: rgba(255, 90, 90, 0.3);
+}
+.state-chip.steel {
+  color: #c3cede;
+  border-color: rgba(195, 206, 222, 0.35);
+}
+.state-chip.dim {
+  color: var(--dim);
+  border-color: var(--line);
+}
+.rp-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.rp-actions button {
+  flex: 1;
+  border-radius: 9px;
+  padding: 11px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.rp-actions .primary {
+  background: var(--redd);
+  border: none;
+  color: #fff;
+}
+.rp-actions .primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--redd), white 12%);
+}
+.rp-actions .primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: var(--panel2);
+  color: var(--dim);
+}
+.rp-actions .ghost {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--txt);
+}
+.rp-actions .ghost:hover:not(:disabled) {
+  border-color: var(--red);
+  color: #fff;
+}
+.rp-actions .ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: var(--dim);
+}
+.rp-actions .ghost.on {
+  border-color: var(--red);
+  color: #fff;
+  background: rgba(255, 90, 90, 0.1);
+}
+.rp-empty {
+  padding: 14px;
+  font-size: 12.5px;
+  color: var(--txt);
+  line-height: 1.7;
+}
+
+/* ---------- drone telemetry panel ---------- */
+.rp-mission {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  color: var(--txt);
+  text-transform: uppercase;
+}
+
+.tele-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 7px;
+  margin-top: 14px;
+}
+.tele-cell {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 9px;
+}
+.tele-cell .tk {
+  display: block;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+.tele-cell .tv {
+  display: block;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tele-cell[data-tele='link'] .tv {
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--txt);
+}
+.tele-cell[data-batt-level='ok'] .tv {
+  color: var(--ok);
+}
+.tele-cell[data-batt-level='amber'] .tv {
+  color: var(--amber);
+}
+.tele-cell[data-batt-level='red'] .tv {
+  color: var(--red);
+}
+
+/* FPV placeholder frame — deliberately restrained: thin hairlines only,
+   no neon glow. A 16:9 dark viewport with a reticle box + OSD-style
+   corner readouts, matching the reference video chrome without the gamer
+   theatrics. */
+.fpv-frame {
+  position: relative;
+  margin-top: 14px;
+  aspect-ratio: 16 / 9;
+  border-radius: 9px;
+  overflow: hidden;
+  background: linear-gradient(165deg, #0e1013, #07080a);
+  border: 1px solid var(--line);
+}
+/* Live mission downlink fills the frame beneath the HUD overlay spans. */
+.fpv-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  background: #07080a;
+}
+.fpv-frame.live {
+  border-color: rgba(255, 90, 90, 0.35);
+}
+/* Standby state shown before the drone reaches its cruising area. */
+.fpv-standby {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+  animation: blink 1.8s infinite;
+  z-index: 1;
+}
+.fpv-frame.live .fpv-standby {
+  display: none;
+}
+.fpv-reticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 58px;
+  height: 58px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 90, 90, 0.35);
+  border-radius: 2px;
+}
+.fpv-reticle .cross {
+  position: absolute;
+  background: rgba(255, 90, 90, 0.3);
+}
+.fpv-reticle .cross.h {
+  top: 50%;
+  left: -13px;
+  right: -13px;
+  height: 1px;
+  transform: translateY(-50%);
+}
+.fpv-reticle .cross.v {
+  left: 50%;
+  top: -13px;
+  bottom: -13px;
+  width: 1px;
+  transform: translateX(-50%);
+}
+.fpv-rec {
+  position: absolute;
+  top: 8px;
+  left: 9px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--red);
+}
+.fpv-rec i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: blink 1.2s infinite;
+}
+.fpv-eo {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.5);
+}
+.fpv-hdg {
+  position: absolute;
+  left: 9px;
+  bottom: 22px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.72);
+}
+.fpv-alt {
+  position: absolute;
+  left: 9px;
+  bottom: 11px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.72);
+}
+.fpv-clock {
+  position: absolute;
+  right: 9px;
+  bottom: 11px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.72);
+}
+.fpv-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  text-align: center;
+  padding: 3px 0;
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.32);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* ---------- OPS DIGEST (default right panel) ---------- */
+.digest-stats {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #fff;
+  margin-top: 10px;
+}
+.digest-missions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.digest-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  text-align: left;
+  background: var(--panel2);
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 9px 10px;
+  color: var(--txt);
+}
+.digest-row:hover {
+  border-color: var(--line);
+}
+.dg-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.dg-type {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  color: #fff;
+}
+.dg-eta {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.dg-id {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+.dg-prog {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.dg-prog i {
+  display: block;
+  height: 100%;
+  background: #38bdf8;
+  border-radius: 2px;
+  transition: width 0.9s linear;
+}
+.digest-dets {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 10px;
+}
+.dg-det {
+  display: flex;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--txt);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.dg-det .tt {
+  color: var(--dim);
+  flex: none;
+}
+.dg-det .src {
+  font-weight: 700;
+  color: #fff;
+  flex: none;
+}
+.dg-det .msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Ops-digest detection rows that link to a live track: button semantics */
+button.dg-det-track {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 3px;
+}
+button.dg-det-track:hover,
+button.dg-det-track:focus-visible {
+  background: rgba(251, 191, 36, 0.08);
+  outline: none;
+}
+button.dg-det-track:hover .msg,
+button.dg-det-track:focus-visible .msg {
+  color: var(--amber);
+}
+
+/* Manual-control alt-nudge row (console.css:305-306). `.rp-actions` sets
+   `display:flex`, which would otherwise beat the `[hidden]` attribute's UA
+   `display:none` and leave the row visible outside manual control, so the
+   explicit `[hidden]` rule below is load-bearing, not decorative. The row
+   itself stays inert until Phase 1E lands manual control. */
+.rp-alt-row {
+  align-items: center;
+}
+.rp-alt-row[hidden] {
+  display: none;
+}

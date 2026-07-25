@@ -11,4 +11,20 @@
   --ok: #4ade80;
   --sans: 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
   --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, Menlo, monospace;
+  /* Frosted-glass backing for chrome surfaces (topbar/ticker/side/rpanel),
+     driven with a matching backdrop blur. Dark map: the .82 tint over the
+     near-black basemap already reads as subtle glass. Bright basemaps
+     (light/sat/terrain) need a *dark* translucent tint instead of the white
+     glass the panels use by default — enough to keep light UI text legible,
+     but still translucent (with a stronger blur) so the frosted map shows
+     through and the glass look stays consistent across every mode. Keyed off
+     the data-maplayer attribute map.js sets on <html> when the layer changes. */
+  --chrome: rgba(10, 11, 14, 0.82);
+  --chrome-blur: blur(10px);
+}
+:root[data-maplayer='light'],
+:root[data-maplayer='sat'],
+:root[data-maplayer='terrain'] {
+  --chrome: rgba(10, 11, 14, 0.7);
+  --chrome-blur: blur(18px);
 }

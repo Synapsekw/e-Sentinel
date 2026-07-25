@@ -1,44 +1,24 @@
-// Ported (Phase 1B / Task 5) from the legacy `#offline-chip` usage
-// (console.html:33, `.chip.warn` in assets/css/console.css:50-62, toggled
-// by EC2.setOffline at assets/js/ui/map.js:923). Only the module wiring
-// changed: legacy created one `.chip.warn` div in the real topbar and
-// toggled its `hidden` attribute from EC2.setOffline; here the chip reads
-// the store's `offline` field directly (useOffline.ts is the single place
-// that now calls setOffline) and hides itself declaratively. Task 5's
-// console chrome has no real topbar yet (Phase 1D owns that), so this
-// renders as a small fixed pill rather than sitting inline among topbar
-// chips — the copy and warn styling are transcribed, the layout is new.
+// Ported from the legacy `#offline-chip` usage (console.html:33, `.chip.warn`
+// in assets/css/console.css:50-62, toggled by EC2.setOffline at
+// assets/js/ui/map.js:923).
+//
+// Phase 1D / Task 4 rewrite: this now renders inline as one of the real
+// topbar chips (Topbar.tsx places it between #c-alerts and the `.sp`
+// spacer, exactly where console.html:33 puts it), instead of the fixed-pill
+// standalone placeholder Phase 1B shipped before the real topbar existed.
+// The `.chip`/`.chip.warn` look now comes entirely from chrome/chrome.css
+// (Task 2); no inline `style` object is needed here anymore. The chip stays
+// mounted (matching legacy's real DOM node) and toggles the `hidden`
+// attribute rather than unmounting, so chrome.css's `.chip[hidden]` selector
+// does the hiding exactly as legacy's `chip.hidden = ...` did.
 
 import { useAppStore } from '@/shared/store'
 
 export default function OfflineChip() {
   const offline = useAppStore((s) => s.offline)
 
-  if (!offline) return null
-
   return (
-    <div
-      id="offline-chip"
-      style={{
-        position: 'fixed',
-        top: 16,
-        right: 16,
-        zIndex: 900,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 7,
-        fontFamily: 'var(--mono)',
-        fontSize: 10,
-        letterSpacing: '0.14em',
-        textTransform: 'uppercase',
-        color: 'var(--amber)',
-        background: 'rgba(251, 191, 36, 0.08)',
-        border: '1px solid rgba(251, 191, 36, 0.4)',
-        borderRadius: 99,
-        padding: '6px 12px',
-        whiteSpace: 'nowrap',
-      }}
-    >
+    <div className="chip warn" id="offline-chip" hidden={!offline}>
       OFFLINE MODE · VECTOR MAP
     </div>
   )

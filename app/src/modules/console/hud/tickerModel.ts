@@ -19,6 +19,11 @@ import type { TickerEvent, TickerEventInput } from '@/shared/store'
 
 export type TickerEventLevel = TickerEvent['level']
 
+// Canonical implementation moved to chrome/format.ts (Phase 1D Task 1) so
+// there is exactly one copy; re-exported here so every existing import of
+// nowClockStr from this module keeps working.
+export { nowClockStr } from '@/modules/console/chrome/format'
+
 // main.js:26-31. The engine's own event.level already carries 'alert'/'warn'
 // for forced-RTB / dock-fault / advisory events; anything else (including
 // engine levels this port doesn't otherwise special-case, e.g. 'debug')
@@ -43,10 +48,6 @@ function droneIdFromSource(source: string): string | null {
 // seconds since engine start, not a clock reading), formatted HH:MM:SS. The
 // caller supplies `clock` as a function (rather than mapEngineEvent calling
 // `new Date()` itself) purely so the mapping stays deterministic/testable.
-export function nowClockStr(): string {
-  return new Date().toLocaleTimeString('en-GB', { hour12: false })
-}
-
 export function mapEngineEvent(ev: SimEvent, clock: () => string): TickerEventInput {
   return {
     time: clock(),

@@ -76,6 +76,7 @@ export interface Engine {
   _requestNextS: number
   _subscribers: ((ev: SimEvent) => void)[]
   onEvent(cb: (ev: SimEvent) => void): (ev: SimEvent) => void
+  offEvent(cb: (ev: SimEvent) => void): void
   tick(dt: number): void
   createMission(spec: MissionSpec): Mission
   launchPreset(type: MissionType, opts?: LaunchPresetOpts): Mission
@@ -468,6 +469,14 @@ function create(opts?: CreateOpts): Engine {
   engine.onEvent = function (cb) {
     engine._subscribers.push(cb)
     return cb
+  }
+  // Counterpart to onEvent. Legacy never needed one (subscribers lived for
+  // the page lifetime); React components mount and unmount, so subscribers
+  // must be removable by identity rather than each caller splicing
+  // `_subscribers` itself.
+  engine.offEvent = function (cb) {
+    const i = engine._subscribers.indexOf(cb)
+    if (i !== -1) engine._subscribers.splice(i, 1)
   }
 
   // ---- mission lifecycle ----

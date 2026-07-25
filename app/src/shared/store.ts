@@ -57,6 +57,32 @@ export function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
   return next.length > cap ? next.slice(0, cap) : next
 }
 
+// Replaces legacy's setRightPanel(mode, data) argument pair (panels.js's
+// module-level right-panel state) — the panel now stores an id, not an
+// entity object, so every render reads live engine state (panels.js's
+// renderRequestPanel already did this deliberately, panels.js:1376-1380;
+// applying it uniformly is the one intentional improvement in Phase 1D).
+// Phase 1E widens this union to add 'request' | 'track' | 'debrief' |
+// 'media' | 'wizard' modes.
+export type RightPanelState =
+  | { mode: 'empty' }
+  | { mode: 'dock'; id: string }
+  | { mode: 'drone'; id: string }
+  | { mode: 'site'; id: string }
+
+// The 11 dock-list filter chips (panels.js:1950 FILTER_KEYS), replacing
+// legacy's module-level `currentFilter` (panels.js:9).
+export type FilterKey =
+  'ALL' | 'AUH' | 'DXB' | 'SHJ' | 'AJM' | 'UAQ' | 'RAK' | 'FUJ' | 'AAN' | 'FLYING' | 'ALERTS'
+
+// Dock-list sort mode (panels.js:2020-2047's sort segment), replacing
+// legacy's module-level `dockSort` (panels.js:27).
+export type DockSort = 'ID' | 'BATT' | 'STATE'
+
+// The three top-menu dropdowns (DOCKS/FILTER/LAYERS), replacing legacy's
+// implicit "which .top-menu has .open" DOM state (panels.js:1863-1936).
+export type TopMenuName = 'docks' | 'filter' | 'layers'
+
 export interface AppState {
   scene: Scene
   layer: MapLayer
@@ -66,6 +92,21 @@ export interface AppState {
   followDroneId: string | null
   stats: GridStats
   tickerEvents: TickerEvent[]
+  // Right-panel mode (replaces legacy's setRightPanel state, panels.js's
+  // module scope).
+  rightPanel: RightPanelState
+  // Dock-list filter/search/sort (replaces legacy's `currentFilter`
+  // panels.js:9, `dockSearch` panels.js:26, `dockSort` panels.js:27).
+  dockFilter: FilterKey
+  dockSearch: string
+  dockSort: DockSort
+  // Left/right panel collapse (replaces legacy's `body.side-collapsed` /
+  // `body.rpanel-collapsed` classes, panels.js:2568-2585).
+  sideCollapsed: boolean
+  rpanelCollapsed: boolean
+  // Which top-menu dropdown is open, if any (replaces legacy's DOM-tracked
+  // open .top-menu, panels.js:1863-1936).
+  openMenu: TopMenuName | null
   setScene: (scene: Scene) => void
   setLayer: (layer: MapLayer) => void
   setOffline: (offline: boolean) => void
@@ -74,6 +115,13 @@ export interface AppState {
   setFollowDroneId: (followDroneId: string | null) => void
   setStats: (stats: GridStats) => void
   pushTickerEvent: (ev: TickerEventInput) => void
+  setRightPanel: (rightPanel: RightPanelState) => void
+  setDockFilter: (dockFilter: FilterKey) => void
+  setDockSearch: (dockSearch: string) => void
+  setDockSort: (dockSort: DockSort) => void
+  toggleSideCollapsed: () => void
+  toggleRpanelCollapsed: () => void
+  setOpenMenu: (openMenu: TopMenuName | null) => void
 }
 
 // Module-scoped, monotonic — deliberately NOT Date.now()/Math.random() (the
@@ -96,6 +144,13 @@ export const useAppStore = create<AppState>((set) => ({
   followDroneId: null,
   stats: { ready: 0, flying: 0, charge: 0, alert: 0 },
   tickerEvents: [],
+  rightPanel: { mode: 'empty' },
+  dockFilter: 'ALL',
+  dockSearch: '',
+  dockSort: 'ID',
+  sideCollapsed: false,
+  rpanelCollapsed: false,
+  openMenu: null,
   setScene: (scene) => set({ scene }),
   setLayer: (layer) => set({ layer }),
   setOffline: (offline) => set({ offline }),
@@ -111,4 +166,11 @@ export const useAppStore = create<AppState>((set) => ({
         TICKER_CAP,
       ),
     })),
+  setRightPanel: (rightPanel) => set({ rightPanel }),
+  setDockFilter: (dockFilter) => set({ dockFilter }),
+  setDockSearch: (dockSearch) => set({ dockSearch }),
+  setDockSort: (dockSort) => set({ dockSort }),
+  toggleSideCollapsed: () => set((state) => ({ sideCollapsed: !state.sideCollapsed })),
+  toggleRpanelCollapsed: () => set((state) => ({ rpanelCollapsed: !state.rpanelCollapsed })),
+  setOpenMenu: (openMenu) => set({ openMenu }),
 }))
