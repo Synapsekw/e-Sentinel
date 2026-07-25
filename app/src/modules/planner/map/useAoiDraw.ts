@@ -70,9 +70,8 @@ export function useAoiDraw(
     const map = mapRef.current
     if (!ready || !map || drawRef.current) return
 
-    const adapter = new TerraDrawMapLibreGLAdapter({ map })
     const draw = new TerraDraw({
-      adapter,
+      adapter: new TerraDrawMapLibreGLAdapter({ map }),
       modes: [new TerraDrawPolygonMode(), new TerraDrawRectangleMode(), new TerraDrawCircleMode()],
     })
     draw.start()
@@ -84,26 +83,6 @@ export function useAoiDraw(
       }
     })
     drawRef.current = draw
-
-    // TEMP-DIAGNOSTIC (browser-gate investigation, revert after use): exposes
-    // terra-draw's instance/adapter and the live map on `window`, dev-build
-    // only, so the browser-gate can be inspected directly from the devtools
-    // console (getMode(), getSnapshot(), map.getSource(...), etc.) without
-    // changing useAoiDraw's committed public surface. `window` has no such
-    // properties in its real type, hence the cast.
-    if (import.meta.env.DEV) {
-      ;(
-        window as unknown as {
-          __plannerDraw?: TerraDraw
-          __plannerAdapter?: TerraDrawMapLibreGLAdapter<maplibregl.Map>
-          __plannerMap?: maplibregl.Map
-        }
-      ).__plannerDraw = draw
-      ;(
-        window as unknown as { __plannerAdapter?: TerraDrawMapLibreGLAdapter<maplibregl.Map> }
-      ).__plannerAdapter = adapter
-      ;(window as unknown as { __plannerMap?: maplibregl.Map }).__plannerMap = map
-    }
 
     return () => {
       // Reference the `map` captured above, not mapRef.current: MapView's
