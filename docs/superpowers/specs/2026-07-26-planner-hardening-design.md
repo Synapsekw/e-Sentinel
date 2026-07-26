@@ -198,11 +198,33 @@ with a `coordinates` array whose leaf positions are pairs of finite numbers.
 `dockModel`, `droneModel` non-empty strings; `environment` exactly `urban` or `rural`;
 `source` one of `manual | auto`.
 
-`dockModel` / `droneModel` are **not** checked against the catalog. The Inspector already
-handles an unknown or incompatible pairing explicitly (renders the stored value as a
-marked option with an alert badge, added in planner Task 12), and rejecting an entire
-plan because one dock names a model this build has not shipped yet would be a worse
-failure than the one the Inspector already handles well.
+`dockModel` / `droneModel` **are** checked against the catalog.
+
+**This reverses the decision this section originally recorded**, and the reversal is worth
+stating in full because the original reasoning was checked and found wrong. The original
+text read: "not checked against the catalog — the Inspector already handles an unknown or
+incompatible pairing explicitly." Verification of that premise showed it is true only for
+a model that **is** in the catalog but incompatibly paired. For an id absent from the
+catalog entirely, nothing handles it and the module throws during render:
+
+- `catalog.ts`'s `effectiveRadius` does `DRONES[dock.droneModel].enduranceMin`
+- `Inspector.tsx` does `DOCK_MODELS[dock.dockModel].drones`, and
+  `DRONES[dock.droneModel].label` in two more places
+
+Both are a `TypeError` on an unknown id. So the original decision traded a rejected file
+for a crashed module, which is the wrong direction.
+
+Two further points support the reversal:
+
+- The forward-compatibility case the original non-goal was protecting (refusing a plan
+  that names a model a *newer* build ships) is already covered upstream by the
+  `schemaVersion` check, which rejects such a plan with a message naming the real problem.
+- `types.ts` declares these as the narrow `DockModelId` / `DroneModelId` unions, so
+  admitting an off-catalog id makes `parsePlan`'s own `p as DeploymentPlan` cast a lie.
+
+Membership, **not** compatibility: a physically impossible but fully catalogued pairing
+(`DOCK3` + `M350`) still parses, because the Inspector's marked-option-plus-alert-badge
+fallback needs the stored value to survive in order to show it.
 
 `valid` is ignored on input and re-derived, exactly as it is today.
 
@@ -306,8 +328,10 @@ The project's standing gate, run by the controller on the merged result:
 - `npm test` (app), `node --test tests/*.test.js` (legacy 65)
 - `npm run typecheck`, `npm run lint` (`--max-warnings 0`), `npm run format:check`,
   `npm run build`
-- Entry chunk must stay at ~216.9kB. The ErrorBoundary is the only addition that lands in
-  the entry chunk; it is a small class component with no new dependencies.
+- Entry chunk: the ErrorBoundary is the only addition that lands in the eager entry chunk.
+  Measured against a control build (same tree, boundary unwired) it costs **+1.37 kB raw /
+  +0.39 kB gzip**, taking the entry chunk from 216.89 kB to **218.25 kB**. No new
+  dependencies. The gate expects ~218 kB, not the ~216.9 kB carried in earlier notes.
 - Browser: `/console` unaffected (basemap extraction is the risk), `/planner` LAYERS
   switches basemap and re-themes chrome, both file pickers work, `SUGGEST LAYOUT` shows
   its busy state, landing shows module 02 ONLINE, 0 console errors.
@@ -315,7 +339,10 @@ The project's standing gate, run by the controller on the merged result:
 ## 12. Non-goals, recorded
 
 - No Web Worker for auto-placement.
-- No catalog-membership validation in `parsePlan`.
+- ~~No catalog-membership validation in `parsePlan`.~~ **Reversed during implementation —
+  see section 5.** The premise (that the Inspector handles unknown model ids) was verified
+  false; unknown ids throw during render, so admitting them was worse than rejecting the
+  file.
 - No boundary above `EngineProvider`.
 - No change to the `AI CO-PLANNER` blurb.
 - Drone catalog figures stay provisional.
