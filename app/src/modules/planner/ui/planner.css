@@ -231,6 +231,27 @@
   scrollbar-color: #333 transparent;
 }
 
+/* Bright-basemap legibility, the planner's counterpart to chrome.css's
+   :root[data-maplayer='light'] #side / #rpanel rule. Both panels are
+   near-transparent glass by default (var(--panel), 3.5% white) so the dark
+   map reads through them. Over the light, sat and terrain rasters that glass
+   leaves the light UI text unreadable, so they take the opaque dark backing
+   instead.
+
+   This rule did not exist before the LAYERS control landed, and it did not
+   need to: the planner had no way to select a bright basemap, so it was
+   always dark. Adding the control without this made every panel label wash
+   out the moment a user picked LIGHT, SAT or TERRAIN. Caught in browser
+   verification, not by any test. */
+:root[data-maplayer='light'] .pl-side,
+:root[data-maplayer='light'] .pl-rpanel,
+:root[data-maplayer='sat'] .pl-side,
+:root[data-maplayer='sat'] .pl-rpanel,
+:root[data-maplayer='terrain'] .pl-side,
+:root[data-maplayer='terrain'] .pl-rpanel {
+  background: var(--chrome);
+}
+
 .pl-panel {
   background: var(--panel2);
   border: 1px solid var(--line);
