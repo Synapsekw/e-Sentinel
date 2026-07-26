@@ -17,6 +17,7 @@ import { useMap } from '@/modules/console/map/MapContext'
 import { useAoiDraw } from '@/modules/planner/map/useAoiDraw'
 import type { AoiDrawMode } from '@/modules/planner/map/useAoiDraw'
 import { useDockPlacement } from '@/modules/planner/map/useDockPlacement'
+import { usePlannerSelection } from '@/modules/planner/map/usePlannerSelection'
 import { usePlannerLayers } from '@/modules/planner/map/usePlannerLayers'
 import { usePlannerBasemap } from '@/modules/planner/map/usePlannerBasemap'
 import { useCoverageDriver } from '@/modules/planner/engine/useCoverageDriver'
@@ -146,6 +147,12 @@ export function PlannerShell() {
   // Important 5: gate dock dragging on the draw mode being idle -- see
   // useDockPlacement's drawModeIdle parameter comment.
   const dockPlacement = useDockPlacement(mapRef, ready, drawMode === 'idle')
+  // Selection is the fourth gesture competing for a map click, after draw
+  // vertices, armed placement and dock dragging. Gated on the other three
+  // being stood down -- the same "one active capture mode at a time" rule
+  // handleSetDrawMode / handleToggleDockPlacement already keep between
+  // themselves.
+  usePlannerSelection(mapRef, ready, drawMode === 'idle' && !dockPlacement.placing)
 
   // Escape stands down an in-progress draw, the same convention
   // useDockPlacement already applies to armed dock placement. useAoiDraw
