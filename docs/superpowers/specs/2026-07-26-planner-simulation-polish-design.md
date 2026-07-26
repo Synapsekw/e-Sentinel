@@ -175,9 +175,23 @@ underlying property is a real boolean. (`planner-docks-circle`'s existing
 `#e8ecf3` matches the existing `planner-aoi-line`, so outline and fill read as one object.
 Neutral steel, not green and not red: green means coverage in this module and red is
 reserved for brand and alerts (`PRODUCT.md`). An invalid ring — which `computeCoverage`
-excludes entirely — takes the alert tint, so "excluded from coverage" becomes visible on
-the map instead of living only in the `INVALID GEOMETRY` badge. `aoiFeatures` already
-emits `valid` as a feature property, so no source change is needed.
+excludes entirely — takes the alert tint. `aoiFeatures` already emits `valid` as a feature
+property, so no source change is needed.
+
+**CORRECTION (found in browser verification, after implementation).** This section
+originally justified the invalid tint by claiming it makes "excluded from coverage" visible
+on the map rather than only in the `INVALID GEOMETRY` badge. That claim is false, and the
+red branch is in practice unreachable. MapLibre's GeoJSON tiler drops a self-intersecting
+ring outright: with a bowtie AOI in the plan, `querySourceFeatures('planner-aoi')` returns
+only the valid AOI, and neither `planner-aoi-fill` nor `planner-aoi-line` paints anything
+for the invalid one. An invalid area is therefore *invisible* on the map — arguably worse
+than a red wash, since the user sees nothing at all where they drew.
+
+The layer as specified is still correct and still fixes the reported bug (a valid AOI now
+reads before any dock exists), so nothing here was rebuilt. But the tint is dead code for
+the invalidity case that actually occurs, and making an invalid area visible needs a
+different mechanism — rendering it from its bounding box or convex hull, which the tiler
+will accept. Recorded as a follow-up rather than smuggled into this pass.
 
 A polygon is filled the moment `handleDrawFinish` commits it. No docks required, which is
 the reported symptom.
