@@ -11,6 +11,7 @@
 // that instead. `{fontstack}/{range}` stay literal — MapLibre substitutes
 // them itself, so they must not be URL-encoded.
 
+import type maplibregl from 'maplibre-gl'
 import type { ExpressionSpecification } from 'maplibre-gl'
 import type { MapLayer, Scene } from '@/shared/store'
 
@@ -108,6 +109,45 @@ export const SITE_STATUS_COLOR: ExpressionSpecification = [
 // applies once inside the theater (console scene).
 export function effectiveLayer(scene: Scene, layer: MapLayer): MapLayer {
   return scene === 'globe' ? 'sat' : layer
+}
+
+// ---------------------------------------------------------------------------
+// Basemap appliers, shared by the console (useBasemap) and the planner
+// (usePlannerBasemap).
+//
+// These moved here verbatim out of useBasemap.ts when the planner gained its
+// own LAYERS control. They are deliberately NOT duplicated per module: "what
+// does basemap X mean" is one fact, and this project's two worst shipped bugs
+// (the id counter, and autoPlace hardcoding environment: 'rural') were both
+// two independently-correct call sites disagreeing about a shared fact. Both
+// callers build their style over buildBaseStyle(), so the raster-*,
+// DARK_OVERLAY_IDS and uae-places layers these touch exist on both maps.
+//
+// `eff` is the EFFECTIVE basemap (null = offline, no raster at all), which is
+// not always the selected one. The two callers compute it differently on
+// purpose; see each hook's comment.
+// ---------------------------------------------------------------------------
+
+// Sets exactly one of the four raster layers visible (none of them when
+// offline) and toggles the dark-basemap water/green tint overlays with it.
+export function applyRasterVisibility(map: maplibregl.Map, eff: string | null): void {
+  for (const k of ['dark', 'light', 'sat', 'terrain'] as const) {
+    map.setLayoutProperty(`raster-${k}`, 'visibility', k === eff ? 'visible' : 'none')
+  }
+  const overlayVis = eff === 'dark' ? 'visible' : 'none'
+  for (const id of DARK_OVERLAY_IDS) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', overlayVis)
+  }
+}
+
+// With _nolabels basemaps, uae-places is the map's only naming layer: retint
+// its text/halo per basemap so it reads everywhere. Light + terrain rasters
+// are pale (dark ink, light halo); dark + sat + offline stay light-on-dark.
+export function applyPlaceLabelTheme(map: maplibregl.Map, eff: string | null): void {
+  if (!map.getLayer('uae-places')) return
+  const pale = eff === 'light' || eff === 'terrain'
+  map.setPaintProperty('uae-places', 'text-color', pale ? '#3a404c' : '#aeb6c4')
+  map.setPaintProperty('uae-places', 'text-halo-color', pale ? 'rgba(255,255,255,.85)' : '#0a0b0e')
 }
 
 // Local glyph vendoring: assets/fonts/{fontstack}/{range}.pbf is vendored

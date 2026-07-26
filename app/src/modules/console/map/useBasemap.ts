@@ -6,12 +6,21 @@
 // legacy EC2.onSceneChange callbacks are replaced by a single Zustand
 // subscription reacting to scene/layer/offline together, and "apply once on
 // boot" becomes "apply once when the map becomes ready".
+//
+// The raster/overlay and place-label appliers themselves now live in
+// basemap.ts (moved verbatim, unchanged) because the planner's LAYERS control
+// applies the same rules to its own map; see basemap.ts's header there.
 
 import { useEffect } from 'react'
 import type { MutableRefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 import { useAppStore } from '@/shared/store'
-import { effectiveLayer, DARK_OVERLAY_IDS, OPERATIONAL_LAYER_IDS } from './basemap'
+import {
+  effectiveLayer,
+  applyRasterVisibility,
+  applyPlaceLabelTheme,
+  OPERATIONAL_LAYER_IDS,
+} from './basemap'
 
 function setOperationalLayersVisible(map: maplibregl.Map, visible: boolean): void {
   const vis = visible ? 'visible' : 'none'
@@ -20,18 +29,16 @@ function setOperationalLayersVisible(map: maplibregl.Map, visible: boolean): voi
   }
 }
 
-// With _nolabels basemaps, uae-places is the map's only naming layer: retint
-// its text/halo per basemap so it reads everywhere. Light + terrain rasters
-// are pale (dark ink, light halo); dark + sat + offline stay light-on-dark.
-function applyPlaceLabelTheme(map: maplibregl.Map, eff: string | null): void {
-  if (!map.getLayer('uae-places')) return
-  const pale = eff === 'light' || eff === 'terrain'
-  map.setPaintProperty('uae-places', 'text-color', pale ? '#3a404c' : '#aeb6c4')
-  map.setPaintProperty('uae-places', 'text-halo-color', pale ? 'rgba(255,255,255,.85)' : '#0a0b0e')
-}
-
 function applyBasemap(map: maplibregl.Map): void {
   const { scene, layer, offline } = useAppStore.getState()
+  // DELIBERATE DIVERGENCE from the planner's usePlannerBasemap, which computes
+  // `eff = offline ? null : layer` and never consults `scene`. The console has
+  // an orbital globe scene, and effectiveLayer forces 'sat' while it is up, so
+  // the console MUST go through effectiveLayer. The planner has no globe, and
+  // the store's default scene is 'globe', so routing the planner through this
+  // same call would hand a user who lands on /planner first satellite imagery
+  // no matter what they picked. Both comments exist so a future reader sees
+  // the difference is intended and does not "unify" the two hooks.
   const eff: string | null = offline ? null : effectiveLayer(scene, layer)
   // Legacy EC2.setLayer (assets/js/ui/map.js:997) stamps the SELECTED layer
   // (not the effective one) onto the root element so CSS can adapt chrome to
@@ -39,13 +46,10 @@ function applyBasemap(map: maplibregl.Map): void {
   // :root[data-maplayer=...]); mirrored here so the stamp stays correct even
   // while the orbital globe scene is forcing the effective raster to 'sat'.
   document.documentElement.dataset.maplayer = layer
-  for (const k of ['dark', 'light', 'sat', 'terrain'] as const) {
-    map.setLayoutProperty(`raster-${k}`, 'visibility', k === eff ? 'visible' : 'none')
-  }
-  const overlayVis = eff === 'dark' ? 'visible' : 'none'
-  for (const id of DARK_OVERLAY_IDS) {
-    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', overlayVis)
-  }
+  // applyRasterVisibility / applyPlaceLabelTheme moved verbatim into
+  // basemap.ts so the planner applies the identical rules; this call order
+  // (rasters + dark overlays, then place labels) is the original one.
+  applyRasterVisibility(map, eff)
   applyPlaceLabelTheme(map, eff)
 }
 

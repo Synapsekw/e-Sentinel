@@ -18,6 +18,7 @@ import { useAoiDraw } from '@/modules/planner/map/useAoiDraw'
 import type { AoiDrawMode } from '@/modules/planner/map/useAoiDraw'
 import { useDockPlacement } from '@/modules/planner/map/useDockPlacement'
 import { usePlannerLayers } from '@/modules/planner/map/usePlannerLayers'
+import { usePlannerBasemap } from '@/modules/planner/map/usePlannerBasemap'
 import { useCoverageDriver } from '@/modules/planner/engine/useCoverageDriver'
 import { buildPlannerStyle } from '@/modules/planner/map/plannerStyle'
 import { usePlanStore } from '@/modules/planner/store/planStore'
@@ -90,6 +91,12 @@ export function PlannerShell() {
 
   useCoverageDriver()
   usePlannerLayers(mapRef, ready, plan, coverage)
+  // Applies the topbar's LAYERS pick to the raster stack and stamps
+  // data-maplayer on <html> so planner.css's var(--chrome) glass tracks the
+  // basemap. Nothing set raster visibility here before, so the planner showed
+  // whatever the style declared and wore whatever chrome the console last left
+  // behind. Deliberately does NOT consult `scene` -- see usePlannerBasemap.ts.
+  usePlannerBasemap(mapRef, ready)
 
   function handleDrawFinish(geometry: GeoJSON.Polygon) {
     const state = usePlanStore.getState()

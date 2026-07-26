@@ -138,6 +138,24 @@
   color: #fff;
   outline: none;
 }
+/* Radio rows (LAYERS): label left, checkmark right-aligned in a fixed gutter
+   so the labels stay flush whether or not a row is the active one. The DRAW
+   rows are plain actions and keep the default text flow. Mirrors the
+   console's .mm-item/.mm-check pair in chrome/chrome.css. */
+.pl-menu-radio {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+}
+.pl-menu-check {
+  flex: none;
+  font-size: 11px;
+  min-width: 14px;
+  text-align: right;
+  color: var(--amber);
+}
 
 /* ---------- import / plan-load alert banner ---------- */
 .pl-alert {
