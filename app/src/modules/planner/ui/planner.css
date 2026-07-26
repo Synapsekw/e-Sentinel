@@ -95,6 +95,30 @@
   padding: 6px 11px;
 }
 
+/* Offline indicator, the planner's counterpart to chrome.css's .chip.warn.
+   Amber, not red: offline is a degraded state, not an alert, and red stays
+   reserved for brand + alerts. Toggled via the `hidden` attribute rather than
+   unmounting, matching OfflineChip's existing behaviour. */
+.pl-chip {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 6px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.pl-chip-warn {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
+.pl-chip[hidden] {
+  display: none;
+}
+
 .pl-hidden-input {
   display: none;
 }

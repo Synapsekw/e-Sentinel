@@ -1,15 +1,13 @@
-// Topbar chrome: e& brand, then the tool row (import AOI / draw / dock
-// placement / suggest layout / plan export-import / basemap LAYERS), mirroring the console
-// Topbar's layout (chip/tbtn row, `.sp` spacer, trailing nav) but with its
-// own `pl-*` classes (see planner.css's header comment for why). The four
-// tool controls that touch the map (draw mode, dock placement) are owned by
-// Planner.tsx's PlannerShell -- the component that actually holds the
-// useAoiDraw/useDockPlacement hook instances -- and handed down here as
-// plain callbacks/state, so this component itself never needs the map.
+// Topbar chrome: e& brand and the offline chip, then a spacer, then the action
+// row led by basemap LAYERS -- the same position the console's #btn-layers
+// occupies after its own `.sp` spacer, so the control is in one place in the
+// user's memory across both modules. Then the map tools (draw, dock placement,
+// suggest layout) and the plan I/O controls.
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { Link } from 'react-router-dom'
 import type { AoiDrawMode } from '@/modules/planner/map/useAoiDraw'
+import OfflineChip from '@/modules/console/OfflineChip'
 import PlannerLayersMenu from './PlannerLayersMenu'
 
 export interface PlannerTopbarProps {
@@ -107,16 +105,17 @@ export default function PlannerTopbar({
         </div>
       </div>
 
-      <button type="button" className="pl-btn" onClick={() => aoiInputRef.current?.click()}>
-        IMPORT AOI
-      </button>
-      <input
-        ref={aoiInputRef}
-        type="file"
-        accept=".kml,.kmz"
-        className="pl-hidden-input"
-        onChange={handleAoiFile}
-      />
+      <OfflineChip className="pl-chip pl-chip-warn" />
+
+      <div className="pl-spacer" />
+
+      <div className="pl-dropdown" ref={layersRef}>
+        <PlannerLayersMenu
+          open={openMenu === 'layers'}
+          onToggle={() => setOpenMenu((v) => (v === 'layers' ? null : 'layers'))}
+          onClose={() => setOpenMenu(null)}
+        />
+      </div>
 
       <div className="pl-dropdown" ref={drawRef}>
         <button
@@ -167,9 +166,17 @@ export default function PlannerTopbar({
         {suggestBusy ? 'PLACING DOCKS' : 'SUGGEST LAYOUT'}
       </button>
 
-      <button type="button" className="pl-btn" onClick={onExportPlan}>
-        EXPORT PLAN
+      <button type="button" className="pl-btn" onClick={() => aoiInputRef.current?.click()}>
+        IMPORT AOI
       </button>
+      <input
+        ref={aoiInputRef}
+        type="file"
+        accept=".kml,.kmz"
+        className="pl-hidden-input"
+        onChange={handleAoiFile}
+      />
+
       {/* Not part of the brief's enumerated topbar button list, but "plan
           JSON export/import" (this task's Step 4) needs an import path to
           be more than half a feature -- EXPORT PLAN with nothing to load it
@@ -191,15 +198,9 @@ export default function PlannerTopbar({
         onChange={handlePlanFile}
       />
 
-      <div className="pl-dropdown" ref={layersRef}>
-        <PlannerLayersMenu
-          open={openMenu === 'layers'}
-          onToggle={() => setOpenMenu((v) => (v === 'layers' ? null : 'layers'))}
-          onClose={() => setOpenMenu(null)}
-        />
-      </div>
-
-      <div className="pl-spacer" />
+      <button type="button" className="pl-btn" onClick={onExportPlan}>
+        EXPORT PLAN
+      </button>
 
       <Link className="lbl pl-back" to="/">
         ← MODULES
