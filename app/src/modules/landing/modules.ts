@@ -26,9 +26,14 @@ export const MODULES: ModuleCard[] = [
     num: '02',
     slug: 'planner',
     title: 'Deployment Planner',
+    // The blurb keeps AI CO-PLANNER, which does not exist yet: this copy is
+    // carried 1:1 from the legacy index.html the landing page was ported from,
+    // and the card describes the module's intent. Recorded in
+    // docs/superpowers/specs/2026-07-26-planner-hardening-design.md (section 9)
+    // so it reads as a decision rather than an oversight.
     blurb: 'CUSTOMER AOI · DOCK PLACEMENT · COVERAGE & OVERLAP · AI CO-PLANNER',
-    status: 'dev',
-    statusLabel: 'IN DEVELOPMENT',
+    status: 'online',
+    statusLabel: 'ONLINE',
     enabled: true,
   },
   {

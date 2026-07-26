@@ -7,9 +7,11 @@ import { render, screen, cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import SummaryStrip from './SummaryStrip'
 
-// This suite's vite config does not set test.globals: true, so
-// @testing-library/react's auto-cleanup never registers (see
-// useCoverageDriver.test.ts / useDockPlacement.test.ts for the same note).
+// vite.config.ts now sets test.globals: true, so @testing-library/react's
+// auto-cleanup DOES register. This explicit cleanup() is kept anyway: it is
+// idempotent, and it keeps this file correct on its own terms rather than
+// depending on a config flag holding still (see the same note in
+// useCoverageDriver.test.ts / useDockPlacement.test.ts).
 afterEach(() => cleanup())
 
 describe('SummaryStrip', () => {

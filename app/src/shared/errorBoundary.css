@@ -1,0 +1,98 @@
+/* Task 2: fallback shown by shared/ErrorBoundary.tsx. Same visual language as
+   the console/planner chrome -- the frosted `--chrome` glass surface and the
+   9.5px / .22em uppercase mono micro-label idiom from shared/index.css -- but
+   its own `eb-*` selectors so it collides with nothing. `--red` (#ff5a5a) is
+   used here on purpose: an unrecoverable application fault is exactly the
+   alert case the brand reserves that colour for. */
+
+.eb-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.eb-panel {
+  width: min(480px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 26px 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--chrome);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
+}
+
+.eb-logo {
+  height: 23px;
+  width: auto;
+  display: block;
+}
+
+.eb-title {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--red);
+}
+
+.eb-body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--txt);
+}
+
+.eb-message {
+  align-self: stretch;
+  max-height: 30vh;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.eb-actions {
+  display: flex;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.eb-btn {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--txt);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 7px 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.eb-btn:hover {
+  border-color: var(--red);
+  color: #fff;
+}
+.eb-btn-alert {
+  border-color: var(--red);
+  color: #fff;
+}
+.eb-btn-alert:hover {
+  background: var(--redd);
+}

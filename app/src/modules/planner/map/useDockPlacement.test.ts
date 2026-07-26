@@ -121,8 +121,9 @@ describe('useDockPlacement drag', () => {
   })
 
   afterEach(() => {
-    // This suite's vite config does not set test.globals: true, so
-    // @testing-library/react's auto-cleanup never registers (see
+    // vite.config.ts now sets test.globals: true, so @testing-library/react's
+    // auto-cleanup DOES register; this explicit cleanup() is kept anyway
+    // because it is idempotent and does not depend on that flag (see
     // useCoverageDriver.test.ts).
     cleanup()
     vi.restoreAllMocks()

@@ -86,11 +86,13 @@ describe('useCoverageDriver', () => {
   })
 
   afterEach(() => {
-    // This suite's vite config does not set test.globals: true, so
-    // @testing-library/react's auto-cleanup (which hooks a global afterEach)
-    // never registers. Without an explicit cleanup(), a renderHook instance
-    // from one test stays mounted and subscribed to usePlanStore, so it
-    // keeps reacting to store updates made by later tests.
+    // vite.config.ts now sets test.globals: true, so @testing-library/react's
+    // auto-cleanup (which hooks a global afterEach) DOES register. This
+    // explicit cleanup() is kept anyway: it is idempotent, and it keeps this
+    // file correct on its own terms rather than depending on a config flag
+    // holding still. Without either, a renderHook instance from one test
+    // stays mounted and subscribed to usePlanStore, so it keeps reacting to
+    // store updates made by later tests.
     cleanup()
     vi.useRealTimers()
   })

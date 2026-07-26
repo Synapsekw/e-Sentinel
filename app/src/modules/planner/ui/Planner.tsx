@@ -10,7 +10,7 @@
 // Task 3's temporary scaffolding button (`AoiDrawTrigger`, a raw inline-
 // styled <button> spiking useAoiDraw end to end) is removed here, replaced
 // by the real chrome below.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type GeoJSON from 'geojson'
 import MapView from '@/modules/console/map/MapView'
 import { useMap } from '@/modules/console/map/MapContext'
@@ -18,6 +18,7 @@ import { useAoiDraw } from '@/modules/planner/map/useAoiDraw'
 import type { AoiDrawMode } from '@/modules/planner/map/useAoiDraw'
 import { useDockPlacement } from '@/modules/planner/map/useDockPlacement'
 import { usePlannerLayers } from '@/modules/planner/map/usePlannerLayers'
+import { usePlannerBasemap } from '@/modules/planner/map/usePlannerBasemap'
 import { useCoverageDriver } from '@/modules/planner/engine/useCoverageDriver'
 import { buildPlannerStyle } from '@/modules/planner/map/plannerStyle'
 import { usePlanStore } from '@/modules/planner/store/planStore'
@@ -32,6 +33,7 @@ import PlanTree from './PlanTree'
 import Inspector from './Inspector'
 import SummaryStrip from './SummaryStrip'
 import { describeSuggestOutcome, isLayoutStatusCurrent } from './suggestOutcome'
+import { plural } from './pluralize'
 import type { SuggestOutcome } from './suggestOutcome'
 import './planner.css'
 
@@ -87,9 +89,33 @@ export function PlannerShell() {
   const [drawMode, setDrawMode] = useState<AoiDrawMode>('idle')
   const [importMessage, setImportMessage] = useState<ImportMessage>(null)
   const [layoutStatus, setLayoutStatus] = useState<LayoutStatus | null>(null)
+  const [suggestBusy, setSuggestBusy] = useState(false)
+  // The frame currently pending for handleSuggestLayout's yield (see its
+  // comment). One ref, not two: the outer frame's callback overwrites this
+  // with the inner frame's handle, so there is only ever one handle
+  // outstanding at a time and unmount has exactly one thing to cancel.
+  const suggestFrameRef = useRef<number | null>(null)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      if (suggestFrameRef.current !== null) {
+        cancelAnimationFrame(suggestFrameRef.current)
+        suggestFrameRef.current = null
+      }
+    }
+  }, [])
 
   useCoverageDriver()
   usePlannerLayers(mapRef, ready, plan, coverage)
+  // Applies the topbar's LAYERS pick to the raster stack and stamps
+  // data-maplayer on <html> so planner.css's var(--chrome) glass tracks the
+  // basemap. Nothing set raster visibility here before, so the planner showed
+  // whatever the style declared and wore whatever chrome the console last left
+  // behind. Deliberately does NOT consult `scene` -- see usePlannerBasemap.ts.
+  usePlannerBasemap(mapRef, ready)
 
   function handleDrawFinish(geometry: GeoJSON.Polygon) {
     const state = usePlanStore.getState()
@@ -178,8 +204,8 @@ export function PlannerShell() {
       level: 'info',
       text:
         result.skipped > 0
-          ? `${result.aois.length} AREAS IMPORTED · ${result.skipped} FEATURES SKIPPED`
-          : `${result.aois.length} AREA${result.aois.length === 1 ? '' : 'S'} IMPORTED`,
+          ? `${plural(result.aois.length, 'AREA')} IMPORTED · ${plural(result.skipped, 'FEATURE')} SKIPPED`
+          : `${plural(result.aois.length, 'AREA')} IMPORTED`,
     })
   }
 
@@ -216,7 +242,7 @@ export function PlannerShell() {
     URL.revokeObjectURL(url)
   }
 
-  function handleSuggestLayout() {
+  function runSuggestLayout() {
     const state = usePlanStore.getState()
     const result = suggestLayout(state.plan)
     const next = setDocks(state.plan, result.docks)
@@ -236,6 +262,45 @@ export function PlannerShell() {
     })
   }
 
+  // Item 5 (planner hardening): suggestLayout is synchronous and CPU-bound.
+  // On a large AOI it runs for seconds, and because it ran straight out of
+  // the click handler the browser never got a frame in which to paint any
+  // acknowledgement -- the click looked like it did nothing at all.
+  //
+  // BE CLEAR ABOUT WHAT THIS DOES AND DOES NOT FIX: the main thread STILL
+  // BLOCKS for the whole of runSuggestLayout below. Nothing animates during
+  // it, the map does not pan, the button cannot be re-clicked because the
+  // event loop is not running. This only makes the wait VISIBLE (the button
+  // is painted disabled and reading PLACING DOCKS before the freeze starts)
+  // rather than eliminating it. Moving the computation off the main thread
+  // needs a Web Worker -- the escalation to take if AOI sizes grow to where
+  // "visibly working, briefly frozen" stops being an acceptable answer. See
+  // the design doc section 7 for why a worker was not built now.
+  //
+  // The yield is a DOUBLE requestAnimationFrame, deliberately, and not
+  // setTimeout(0): one rAF callback runs BEFORE the next paint, so a single
+  // frame would start the blocking compute with the busy state still
+  // unpainted -- exactly the bug. The second rAF is scheduled from inside
+  // the first, so it cannot run until the frame carrying the busy state has
+  // been painted. A macrotask (setTimeout) carries no ordering guarantee
+  // relative to paint at all, so it would be a coincidence, not a fix.
+  function handleSuggestLayout() {
+    if (suggestBusy) return
+    setSuggestBusy(true)
+    suggestFrameRef.current = requestAnimationFrame(() => {
+      if (!mountedRef.current) return
+      suggestFrameRef.current = requestAnimationFrame(() => {
+        suggestFrameRef.current = null
+        // Navigating away mid-yield unmounts this component; the cleanup
+        // above cancels the pending handle, but bail here too so a frame
+        // that was already dispatched cannot setState on a dead component.
+        if (!mountedRef.current) return
+        runSuggestLayout()
+        setSuggestBusy(false)
+      })
+    })
+  }
+
   return (
     <>
       <PlannerTopbar
@@ -248,6 +313,7 @@ export function PlannerShell() {
         onImportPlanFile={(file) => void handleImportPlanFile(file)}
         onExportPlan={handleExportPlan}
         onSuggestLayout={handleSuggestLayout}
+        suggestBusy={suggestBusy}
       />
       {importMessage ? (
         <div className={`pl-alert${importMessage.level === 'error' ? ' pl-alert-error' : ''}`}>

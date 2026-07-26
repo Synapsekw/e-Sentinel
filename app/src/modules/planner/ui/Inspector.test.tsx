@@ -11,9 +11,11 @@ import { createPlan, addDock, resetIdsForTest } from '../domain/plan'
 import { DOCK_MODELS, DRONES } from '../domain/catalog'
 import type { PlannedDock } from '../domain/types'
 
-// This suite's vite config does not set test.globals: true, so
-// @testing-library/react's auto-cleanup never registers (see
-// useCoverageDriver.test.ts / SummaryStrip.test.tsx for the same note).
+// vite.config.ts now sets test.globals: true, so @testing-library/react's
+// auto-cleanup DOES register. This explicit cleanup() is kept anyway: it is
+// idempotent, and it keeps this file correct on its own terms rather than
+// depending on a config flag holding still (see the same note in
+// useCoverageDriver.test.ts / SummaryStrip.test.tsx).
 // Without an explicit cleanup(), a render from one test stays mounted and
 // subscribed to usePlanStore, so it keeps reacting to store updates made by
 // later tests.

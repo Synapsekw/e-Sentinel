@@ -1,5 +1,5 @@
 // Topbar chrome: e& brand, then the tool row (import AOI / draw / dock
-// placement / suggest layout / plan export-import), mirroring the console
+// placement / suggest layout / plan export-import / basemap LAYERS), mirroring the console
 // Topbar's layout (chip/tbtn row, `.sp` spacer, trailing nav) but with its
 // own `pl-*` classes (see planner.css's header comment for why). The four
 // tool controls that touch the map (draw mode, dock placement) are owned by
@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { Link } from 'react-router-dom'
 import type { AoiDrawMode } from '@/modules/planner/map/useAoiDraw'
+import PlannerLayersMenu from './PlannerLayersMenu'
 
 export interface PlannerTopbarProps {
   drawMode: AoiDrawMode
@@ -21,6 +22,10 @@ export interface PlannerTopbarProps {
   onImportPlanFile: (file: File) => void
   onExportPlan: () => void
   onSuggestLayout: () => void
+  // True while PlannerShell's yield-then-compute auto-placement is in flight.
+  // Only the SUGGEST LAYOUT button reacts to it: the rest of the topbar stays
+  // live, since nothing else here is what the user is waiting on.
+  suggestBusy: boolean
 }
 
 const DRAW_LABEL: Record<AoiDrawMode, string> = {
@@ -40,29 +45,41 @@ export default function PlannerTopbar({
   onImportPlanFile,
   onExportPlan,
   onSuggestLayout,
+  suggestBusy,
 }: PlannerTopbarProps) {
-  const [drawMenuOpen, setDrawMenuOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement | null>(null)
+  // One `openMenu` rather than one boolean per dropdown: two independent
+  // booleans can both be true, which would put two absolutely-positioned
+  // pl-menu panels on screen at once. Same reasoning the console applies to
+  // `controlMode` and Planner.tsx applies to draw-vs-dock-placement (Minor 6):
+  // a single variable makes "only one at a time" unrepresentable-otherwise
+  // instead of merely well-behaved.
+  const [openMenu, setOpenMenu] = useState<'draw' | 'layers' | null>(null)
+  const drawRef = useRef<HTMLDivElement | null>(null)
+  const layersRef = useRef<HTMLDivElement | null>(null)
   const aoiInputRef = useRef<HTMLInputElement | null>(null)
   const planInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Close the DRAW dropdown on an outside click, same convention as a
-  // native <select>/menu: without this it only ever closes via picking an
+  // Close whichever dropdown is open on an outside click, same convention as
+  // a native <select>/menu: without this it only ever closes via picking an
   // item, which reads as broken once a user clicks elsewhere on the map.
+  // "Outside" means outside BOTH dropdown containers, so clicking the other
+  // dropdown's button still reaches its own onClick (which swaps openMenu)
+  // rather than being eaten as a dismiss.
   useEffect(() => {
-    if (!drawMenuOpen) return
+    if (openMenu === null) return
     const onDocClick = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDrawMenuOpen(false)
-      }
+      const target = e.target as Node
+      if (drawRef.current?.contains(target)) return
+      if (layersRef.current?.contains(target)) return
+      setOpenMenu(null)
     }
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
-  }, [drawMenuOpen])
+  }, [openMenu])
 
   function pickMode(mode: AoiDrawMode) {
     onSetDrawMode(mode)
-    setDrawMenuOpen(false)
+    setOpenMenu(null)
   }
 
   function handleAoiFile(e: ChangeEvent<HTMLInputElement>) {
@@ -101,17 +118,17 @@ export default function PlannerTopbar({
         onChange={handleAoiFile}
       />
 
-      <div className="pl-dropdown" ref={dropdownRef}>
+      <div className="pl-dropdown" ref={drawRef}>
         <button
           type="button"
           className={`pl-btn${drawMode !== 'idle' ? ' active' : ''}`}
           aria-haspopup="true"
-          aria-expanded={drawMenuOpen}
-          onClick={() => setDrawMenuOpen((v) => !v)}
+          aria-expanded={openMenu === 'draw'}
+          onClick={() => setOpenMenu((v) => (v === 'draw' ? null : 'draw'))}
         >
           {DRAW_LABEL[drawMode]} ▾
         </button>
-        {drawMenuOpen ? (
+        {openMenu === 'draw' ? (
           <div className="pl-menu" role="menu">
             <button type="button" className="pl-menu-item" onClick={() => pickMode('polygon')}>
               POLYGON
@@ -128,7 +145,7 @@ export default function PlannerTopbar({
                 className="pl-menu-item"
                 onClick={() => {
                   onCancelDraw()
-                  setDrawMenuOpen(false)
+                  setOpenMenu(null)
                 }}
               >
                 STOP DRAWING
@@ -146,8 +163,8 @@ export default function PlannerTopbar({
         + DOCK
       </button>
 
-      <button type="button" className="pl-btn" onClick={onSuggestLayout}>
-        SUGGEST LAYOUT
+      <button type="button" className="pl-btn" onClick={onSuggestLayout} disabled={suggestBusy}>
+        {suggestBusy ? 'PLACING DOCKS' : 'SUGGEST LAYOUT'}
       </button>
 
       <button type="button" className="pl-btn" onClick={onExportPlan}>
@@ -173,6 +190,14 @@ export default function PlannerTopbar({
         className="pl-hidden-input"
         onChange={handlePlanFile}
       />
+
+      <div className="pl-dropdown" ref={layersRef}>
+        <PlannerLayersMenu
+          open={openMenu === 'layers'}
+          onToggle={() => setOpenMenu((v) => (v === 'layers' ? null : 'layers'))}
+          onClose={() => setOpenMenu(null)}
+        />
+      </div>
 
       <div className="pl-spacer" />
 

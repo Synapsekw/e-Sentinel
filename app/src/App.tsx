@@ -4,6 +4,7 @@ import { routerBasename } from './shared/env'
 import Landing from './modules/landing/Landing'
 import ModulePlaceholder from './shared/ModulePlaceholder'
 import RouteFallback from './shared/RouteFallback'
+import ErrorBoundary from './shared/ErrorBoundary'
 import EngineProvider from './modules/console/engine/EngineProvider'
 
 // PHASE 1F: `/console` is the only route that drags in maplibre-gl + the
@@ -29,15 +30,27 @@ export default function App() {
   return (
     <BrowserRouter basename={routerBasename(import.meta.env.BASE_URL)}>
       <EngineProvider>
-        <Suspense fallback={<RouteFallback />}>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/console" element={<Console />} />
-            <Route path="/planner" element={<Planner />} />
-            <Route path="/telemetry" element={<ModulePlaceholder />} />
-            <Route path="/compliance" element={<ModulePlaceholder />} />
-          </Routes>
-        </Suspense>
+        {/* The ErrorBoundary is INSIDE EngineProvider, and must stay there.
+            An error boundary replaces its whole subtree when it catches, so a
+            boundary placed ABOVE EngineProvider would unmount the provider on
+            any uncaught render error and kill the running simulation --
+            turning a recoverable route crash into a total loss of sim state,
+            and breaking the page-lifetime-singleton invariant above. Do not
+            "tidy" it upward. The trade is that a throw from EngineProvider's
+            own render body is not caught; that body is a thin context wrapper
+            with nothing in it that can throw, and catching it would require
+            exactly the placement that kills the engine. */}
+        <ErrorBoundary>
+          <Suspense fallback={<RouteFallback />}>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/console" element={<Console />} />
+              <Route path="/planner" element={<Planner />} />
+              <Route path="/telemetry" element={<ModulePlaceholder />} />
+              <Route path="/compliance" element={<ModulePlaceholder />} />
+            </Routes>
+          </Suspense>
+        </ErrorBoundary>
       </EngineProvider>
     </BrowserRouter>
   )

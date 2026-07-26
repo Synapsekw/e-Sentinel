@@ -6,6 +6,7 @@
 
 import { PLAN_SCHEMA_VERSION } from './plan'
 import { isValidAoiGeometry } from './geometry'
+import { DOCK_MODELS, DRONES } from './catalog'
 import type { DeploymentPlan } from './types'
 
 export function serializePlan(plan: DeploymentPlan): string {
@@ -16,6 +17,103 @@ export type ParseResult = { ok: true; plan: DeploymentPlan } | { ok: false; mess
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v)
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+// Blank and whitespace-only are rejected together: an id or name of "   " is
+// indistinguishable from a missing one everywhere it is used (React keys,
+// the plan tree's labels, adoptIdsFrom's suffix scan).
+function isNonEmptyString(v: unknown): v is string {
+  return typeof v === 'string' && v.trim().length > 0
+}
+
+// A GeoJSON position is [lon, lat] with an OPTIONAL third altitude element,
+// so this checks "at least two, all finite" rather than "exactly two". A dock
+// position is a different thing -- PlannedDock.position is typed
+// [lon, lat] with no third slot -- and is checked separately below.
+function isPositionArray(v: unknown): boolean {
+  return Array.isArray(v) && v.length >= 2 && v.every(isFiniteNumber)
+}
+
+// Empty is rejected at every level. A Polygon with zero rings, or a ring with
+// zero positions, is not something any AOI-entry path in this build can mint,
+// and it does NOT get caught downstream: isValidAoiGeometry runs @turf/kinks,
+// which finds no self-intersections in an empty ring and so reports
+// `valid: true`, handing a degenerate shape to computeCoverage exactly as if
+// it were a real area.
+function isNestedCoordinateArray(v: unknown, depth: number): boolean {
+  if (!Array.isArray(v) || v.length === 0) return false
+  if (depth === 0) return v.every(isPositionArray)
+  return v.every((child) => isNestedCoordinateArray(child, depth - 1))
+}
+
+const AOI_SOURCES = ['drawn', 'kml', 'kmz']
+const DOCK_SOURCES = ['manual', 'auto']
+const DOCK_ENVIRONMENTS = ['urban', 'rural']
+
+// Shape gate, not a geometry gate. Ring closure, winding order and
+// self-intersection are deliberately NOT checked here: isValidAoiGeometry
+// (re-derived on the way out, below) and turf already own geometry quality,
+// and an AOI that is well-shaped but self-intersecting must still load so the
+// user sees it flagged INVALID in the tree rather than losing the whole file.
+// For the same reason `valid` itself is not checked at all: whatever the file
+// claims is discarded and recomputed from the geometry on the way out.
+function isValidAoiShape(v: unknown): boolean {
+  if (!isRecord(v)) return false
+  if (!isNonEmptyString(v.id) || !isNonEmptyString(v.name)) return false
+  if (typeof v.source !== 'string' || !AOI_SOURCES.includes(v.source)) return false
+  if (v.simplifiedFrom !== undefined && !isFiniteNumber(v.simplifiedFrom)) return false
+  const geometry = v.geometry
+  if (!isRecord(geometry)) return false
+  // Nesting depth is checked against the DECLARED type, so a MultiPolygon
+  // carrying Polygon coordinates (or the reverse) is rejected rather than
+  // admitted for turf to misread. Polygon: ring -> position (depth 1).
+  // MultiPolygon: polygon -> ring -> position (depth 2).
+  if (geometry.type === 'Polygon') return isNestedCoordinateArray(geometry.coordinates, 1)
+  if (geometry.type === 'MultiPolygon') return isNestedCoordinateArray(geometry.coordinates, 2)
+  return false
+}
+
+function isValidDockShape(v: unknown): boolean {
+  if (!isRecord(v)) return false
+  if (!isNonEmptyString(v.id) || !isNonEmptyString(v.name)) return false
+  // Exactly two, unlike an AOI position: PlannedDock.position is typed
+  // [lon, lat] with no altitude slot, so a third element means the file did
+  // not come from this build.
+  const position = v.position
+  if (!Array.isArray(position) || position.length !== 2) return false
+  if (!position.every(isFiniteNumber)) return false
+  const [lon, lat] = position
+  if (lon < -180 || lon > 180 || lat < -90 || lat > 90) return false
+  if (typeof v.environment !== 'string' || !DOCK_ENVIRONMENTS.includes(v.environment)) return false
+  if (typeof v.source !== 'string' || !DOCK_SOURCES.includes(v.source)) return false
+  if (v.radiusKmOverride !== undefined && !isFiniteNumber(v.radiusKmOverride)) return false
+  // dockModel/droneModel ARE checked for membership of domain/catalog.ts.
+  //
+  // The spec originally recorded the opposite as a non-goal, on the premise
+  // that "the Inspector already handles an unknown or incompatible pairing".
+  // That premise was verified and found false, so the decision was reversed:
+  // the Inspector's fallback covers a model that IS in the catalog but paired
+  // with an incompatible one (it re-adds the stored droneModel as a marked
+  // "· INCOMPATIBLE" option with an alert badge). A model id absent from the
+  // catalog entirely is not handled anywhere and THROWS during render --
+  // catalog.ts's effectiveRadius does `DRONES[dock.droneModel].enduranceMin`
+  // and Inspector.tsx does `DOCK_MODELS[dock.dockModel].drones`, both of
+  // which are a TypeError on an unknown id. Admitting one here would trade a
+  // rejected file for a crashed module.
+  //
+  // The forward-compatibility worry the original non-goal was protecting
+  // against -- refusing a plan naming a model a NEWER build has shipped -- is
+  // already covered upstream by the schemaVersion check, which rejects a
+  // newer plan with a message that names the real problem. And types.ts
+  // declares these as the narrow DockModelId/DroneModelId unions, so
+  // admitting an off-catalog id would make this function's own
+  // `p as DeploymentPlan` cast a lie.
+  if (!isNonEmptyString(v.dockModel) || !isNonEmptyString(v.droneModel)) return false
+  return v.dockModel in DOCK_MODELS && v.droneModel in DRONES
 }
 
 // Coverage-params bounds mirrored from PlanTree.tsx's sliders (min/max on the
@@ -101,12 +199,38 @@ export function parsePlan(json: string): ParseResult {
     }
   }
 
-  // aois/docks are checked above only for being arrays; their element shape
-  // (geometry, position, ids) is not individually validated. That is an
-  // intentional scope limit, not the same gap this fix closes: a malformed
-  // element there fails safely downstream (computeCoverage's try/catch, the
-  // INVALID-AOI badge) rather than crashing render or hanging a loop the way
-  // a missing/out-of-range params did.
+  // Element-level validation. The comment that used to sit here claimed a
+  // malformed element "fails safely downstream". It did not, and that was the
+  // whole gap. parsePlan's OWN return path (bottom of this function) runs
+  // `plan.aois.map((aoi) => ({ ...aoi, valid: isValidAoiGeometry(aoi.geometry) }))`,
+  // so a file containing `{"aois":[null], ...}` threw a TypeError -- "Cannot
+  // read properties of null (reading 'geometry')" -- INSIDE parsePlan, before
+  // any downstream code got a chance to be safe about it. On the autosave
+  // path loadAutosave's try/catch swallowed that and silently degraded to "no
+  // saved plan"; on the IMPORT PLAN path there is no try/catch at all, so it
+  // surfaced as an unhandled rejection out of an async handler and the user
+  // saw nothing happen. Elements that did NOT throw were admitted verbatim: a
+  // dock with a three-element position, a latitude of 900, a blank id, an
+  // `environment` of "suburban" all reached the map, the inspector and
+  // autoPlace as though they were well formed.
+  //
+  // A single bad element rejects the WHOLE file. Dropping the offender and
+  // returning the rest was considered and rejected: handing back a plan
+  // smaller than the one the customer opened, with nothing on screen saying
+  // an area or a dock was discarded, is a worse failure than refusing to load
+  // it. The message names the index so the offending element can be found in
+  // the file by hand.
+  for (let i = 0; i < p.aois.length; i += 1) {
+    if (!isValidAoiShape(p.aois[i])) {
+      return { ok: false, message: `PLAN CONTAINS AN INVALID AREA AT INDEX ${i}` }
+    }
+  }
+  for (let i = 0; i < p.docks.length; i += 1) {
+    if (!isValidDockShape(p.docks[i])) {
+      return { ok: false, message: `PLAN CONTAINS AN INVALID DOCK AT INDEX ${i}` }
+    }
+  }
+
   const plan = p as DeploymentPlan
 
   // Minor 4 (final whole-branch review): this is the one function BOTH
