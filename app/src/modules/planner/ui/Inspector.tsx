@@ -7,7 +7,7 @@ import { usePlanStore } from '../store/planStore'
 import { removeAoi, removeDock, updateDock } from '../domain/plan'
 import { DOCK_MODELS, DRONES, effectiveRadius } from '../domain/catalog'
 import type { DockModelId, DroneModelId, PlannedDock } from '../domain/types'
-import { aoiAreaKm2 } from './aoiGeometry'
+import { formatAoiArea } from './aoiGeometry'
 
 // DOCK_MODELS is keyed by the full DockModelId union, so widening
 // Object.keys back to that union here is safe -- not a structural `any`,
@@ -234,7 +234,7 @@ function AoiInspector({ aoiId }: { aoiId: string }) {
       </label>
       <div className="pl-kv">
         <span className="lbl">Area</span>
-        <span>{aoiAreaKm2(aoi).toFixed(1)} KM2</span>
+        <span>{formatAoiArea(aoi)}</span>
       </div>
       <div className="pl-kv">
         <span className="lbl">Source</span>
