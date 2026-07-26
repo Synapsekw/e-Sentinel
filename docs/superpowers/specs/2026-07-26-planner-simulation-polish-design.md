@@ -86,15 +86,22 @@ Out of scope, deliberately:
 - The provisional drone catalog figures in `catalog.ts`.
 - Modules 03/04 and the Higgsfield videos.
 - Any change to simulation behaviour. The user scoped the simulation half to
-  "only what unifies the two", so the sole change to console-owned code is the
-  `LAYER_LABELS`/`LAYER_ORDER` extraction in §9 — a de-duplication, not a behaviour
-  change. Items 9 and 10 (§12) are planner-domain only.
+  "only what unifies the two", so console-owned code takes exactly two changes, both in
+  §9 and both behaviour-preserving: the `LAYER_LABELS`/`LAYER_ORDER` de-duplication, and
+  an optional `className` prop on `OfflineChip` whose default reproduces today's markup.
+  A third, `useBasemap`'s new `enabled` parameter (§4), defaults to `true` and so leaves
+  the console's call site unchanged. Items 9 and 10 (§12) are planner-domain only.
 
 ## 4. Item 1 — Planner map cartography
 
 ### Approach
 
-`MapView` gains `manageBasemap?: boolean`, defaulting to `true`. `Planner` passes `false`.
+`useBasemap` gains a third parameter, `enabled = true`, and early-returns when it is
+false. `MapView` gains `manageBasemap?: boolean`, also defaulting to `true`, and forwards
+it as that parameter. `Planner` passes `false`.
+
+The flag is a hook *parameter* rather than a condition around the call: React forbids
+conditional hook calls, and `react-hooks/rules-of-hooks` would reject the alternative.
 
 ```tsx
 <MapView
@@ -105,8 +112,8 @@ Out of scope, deliberately:
 >
 ```
 
-`MapView` then calls `useBasemap` only when the flag is set. `useOffline` still runs
-unconditionally — offline fallback is map-lifecycle behaviour that both routes want.
+`useOffline` still runs unconditionally — offline fallback is map-lifecycle behaviour that
+both routes want.
 
 With `useBasemap` out of the picture, `uae-places` and `uae-roads` keep their style
 defaults (visible) and `usePlannerBasemap` is the single writer of the planner's basemap
@@ -130,8 +137,11 @@ this needs browser verification: cold-load `/planner`, assert `uae-places` visib
 not `none` and that place labels render; then `/console` → theater → `/planner` and assert
 the same. Both paths must agree. Both were measured disagreeing before the fix.
 
-`MapView`'s existing tests must also confirm the default (`manageBasemap` absent) still
-runs `useBasemap`, so `/console` is untouched.
+`MapView` itself has no render test — `MapView.props.test.tsx` mocks `maplibre-gl` away and
+asserts only the exported camera defaults, because the component needs a live WebGL canvas.
+The `enabled` gate is therefore unit-tested at the hook level (`useBasemap.test.ts`, new,
+against the fake-map harness the planner map hooks already use): with `enabled: false` the
+hook touches no layer at all, and with the parameter omitted it behaves exactly as today.
 
 ## 5. Item 2 — AOI fill
 
@@ -272,8 +282,14 @@ entity on the map via `setFilter('coverage-line-hi', …)` (`updateLiveLayers.ts
 
 - New `planner-rings-line-hi` layer, brighter and thicker than `planner-rings-line`,
   filtered to the selected dock id — the direct analogue of `coverage-line-hi`.
-- `planner-aoi-line` gains a selected-state width/opacity bump, filtered on the selected
-  AOI id.
+- New `planner-aoi-line-hi` layer, solid white where the ordinary outline is dashed,
+  filtered to the selected AOI id.
+
+Both are separate `-hi` layers rather than a selected-state paint bump on the existing
+`planner-aoi-line`: a filter selects which *features* a layer draws, so it cannot vary
+another layer's paint per feature. Two layers filtered to one id each means both highlights
+work by the identical mechanism, which is also the console's (`coverage-line-hi`), instead
+of by two different ones.
 
 Both are `setFilter` calls on a filtered-to-nothing layer when selection is `null`, so
 selection changes never rebuild a layer — consistent with the module's existing rule that
@@ -315,6 +331,12 @@ user's memory instead of two.
 mode materially changes what the planner's map can show (`usePlannerBasemap` passes
 `eff = null` when offline, hiding every raster). A planner user currently gets no
 indication of that.
+
+`OfflineChip` currently hardcodes `className="chip warn"`, styled by `chrome/chrome.css`,
+which `planner.css`'s header records the planner deliberately does not import. It gains an
+optional `className` prop defaulting to `'chip warn'`; the planner passes its own `pl-*`
+classes. One component and one copy of the user-facing string, each module keeping its own
+styling and the console's rendered markup unchanged.
 
 No clock: the console's is a live-operations affordance, and a planning tool does not need
 one. Not every console element belongs here — unification means the shared things agree,
@@ -406,9 +428,13 @@ would be a data change disguised as a polish fix.
 
 `plan.test.ts`: numbering from max not length; a removal then an add does not collide;
 `uniqueName` suffixes correctly and leaves a non-colliding name untouched.
-`autoPlace.test.ts`: auto docks carry `DOCK NN` names and `source: 'auto'`. Existing
-assertions on the `PROPOSED …` format are updated — they pin the old behaviour by
-construction, so they change with it.
+`autoPlace.test.ts`: auto docks carry `DOCK NN` names and `source: 'auto'`.
+
+No existing test pins the `PROPOSED …` format, so nothing has to be rewritten to
+accommodate the change. (`suggestOutcome.test.ts:8` builds fixture docks named
+`PROPOSED ${n}`, but that is a local fixture label, not an assertion about what
+`autoPlace` produces.) `useDockPlacement.test.ts` does assert `DOCK 01`/`DOCK 12`, and
+those assertions survive — the format they pin is the one being adopted everywhere.
 
 ## 13. Data flow
 
@@ -433,9 +459,10 @@ draw vertex, dock placement, dock drag, and selection. Three already coexist thr
 drag-then-click suppression is the genuinely new hazard and is the one behaviour worth
 verifying by hand in the browser as well as in tests.
 
-**Naming test churn (§12).** `autoPlace.test.ts` asserts the current name format, so those
-assertions change. They are being deliberately updated, not broken — worth calling out so
-the diff is not mistaken for a regression.
+**`dockFromClick`'s signature change (§12).** Its `seq: number` parameter becomes a
+resolved name, so every call site and the four `dockFromClick` assertions in
+`useDockPlacement.test.ts` are touched. Mechanical, but it is the one place in this pass
+where an existing exported signature changes rather than gaining an optional parameter.
 
 ## 15. Verification
 
