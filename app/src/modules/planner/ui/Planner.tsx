@@ -33,6 +33,7 @@ import PlanTree from './PlanTree'
 import Inspector from './Inspector'
 import SummaryStrip from './SummaryStrip'
 import { describeSuggestOutcome, isLayoutStatusCurrent } from './suggestOutcome'
+import { plural } from './pluralize'
 import type { SuggestOutcome } from './suggestOutcome'
 import './planner.css'
 
@@ -203,8 +204,8 @@ export function PlannerShell() {
       level: 'info',
       text:
         result.skipped > 0
-          ? `${result.aois.length} AREAS IMPORTED · ${result.skipped} FEATURES SKIPPED`
-          : `${result.aois.length} AREA${result.aois.length === 1 ? '' : 'S'} IMPORTED`,
+          ? `${plural(result.aois.length, 'AREA')} IMPORTED · ${plural(result.skipped, 'FEATURE')} SKIPPED`
+          : `${plural(result.aois.length, 'AREA')} IMPORTED`,
     })
   }
 

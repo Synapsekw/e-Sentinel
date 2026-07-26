@@ -17,6 +17,7 @@ import { MemoryRouter } from 'react-router-dom'
 // SummaryStrip.test.tsx for the same note.
 import '@testing-library/jest-dom/vitest'
 import { PlannerShell } from './Planner'
+import { plural } from './pluralize'
 import { usePlanStore } from '../store/planStore'
 import { createPlan } from '../domain/plan'
 
@@ -220,5 +221,18 @@ describe('PlannerShell SUGGEST LAYOUT busy state (Item 5)', () => {
     // rather than calling setPlan/setState against a dead component.
     act(() => frames[1](0))
     expect(spy.entries).toHaveLength(0)
+  })
+})
+
+describe('import-message pluralisation', () => {
+  // Found in browser verification, not by any test: the singular was handled
+  // only on the no-skips branch, so the repo's own simple.kml fixture (1 area,
+  // 1 skipped feature) produced "1 AREAS IMPORTED · 1 FEATURES SKIPPED". The
+  // two counts are independent, so each needs its own plural.
+  it('uses the singular for exactly one and the plural otherwise', () => {
+    expect(plural(1, 'AREA')).toBe('1 AREA')
+    expect(plural(2, 'AREA')).toBe('2 AREAS')
+    expect(plural(0, 'FEATURE')).toBe('0 FEATURES')
+    expect(plural(1, 'FEATURE')).toBe('1 FEATURE')
   })
 })
