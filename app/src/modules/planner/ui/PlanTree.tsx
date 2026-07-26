@@ -11,7 +11,7 @@ import type { ChangeEvent } from 'react'
 import { usePlanStore } from '../store/planStore'
 import { removeAoi, removeDock, setParams } from '../domain/plan'
 import type { DeploymentPlan } from '../domain/types'
-import { aoiAreaKm2 } from './aoiGeometry'
+import { formatAoiArea } from './aoiGeometry'
 
 function commitPlan(next: DeploymentPlan): void {
   usePlanStore.getState().setPlan(next)
@@ -82,7 +82,7 @@ export default function PlanTree() {
                 >
                   <div className="pl-row-main">
                     <span className="pl-row-name">{aoi.name}</span>
-                    <span className="pl-row-meta">{aoiAreaKm2(aoi).toFixed(1)} KM2</span>
+                    <span className="pl-row-meta">{formatAoiArea(aoi)}</span>
                   </div>
                   {aoi.simplifiedFrom != null ? (
                     <span className="pl-badge" title={`ORIGINAL ${aoi.simplifiedFrom} VERTICES`}>
