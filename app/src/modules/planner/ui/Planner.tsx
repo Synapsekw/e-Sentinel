@@ -376,6 +376,7 @@ export default function Planner() {
         initialCenter={PLANNER_CENTER}
         initialZoom={PLANNER_ZOOM}
         styleSpec={buildPlannerStyle()}
+        manageBasemap={false}
       >
         <PlannerShell />
       </MapView>
