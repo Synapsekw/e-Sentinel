@@ -22,6 +22,10 @@ export interface PlannerTopbarProps {
   onImportPlanFile: (file: File) => void
   onExportPlan: () => void
   onSuggestLayout: () => void
+  // True while PlannerShell's yield-then-compute auto-placement is in flight.
+  // Only the SUGGEST LAYOUT button reacts to it: the rest of the topbar stays
+  // live, since nothing else here is what the user is waiting on.
+  suggestBusy: boolean
 }
 
 const DRAW_LABEL: Record<AoiDrawMode, string> = {
@@ -41,6 +45,7 @@ export default function PlannerTopbar({
   onImportPlanFile,
   onExportPlan,
   onSuggestLayout,
+  suggestBusy,
 }: PlannerTopbarProps) {
   // One `openMenu` rather than one boolean per dropdown: two independent
   // booleans can both be true, which would put two absolutely-positioned
@@ -158,8 +163,8 @@ export default function PlannerTopbar({
         + DOCK
       </button>
 
-      <button type="button" className="pl-btn" onClick={onSuggestLayout}>
-        SUGGEST LAYOUT
+      <button type="button" className="pl-btn" onClick={onSuggestLayout} disabled={suggestBusy}>
+        {suggestBusy ? 'PLACING DOCKS' : 'SUGGEST LAYOUT'}
       </button>
 
       <button type="button" className="pl-btn" onClick={onExportPlan}>
