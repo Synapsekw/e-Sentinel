@@ -35,6 +35,13 @@
   align-items: center;
   gap: 12px;
   flex: none;
+  /* A <Link> home (PlannerTopbar.tsx), same affordance as the console's
+     `.t-brand`/`.g-brand`: opacity only, since the global `a` reset already
+     handles underline and color. */
+  transition: opacity 0.14s ease;
+}
+.pl-brand:hover {
+  opacity: 0.72;
 }
 .pl-logo {
   height: 23px;
@@ -622,7 +629,9 @@
   .pl-chip {
     display: none;
   }
-  /* The logo is decoration next to the module title. */
+  /* The logo is decoration next to the module title. Dropping it does not cost
+     the way home: `.pl-brand` itself is the <Link>, so the module title that
+     remains is still the hit target. */
   .pl-logo {
     display: none;
   }

@@ -34,6 +34,7 @@
 // callback, since exiting capture modes goes through the same
 // registerCaptureExits registry selectEntity uses.
 
+import { Link } from 'react-router-dom'
 import { useAppStore } from '@/shared/store'
 import type { TopMenuName } from '@/shared/store'
 import { DATA_DOCKS } from '@/modules/console/domain'
@@ -79,7 +80,17 @@ export default function Topbar({
 
   return (
     <>
-      <div className="t-brand">
+      {/* The brand doubles as the route home link. Inside the theater the
+          topbar is the ONLY chrome on screen (the globe overlay is hidden),
+          and #btn-globe only flips the scene back to orbit -- it does not
+          leave /console -- so without this there is no way back to the module
+          landing page at all. The whole brand block is the hit target, not
+          just the <img>: at 1720px and below `.t-brand .lbl` drops out
+          (chrome.css) and the planner hides `.pl-logo` outright at 1500px, so
+          anchoring the link to one child would make it shrink or vanish with
+          that child. Matches PlannerTopbar's `.pl-brand` and GlobeOverlay's
+          `.g-brand`, so the logo goes home from every surface. */}
+      <Link className="t-brand" to="/" title="BACK TO MODULES">
         <img
           className="t-logo"
           src={`${import.meta.env.BASE_URL}assets/img/eand-logo-white.png`}
@@ -89,7 +100,7 @@ export default function Topbar({
           <div className="ttl">SENTINEL</div>
           <div className="lbl">GLOBAL COMMAND &amp; CONTROL</div>
         </div>
-      </div>
+      </Link>
       <div className="chip ok-chip">
         <span className="dot" />
         GRID ONLINE

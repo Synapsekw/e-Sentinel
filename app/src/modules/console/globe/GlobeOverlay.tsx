@@ -19,6 +19,7 @@
 // `app/public/assets/img/`, not modified.
 
 import type { MutableRefObject } from 'react'
+import { Link } from 'react-router-dom'
 import { useAppStore } from '@/shared/store'
 import './globe.css'
 
@@ -44,7 +45,14 @@ export default function GlobeOverlay({ tagRef, altRef, enterBtnRef, onEnter }: G
 
   return (
     <div id="globe-ui" hidden={scene !== 'globe'}>
-      <div className="g-brand">
+      {/* Home link, same as the theater topbar's `.t-brand` and the planner's
+          `.pl-brand` -- the orbital scene hides the topbar entirely
+          (useChromeFade), so this is the ONLY brand on screen here and has to
+          carry the way back to the module landing page itself. `#globe-ui` is
+          `pointer-events: none` (it overlays the draggable globe), so
+          `.g-brand` opts back in explicitly in globe.css, the same way
+          `.g-tag` and `#globe-enter-btn` already do. */}
+      <Link className="g-brand" to="/" title="BACK TO MODULES">
         <img
           className="g-logo"
           src={`${import.meta.env.BASE_URL}assets/img/eand-logo-white.png`}
@@ -54,7 +62,7 @@ export default function GlobeOverlay({ tagRef, altRef, enterBtnRef, onEnter }: G
           <b>SENTINEL</b>
           <span className="lbl">GLOBAL COMMAND &amp; CONTROL · ORBITAL VIEW</span>
         </div>
-      </div>
+      </Link>
       <div className="g-hint lbl">DRAG TO ROTATE · CLICK UAE TO ENTER THEATER</div>
       {/* Click handling for this button is wired imperatively by useGlobe's
           wireClicks (matches legacy's tagEl.addEventListener) rather than a

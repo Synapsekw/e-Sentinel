@@ -109,6 +109,14 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  transition: opacity 0.14s ease;
+}
+/* `.t-brand` is a <Link> to the module landing page (Topbar.tsx). The global
+   `a` reset (index.css) already drops the underline and inherits the color, so
+   a quiet opacity lift is the whole affordance -- the topbar's tone rules out
+   anything louder, and the logo reading as clickable is enough. */
+.t-brand:hover {
+  opacity: 0.72;
 }
 .t-logo {
   height: 23px;
