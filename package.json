@@ -1,0 +1,20 @@
+{
+  "name": "sentinel-workspace",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm --prefix app run dev",
+    "build": "npm --prefix app run build",
+    "preview": "npm --prefix app run preview",
+    "lint": "npm --prefix app run lint",
+    "format": "npm --prefix app run format",
+    "format:check": "npm --prefix app run format:check",
+    "typecheck": "npm --prefix app run typecheck",
+    "test": "npm --prefix app run test",
+    "test:watch": "npm --prefix app run test:watch",
+    "verify": "npm --prefix app run verify",
+    "install:app": "npm --prefix app ci"
+  }
+}

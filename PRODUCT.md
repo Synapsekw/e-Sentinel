@@ -34,10 +34,10 @@ Sovereign, precise, operational. "National grid" seriousness, not gamer HUD. Mod
 
 - Generic sci-fi/gamer HUD slop (scanlines, glows everywhere, fake hex grids).
 - SaaS dashboard cream/gradient template look.
-- The existing embedded sim (reference/embedded_sim.html) is the baseline to clearly beat, not copy.
+- The existing embedded sim (was `reference/embedded_sim.html`, now in git history only) is the baseline to clearly beat, not copy.
 
 ## Strategic principles
 
 - Must feel alive at all times: drones moving, telemetry ticking, events streaming.
 - Every interaction the presenter does must look effortless and cinematic on a big screen.
-- Deliverable: folder with index.html + assets/ + videos/, double-click to run, works offline via fallback map.
+- Deliverable: the React SPA in `app/`, deployed to GitHub Pages alongside `videos/`. (Superseded the original double-click offline folder; the map still falls back to an embedded vector basemap without internet.)

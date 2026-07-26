@@ -1,8 +1,8 @@
 # SENTINEL app (React migration)
 
-Vite + React + TypeScript. This is the Phase 0 foundation; the vanilla sim in
-the repo root (`index.html`, `console.html`, `assets/`) is still the deployed
-site until the Phase 1 port reaches parity.
+Vite + React + TypeScript. This is the deployed product. The original vanilla
+sim that once lived at the repo root has been removed; it survives only in git
+history, which the port's provenance comments still cite by path and line.
 
 ## Setup
 
@@ -21,5 +21,6 @@ git config core.hooksPath .githooks   # once per clone: enable the pre-commit ho
 
 ## Deployment
 
-Not deployed yet. CI builds the app as a gate; GitHub Pages still publishes the
-legacy static site. Phase 1 flips the Pages deploy to `app/dist`.
+GitHub Pages publishes `app/dist` on every push to `master`
+(`.github/workflows/deploy.yml`), staged alongside the repo-root `videos/`
+directory. The production build serves under `/e-Sentinel/`.

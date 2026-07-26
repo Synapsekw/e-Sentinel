@@ -26,12 +26,12 @@ The app is a React + TypeScript SPA under `app/`:
 - `app/src/modules/console/control/` manual drone control, the mission wizard, the predefined-mission menu
 - `videos/` pre-generated mission videos, served at `/videos/` in dev, preview and production (see `videos/README.md`)
 
-Tests: `cd app && npm run test` (Vitest). Also `npm run typecheck`, `npm run lint`, `npm run build`.
+Tests: `cd app && npm run test` (Vitest). Also `npm run typecheck`, `npm run lint`, `npm run build`. From the repo root, `pnpm dev` / `pnpm verify` (and the `npm run` equivalents) proxy into `app/`.
 
-The original vanilla-JS implementation is still in the tree (`index.html`, `console.html`, `assets/`, `tests/`) as a reference for the port and an independent check on the simulation logic — `node --test tests/*.test.js` from the repo root still passes — but it is no longer deployed.
+The original vanilla-JS implementation (`index.html`, `console.html`, `assets/`, `tests/`, `tools/`) was removed once the React port reached parity. It remains in git history if a behaviour ever needs checking against the original — the port's provenance comments cite it by path and line, e.g. `assets/js/ui/panels.js:513-554`.
 
 ## CI/CD
 
-GitHub Actions run both test suites, typecheck, lint and build on every push and PR (`.github/workflows/ci.yml`), and deploy the React app to GitHub Pages on pushes to `master` (`.github/workflows/deploy.yml`): it builds `app/` and publishes `app/dist` plus the repo-root `videos/` directory. `app/public/404.html` is a redirect shim so deep links like `/e-Sentinel/console` survive a cold load or a refresh on Pages, which has no server-side rewrite. Enable Pages with source "GitHub Actions" in the repository settings for the deployment to go live.
+GitHub Actions run typecheck, lint, format-check, tests and build on every push and PR (`.github/workflows/ci.yml`), and deploy the React app to GitHub Pages on pushes to `master` (`.github/workflows/deploy.yml`): it builds `app/` and publishes `app/dist` plus the repo-root `videos/` directory. `app/public/404.html` is a redirect shim so deep links like `/e-Sentinel/console` survive a cold load or a refresh on Pages, which has no server-side rewrite. Enable Pages with source "GitHub Actions" in the repository settings for the deployment to go live.
 
 © 2026 e&. Simulated environment; all operational data is synthetic except live tower site locations.
