@@ -196,6 +196,23 @@ describe('usePlannerSelection', () => {
     expect(usePlanStore.getState().selection).toEqual({ type: 'dock', id: 'dock-1' })
   })
 
+  it('does not let a right-button drag (dragRotate) suppress the next real left-click', () => {
+    // MapLibre's dragRotate is a right-button drag, and no `click` event ever
+    // follows a rotate gesture to consume the suppression latch. An unguarded
+    // latch armed by that drag would silently eat the user's next genuine
+    // left-click on a dock, ring, or bare map.
+    renderHook(() => usePlannerSelection(mapRef, true, true))
+    act(() => {
+      fake.fire('mousedown', undefined, { point: { x: 10, y: 10 }, originalEvent: { button: 2 } })
+      fake.fire('mouseup', undefined, { point: { x: 40, y: 40 }, originalEvent: { button: 2 } })
+      fake.fire('click', 'planner-docks-circle', {
+        point: [40, 40],
+        features: [{ properties: { id: 'dock-1' } }],
+      })
+    })
+    expect(usePlanStore.getState().selection).toEqual({ type: 'dock', id: 'dock-1' })
+  })
+
   it('registers nothing at all while disabled', () => {
     renderHook(() => usePlannerSelection(mapRef, true, false))
     expect(fake.handlerCount()).toBe(0)

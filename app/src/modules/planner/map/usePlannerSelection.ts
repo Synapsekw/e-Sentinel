@@ -80,11 +80,32 @@ export function usePlannerSelection(
     let downAt: { x: number; y: number } | null = null
     let suppressNextClick = false
 
+    // mousedown/mouseup fire for every mouse button, but MapLibre's `click`
+    // only fires for the primary one -- and the default dragRotate handler is
+    // a right-button drag. Without this guard, a right-drag (or a middle-
+    // drag) past the slop would arm suppressNextClick, and since no click
+    // ever follows a rotate drag to consume it, the flag would sit armed and
+    // silently eat the user's next real left-click. originalEvent can be
+    // absent on synthetic events (this hook's own test harness constructs
+    // mouse events without one), so treat that case as primary too.
+    const isPrimaryButton = (e: maplibregl.MapMouseEvent): boolean => {
+      const button = e.originalEvent?.button
+      return button === undefined || button === 0
+    }
+
     const onDown = (e: maplibregl.MapMouseEvent) => {
+      if (!isPrimaryButton(e)) return
       downAt = { x: e.point.x, y: e.point.y }
     }
     const onUp = (e: maplibregl.MapMouseEvent) => {
       if (!downAt) return
+      if (!isPrimaryButton(e)) {
+        // Can't happen while onDown's guard holds -- a non-primary press
+        // never sets downAt -- but cleared defensively rather than relying
+        // on that invariant.
+        downAt = null
+        return
+      }
       const dx = e.point.x - downAt.x
       const dy = e.point.y - downAt.y
       suppressNextClick = Math.abs(dx) > DRAG_SLOP_PX || Math.abs(dy) > DRAG_SLOP_PX
@@ -153,6 +174,16 @@ export function usePlannerSelection(
     }
     const onEnter = () => setCursor('pointer')
     const onLeave = () => setCursor('')
+    // The ring sits under the dock marker, and the AOI sits under both, so
+    // moving off the dock's tiny 5px marker while still inside its ring
+    // fires mouseleave for DOCK_LAYER and resets the cursor -- mouseenter
+    // for RING_LAYER never re-fires because the pointer never actually left
+    // the ring's footprint. Same going from ring into AOI fill. Re-assert
+    // the pointer on every move over the ring/AOI, mirroring the console's
+    // onCoverageMove (useMapSelection.ts): "Don't fight the dot handlers'
+    // pointer."
+    const onRingMove = () => setCursor('pointer')
+    const onAoiMove = () => setCursor('pointer')
 
     map.on('mousedown', onDown)
     map.on('mouseup', onUp)
@@ -160,6 +191,8 @@ export function usePlannerSelection(
     map.on('click', DOCK_LAYER, onDockClick)
     map.on('click', RING_LAYER, onRingClick)
     map.on('click', AOI_LAYER, onAoiClick)
+    map.on('mousemove', RING_LAYER, onRingMove)
+    map.on('mousemove', AOI_LAYER, onAoiMove)
     for (const layer of HIT_LAYERS) {
       map.on('mouseenter', layer, onEnter)
       map.on('mouseleave', layer, onLeave)
@@ -178,6 +211,8 @@ export function usePlannerSelection(
       map.off('click', DOCK_LAYER, onDockClick)
       map.off('click', RING_LAYER, onRingClick)
       map.off('click', AOI_LAYER, onAoiClick)
+      map.off('mousemove', RING_LAYER, onRingMove)
+      map.off('mousemove', AOI_LAYER, onAoiMove)
       for (const layer of HIT_LAYERS) {
         map.off('mouseenter', layer, onEnter)
         map.off('mouseleave', layer, onLeave)

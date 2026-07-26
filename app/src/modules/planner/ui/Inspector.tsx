@@ -151,11 +151,18 @@ function DockInspector({ dockId }: { dockId: string }) {
         </select>
       </label>
       <label className="pl-field">
-        <span className="lbl">Coverage radius · {breakdown.radiusKm.toFixed(2)} KM</span>
+        <span className="lbl">Coverage radius</span>
         <input
           className="pl-slider"
           type="range"
-          min={0}
+          // Not 0: a zero-radius dock has no buffer at all, and
+          // domain/coverage.ts drops a dock with no buffer from the result,
+          // which with a single dock collapses computeCoverage to
+          // { ok: false, reason: 'degenerate' } -- a completely uncovered AOI
+          // would then paint no red gap overlay and the summary strip would
+          // report a geometry problem instead of 0% coverage. 0.1 keeps the
+          // far-left stop a real, if tiny, dock.
+          min={0.1}
           step={0.1}
           // The airframe's physical reach is the ceiling: a planning tool
           // should not let you draw a ring the aircraft cannot fly. One

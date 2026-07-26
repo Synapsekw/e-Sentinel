@@ -95,8 +95,15 @@ export function buildPlannerStyle(): StyleSpecification {
       // one object. Not green (that means coverage here) and not red (brand +
       // alerts only, per PRODUCT.md) -- except for an INVALID ring, which
       // computeCoverage excludes from the result entirely, and which is
-      // therefore exactly the alert case. That makes the exclusion visible on
-      // the map rather than only as the INVALID GEOMETRY badge in the panel.
+      // therefore exactly the alert case. In practice that alert branch is
+      // dead: MapLibre's GeoJSON tiler drops a self-intersecting ring
+      // outright, so an invalid AOI paints neither fill nor outline -- it's
+      // invisible on the map, not visibly excluded (verified via
+      // querySourceFeatures('planner-aoi') returning only the valid AOI with
+      // a bowtie polygon in the plan). Left as-is: it's correct for any
+      // invalid geometry the tiler does keep, and it costs nothing. Follow-up
+      // logged to render invalid areas from a bounding box or convex hull,
+      // which the tiler accepts, so they show up at all.
       //
       // The condition is spelled ['==', ['get','valid'], true] rather than a
       // bare ['get','valid']: `get` is typed `value` by MapLibre's expression
@@ -125,20 +132,6 @@ export function buildPlannerStyle(): StyleSpecification {
         source: PLANNER_SOURCES.rings,
         paint: { 'line-color': '#3ddc97', 'line-width': 1, 'line-opacity': 0.5 },
       },
-      // The selected dock's ring. Filtered to one id by usePlannerLayers, the
-      // same technique the console uses for coverage-line-hi -- so selecting a
-      // dock costs one setFilter, never a geometry rebuild.
-      //
-      // Starts filtered to the empty id rather than being hidden via
-      // visibility: one mechanism (the filter) owns what this layer draws, so
-      // there is no second piece of state to keep in agreement with it.
-      {
-        id: 'planner-rings-line-hi',
-        type: 'line',
-        source: PLANNER_SOURCES.rings,
-        filter: ['==', ['get', 'id'], ''],
-        paint: { 'line-color': '#3ddc97', 'line-width': 2.5, 'line-opacity': 1 },
-      },
       {
         id: 'planner-gaps-fill',
         type: 'fill',
@@ -158,6 +151,26 @@ export function buildPlannerStyle(): StyleSpecification {
         // it is a self-contained follow-up here plus a style rebuild, not a
         // change to any of the coverage math.
         paint: { 'fill-color': '#ff5a5a', 'fill-opacity': 0.18 },
+      },
+      // The selected dock's ring. Filtered to one id by usePlannerLayers, the
+      // same technique the console uses for coverage-line-hi -- so selecting a
+      // dock costs one setFilter, never a geometry rebuild.
+      //
+      // Starts filtered to the empty id rather than being hidden via
+      // visibility: one mechanism (the filter) owns what this layer draws, so
+      // there is no second piece of state to keep in agreement with it.
+      //
+      // Above planner-gaps-fill, not below it: a selected ring and an
+      // uncovered gap are both "this is what you selected" / "this needs
+      // attention" signals, and the red gap wash must not paint over the
+      // highlight. planner-aoi-line-hi already sits above gaps-fill for the
+      // same reason; this keeps the two highlight layers equally prominent.
+      {
+        id: 'planner-rings-line-hi',
+        type: 'line',
+        source: PLANNER_SOURCES.rings,
+        filter: ['==', ['get', 'id'], ''],
+        paint: { 'line-color': '#3ddc97', 'line-width': 2.5, 'line-opacity': 1 },
       },
       {
         id: 'planner-aoi-line',

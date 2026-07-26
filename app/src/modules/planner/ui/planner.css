@@ -591,13 +591,19 @@
    1080px, fully off-screen. Shed in order of disposability, and never drop the
    only entry point to a feature -- the same constraint the console's rules
    state. */
+@media (max-width: 1720px) {
+  /* The brand's sub-label repeats what the summary strip already shows.
+     1720px, not 1500px: matches the console's #topbar breakpoint for the
+     same rule (chrome.css:564, .t-brand .lbl) deliberately, so the two
+     modules drop their sub-label at the same viewport width instead of the
+     planner showing one the console has already hidden. */
+  .pl-brand .lbl {
+    display: none;
+  }
+}
 @media (max-width: 1500px) {
   .pl-topbar {
     gap: 8px;
-  }
-  /* The brand's sub-label repeats what the summary strip already shows. */
-  .pl-brand .lbl {
-    display: none;
   }
 }
 @media (max-width: 1280px) {

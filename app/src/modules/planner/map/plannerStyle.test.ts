@@ -184,7 +184,12 @@ describe('planner-aoi-fill', () => {
     expect(ids.indexOf('planner-aoi-fill')).toBeLessThan(ids.indexOf('planner-aoi-line'))
   })
 
-  it('tints an invalid ring with the alert colour and leaves a valid one neutral', () => {
+  it('carries an alert-colour branch for an invalid ring, even though the tiler drops such rings before it can paint', () => {
+    // MapLibre's GeoJSON tiler drops a self-intersecting ring outright, so
+    // this branch never actually paints for the invalidity case that occurs
+    // in practice -- an invalid AOI renders as nothing, not as a red tint.
+    // Pinned here anyway because the expression is still correct for any
+    // invalid geometry the tiler does keep, and free to leave in place.
     const fill = buildPlannerStyle().layers.find((l) => l.id === 'planner-aoi-fill')
     const paint = (fill as { paint?: Record<string, unknown> }).paint ?? {}
     // ['case', ['==', ['get','valid'], true], <valid>, <invalid>]
@@ -219,6 +224,14 @@ describe('planner-rings-line-hi', () => {
     const ids = style.layers.map((l) => l.id)
     expect(ids).toContain('planner-rings-line-hi')
     expect(ids.indexOf('planner-rings-line')).toBeLessThan(ids.indexOf('planner-rings-line-hi'))
+  })
+
+  it('paints above planner-gaps-fill, so a selected ring is never washed out by the red gap overlay', () => {
+    // Both planner-rings-line-hi and planner-aoi-line-hi mean "this is what
+    // you selected" and must be equally prominent; the latter already sits
+    // above gaps-fill.
+    const ids = buildPlannerStyle().layers.map((l) => l.id)
+    expect(ids.indexOf('planner-gaps-fill')).toBeLessThan(ids.indexOf('planner-rings-line-hi'))
   })
 
   it('starts filtered to nothing, so no ring is highlighted before a selection', () => {
