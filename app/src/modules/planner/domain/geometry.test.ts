@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { isValidAoiGeometry } from './geometry'
-import type { Polygon } from 'geojson'
+import { isValidAoiGeometry, aoiBoundsPolygon } from './geometry'
+import type { MultiPolygon, Polygon } from 'geojson'
 
 const square: Polygon = {
   type: 'Polygon',
@@ -51,5 +51,72 @@ describe('isValidAoiGeometry', () => {
     const malformed = { type: 'Polygon', coordinates: null } as unknown as Polygon
     expect(() => isValidAoiGeometry(malformed)).not.toThrow()
     expect(isValidAoiGeometry(malformed)).toBe(false)
+  })
+})
+
+describe('aoiBoundsPolygon', () => {
+  it('turns a self-intersecting ring into its closed bounding rectangle', () => {
+    // The bowtie spans (0,0)-(2,2). The rectangle is wound counter-clockwise
+    // from the south-west corner and repeats that corner to close the ring,
+    // which is what a GeoJSON Polygon requires.
+    expect(aoiBoundsPolygon(bowtie)).toEqual({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [0, 0],
+          [2, 0],
+          [2, 2],
+          [0, 2],
+          [0, 0],
+        ],
+      ],
+    })
+  })
+
+  it('spans every part of a MultiPolygon, not just the first', () => {
+    const multi: MultiPolygon = {
+      type: 'MultiPolygon',
+      coordinates: [
+        square.coordinates,
+        [
+          [
+            [55, 25],
+            [56, 25],
+            [56, 26],
+            [55, 26],
+            [55, 25],
+          ],
+        ],
+      ],
+    }
+    // square is (54.5,24.2)-(54.7,24.4); the second part reaches (56,26).
+    // Reading only the first part would give a maximum of 54.7/24.4.
+    expect(aoiBoundsPolygon(multi)?.coordinates[0][2]).toEqual([56, 26])
+  })
+
+  it('returns null for a ring collapsed to a line, which no box could show', () => {
+    // Zero height: every point sits on latitude 24.2. A zero-area polygon
+    // paints nothing, so emitting one would claim a fix that isn't there.
+    const flat: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [54.5, 24.2],
+          [54.7, 24.2],
+          [54.6, 24.2],
+          [54.5, 24.2],
+        ],
+      ],
+    }
+    expect(aoiBoundsPolygon(flat)).toBeNull()
+  })
+
+  it('returns null instead of throwing on a geometry turf cannot parse', () => {
+    // Same cast-past-the-type technique the isValidAoiGeometry tests above
+    // use, and for the same reason: a hand-edited or corrupted import can
+    // produce a shape no caller could build through this module's types.
+    const malformed = { type: 'Polygon', coordinates: null } as unknown as Polygon
+    expect(() => aoiBoundsPolygon(malformed)).not.toThrow()
+    expect(aoiBoundsPolygon(malformed)).toBeNull()
   })
 })
