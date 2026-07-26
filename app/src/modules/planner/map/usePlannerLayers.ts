@@ -5,6 +5,7 @@ import type { GeoJSONSource } from 'maplibre-gl'
 import { isMapUsable } from '@/modules/console/map/mapLifecycle'
 import { PLANNER_SOURCES, aoiFeatures, dockFeatures, ringFeatures } from './plannerStyle'
 import type { CoverageResult, DeploymentPlan } from '../domain/types'
+import type { PlannerSelection } from '../store/planStore'
 
 function setData(map: maplibregl.Map, id: string, data: GeoJSON.FeatureCollection): void {
   // This maplibre-gl version's getSource<TSource extends Source> already
@@ -22,6 +23,7 @@ export function usePlannerLayers(
   ready: boolean,
   plan: DeploymentPlan,
   coverage: CoverageResult,
+  selection: PlannerSelection,
 ): void {
   useEffect(() => {
     const map = mapRef.current
@@ -49,4 +51,23 @@ export function usePlannerLayers(
         : [],
     })
   }, [mapRef, ready, coverage])
+
+  // Its OWN effect, keyed on `selection` alone. Folding this into the effect
+  // above would make every selection click rebuild all N ring buffers (64
+  // steps each) -- the exact cost Important 8 removed by narrowing that
+  // effect's dependencies to plan.aois/plan.docks.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !isMapUsable(map)) return
+    const dockId = selection?.type === 'dock' ? selection.id : ''
+    const aoiId = selection?.type === 'aoi' ? selection.id : ''
+    // The empty id matches nothing, which is how "no selection" is expressed
+    // -- see the layers' initial filters in plannerStyle.ts.
+    if (map.getLayer('planner-rings-line-hi')) {
+      map.setFilter('planner-rings-line-hi', ['==', ['get', 'id'], dockId])
+    }
+    if (map.getLayer('planner-aoi-line-hi')) {
+      map.setFilter('planner-aoi-line-hi', ['==', ['get', 'id'], aoiId])
+    }
+  }, [mapRef, ready, selection])
 }

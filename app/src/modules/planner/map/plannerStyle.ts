@@ -118,6 +118,20 @@ export function buildPlannerStyle(): StyleSpecification {
         source: PLANNER_SOURCES.rings,
         paint: { 'line-color': '#3ddc97', 'line-width': 1, 'line-opacity': 0.5 },
       },
+      // The selected dock's ring. Filtered to one id by usePlannerLayers, the
+      // same technique the console uses for coverage-line-hi -- so selecting a
+      // dock costs one setFilter, never a geometry rebuild.
+      //
+      // Starts filtered to the empty id rather than being hidden via
+      // visibility: one mechanism (the filter) owns what this layer draws, so
+      // there is no second piece of state to keep in agreement with it.
+      {
+        id: 'planner-rings-line-hi',
+        type: 'line',
+        source: PLANNER_SOURCES.rings,
+        filter: ['==', ['get', 'id'], ''],
+        paint: { 'line-color': '#3ddc97', 'line-width': 2.5, 'line-opacity': 1 },
+      },
       {
         id: 'planner-gaps-fill',
         type: 'fill',
@@ -143,6 +157,15 @@ export function buildPlannerStyle(): StyleSpecification {
         type: 'line',
         source: PLANNER_SOURCES.aoi,
         paint: { 'line-color': '#e8ecf3', 'line-width': 1.5, 'line-dasharray': [2, 1] },
+      },
+      // The selected area's outline, same filtered-to-one-id technique.
+      // Brighter and solid where the ordinary outline is dashed.
+      {
+        id: 'planner-aoi-line-hi',
+        type: 'line',
+        source: PLANNER_SOURCES.aoi,
+        filter: ['==', ['get', 'id'], ''],
+        paint: { 'line-color': '#ffffff', 'line-width': 2.5 },
       },
       {
         id: 'planner-docks-circle',

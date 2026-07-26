@@ -203,3 +203,26 @@ describe('planner-aoi-fill', () => {
     expect((paint['fill-color'] as unknown[])[1]).toEqual(['==', ['get', 'valid'], true])
   })
 })
+
+describe('planner-rings-line-hi', () => {
+  it('exists on the rings source, above the ordinary ring outline', () => {
+    const style = buildPlannerStyle()
+    const ids = style.layers.map((l) => l.id)
+    expect(ids).toContain('planner-rings-line-hi')
+    expect(ids.indexOf('planner-rings-line')).toBeLessThan(ids.indexOf('planner-rings-line-hi'))
+  })
+
+  it('starts filtered to nothing, so no ring is highlighted before a selection', () => {
+    const hi = buildPlannerStyle().layers.find((l) => l.id === 'planner-rings-line-hi')
+    expect((hi as { filter?: unknown }).filter).toEqual(['==', ['get', 'id'], ''])
+  })
+
+  it('draws thicker than the ordinary ring outline so it reads as selected', () => {
+    const layers = buildPlannerStyle().layers
+    const paintOf = (id: string) =>
+      (layers.find((l) => l.id === id) as { paint?: Record<string, number> }).paint ?? {}
+    expect(paintOf('planner-rings-line-hi')['line-width']).toBeGreaterThan(
+      paintOf('planner-rings-line')['line-width'],
+    )
+  })
+})

@@ -94,6 +94,7 @@ export function PlannerShell() {
   const { mapRef, ready } = useMap()
   const plan = usePlanStore((s) => s.plan)
   const coverage = usePlanStore((s) => s.coverage)
+  const selection = usePlanStore((s) => s.selection)
   const [drawMode, setDrawMode] = useState<AoiDrawMode>('idle')
   const [importMessage, setImportMessage] = useState<ImportMessage>(null)
   const [layoutStatus, setLayoutStatus] = useState<LayoutStatus | null>(null)
@@ -117,7 +118,7 @@ export function PlannerShell() {
   }, [])
 
   useCoverageDriver()
-  usePlannerLayers(mapRef, ready, plan, coverage)
+  usePlannerLayers(mapRef, ready, plan, coverage, selection)
   // Applies the topbar's LAYERS pick to the raster stack and stamps
   // data-maplayer on <html> so planner.css's var(--chrome) glass tracks the
   // basemap. Nothing set raster visibility here before, so the planner showed
