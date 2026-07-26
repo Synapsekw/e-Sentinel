@@ -1,0 +1,483 @@
+/* Task 12: planner chrome. Same visual language as
+   modules/console/chrome/chrome.css -- the frosted `--chrome` glass topbar/
+   side/rpanel/strip and the 9.5px / .22em uppercase mono `.lbl` micro-label
+   idiom from shared/index.css -- but its own class names throughout. /planner
+   is a standalone lazy route that never mounts alongside /console, but
+   keeping selectors distinct (`pl-*`, plus the brief-prescribed
+   `planner-summary`/`ps-*` for SummaryStrip) avoids any risk of colliding
+   with chrome.css's console-specific #topbar/#side/#rpanel ids, and keeps
+   this file self-contained without importing chrome.css at all. */
+
+.planner-root {
+  position: fixed;
+  inset: 0;
+}
+
+/* ---------- topbar ---------- */
+.pl-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  background: var(--chrome);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  border-bottom: 1px solid var(--line);
+}
+.pl-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+.pl-logo {
+  height: 23px;
+  width: auto;
+  display: block;
+}
+.pl-title {
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: #fff;
+  white-space: nowrap;
+}
+.pl-spacer {
+  flex: 1 1 0;
+  min-width: 8px;
+}
+.pl-back {
+  flex: none;
+  color: var(--txt);
+}
+.pl-back:hover {
+  color: #fff;
+}
+
+.pl-btn {
+  flex: none;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--txt);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 7px 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pl-btn:hover:not(:disabled) {
+  border-color: var(--red);
+  color: #fff;
+}
+.pl-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* Armed states (a draw mode picked, dock placement live). Amber, not red --
+   red is reserved for brand + alerts, and an armed tool is neither. */
+.pl-btn.active {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.pl-btn-ghost {
+  border-style: dashed;
+  color: var(--dim);
+  font-size: 10px;
+  padding: 6px 11px;
+}
+
+.pl-hidden-input {
+  display: none;
+}
+
+.pl-dropdown {
+  position: relative;
+  flex: none;
+}
+.pl-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  z-index: 950;
+  background: var(--chrome);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pl-menu-item {
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 9px 10px;
+  color: var(--txt);
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+}
+.pl-menu-item:hover,
+.pl-menu-item:focus-visible {
+  background: var(--panel2);
+  color: #fff;
+  outline: none;
+}
+
+/* ---------- import / plan-load alert banner ---------- */
+.pl-alert {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 920;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  padding: 9px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--chrome);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  color: var(--txt);
+  max-width: 70vw;
+}
+.pl-alert-error {
+  border-color: rgba(255, 90, 90, 0.5);
+  color: var(--red);
+  background: rgba(255, 90, 90, 0.12);
+}
+.pl-alert-dismiss {
+  flex: none;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* ---------- side / rpanel ---------- */
+.pl-side {
+  position: fixed;
+  top: 56px;
+  bottom: 34px;
+  left: 0;
+  width: 318px;
+  z-index: 800;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+.pl-rpanel {
+  position: fixed;
+  top: 56px;
+  bottom: 34px;
+  right: 0;
+  width: 340px;
+  z-index: 800;
+  overflow-y: auto;
+  padding: 14px;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+
+.pl-panel {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+}
+.pl-panel h4 {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0 0 12px;
+}
+
+.pl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.pl-field:last-child {
+  margin-bottom: 0;
+}
+.pl-input {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  outline: none;
+}
+.pl-input:focus {
+  border-color: var(--red);
+}
+/* Task 12 Defect 3: these two coverage-parameter sliders used to render red
+   (`accent-color: var(--red)`), but red is reserved for brand + alerts and
+   a slider is neither -- restyled to the same neutral chrome tokens as the
+   rest of the console (var(--line)/var(--panel2) for the track, var(--txt)
+   for the thumb, brightening to #fff on hover/focus the same way other
+   interactive chrome does). `accent-color` alone isn't honored consistently
+   across every engine/state, so the WebKit and Gecko track/thumb pseudo-
+   elements are styled explicitly as well rather than relying on it alone. */
+.pl-slider {
+  width: 100%;
+  accent-color: var(--txt);
+}
+.pl-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 99px;
+  background: var(--line);
+}
+.pl-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 99px;
+  background: var(--line);
+  border: none;
+}
+.pl-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--txt);
+  border: none;
+  cursor: pointer;
+}
+.pl-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--txt);
+  border: none;
+  cursor: pointer;
+}
+.pl-slider:hover::-webkit-slider-thumb,
+.pl-slider:focus-visible::-webkit-slider-thumb {
+  background: #fff;
+}
+.pl-slider:hover::-moz-range-thumb,
+.pl-slider:focus-visible::-moz-range-thumb {
+  background: #fff;
+}
+
+.pl-empty {
+  padding: 8px 2px;
+  display: block;
+}
+
+.pl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: var(--txt);
+  cursor: pointer;
+}
+.pl-row:hover {
+  border-color: var(--line);
+}
+.pl-row.sel {
+  border-color: var(--red);
+  background: rgba(255, 90, 90, 0.08);
+}
+.pl-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pl-row-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #fff;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pl-row-meta {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+}
+.pl-badge {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  padding: 3px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.pl-badge-alert {
+  color: var(--red);
+  border-color: rgba(255, 90, 90, 0.4);
+}
+.pl-row-remove {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.pl-row-remove:hover {
+  color: var(--red);
+}
+
+/* ---------- inspector ---------- */
+.pl-inspector-empty {
+  padding: 20px 2px;
+}
+.pl-inspector h4 {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0 0 14px;
+}
+.pl-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #fff;
+}
+.pl-radius {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.pl-radius-val {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+}
+.pl-radius-headroom {
+  margin-top: 4px;
+}
+.pl-remove-btn {
+  margin-top: 16px;
+  width: 100%;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px;
+  color: var(--txt);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.pl-remove-btn:hover {
+  border-color: var(--red);
+  color: #fff;
+}
+
+/* ---------- summary strip (bottom, brief-prescribed class names) ---------- */
+.planner-summary {
+  position: fixed;
+  left: 318px;
+  right: 340px;
+  bottom: 0;
+  height: 34px;
+  z-index: 800;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 16px;
+  background: var(--chrome);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  border-top: 1px solid var(--line);
+}
+.ps-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.ps-val {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+}
+/* SUGGEST LAYOUT outcome (Task 12 Defect 2): a mono status line reporting
+   what actually happened -- target met, capped, gain-floor, exhausted, or
+   nothing placed -- instead of the UI silently applying docks and dropping
+   achievedPct/stoppedBy on the floor. Neutral by default; red only for a
+   genuine shortfall or failure (never for the ordinary "target met" case),
+   per the red-is-reserved-for-brand-and-alerts rule. */
+.ps-layout-status {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.ps-layout-alert {
+  color: var(--red);
+}

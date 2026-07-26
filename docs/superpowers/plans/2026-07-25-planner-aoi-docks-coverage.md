@@ -590,7 +590,7 @@ export type CoverageResult =
       overlapPct: number
       uncovered: GeoJSON.MultiPolygon
       gapCount: number
-      perDock: { dockId: string; contributionKm2: number }[]
+      perDock: { dockId: string; grossContributionKm2: number }[]
     }
 ```
 
@@ -705,7 +705,7 @@ git commit -m "feat: planner domain types, pure plan mutations and plan store"
 
 **Interfaces:**
 - Consumes: `PlannedDock`, `DroneModelId`, `DockModelId` (Task 4); `DOCK_RANGE` from `@/modules/console/domain`.
-- Produces: `DRONES: Record<DroneModelId, DroneSpec>`, `DOCK_MODELS: Record<DockModelId, DockSpec>`, `effectiveRadius(dock: PlannedDock): RadiusBreakdown` where `RadiusBreakdown = { radiusKm: number; enduranceKm: number; capKm: number; bound: 'endurance' | 'cap' | 'override' }`.
+- Produces: `DRONES: Record<DroneModelId, DroneSpec>`, `DOCK_MODELS: Record<DockModelId, DockSpec>`, `effectiveRadius(dock: PlannedDock): RadiusBreakdown` where `RadiusBreakdown = { radiusKm: number; enduranceKm: number; capKm: number; bound: 'endurance' | 'cap' | 'override' }`, and the exported pure helper `radiusFromTerms(terms: { enduranceKm: number; capKm: number; override: number | undefined }): RadiusBreakdown` that `effectiveRadius` delegates the min()/override decision to.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -713,7 +713,7 @@ Create `app/src/modules/planner/domain/catalog.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest'
-import { effectiveRadius, DRONES } from './catalog'
+import { effectiveRadius, radiusFromTerms, DRONES } from './catalog'
 import type { PlannedDock } from './types'
 
 const dock = (patch: Partial<PlannedDock> = {}): PlannedDock => ({
@@ -759,14 +759,15 @@ describe('effectiveRadius', () => {
     expect(r.capKm).toBe(3)
   })
 
-  it('reports endurance as binding when it is below the cap', () => {
-    // A hypothetical short-endurance airframe: force it via a rural cap of 5
-    // and an override-free dock whose endurance math lands under 5km.
-    const r = effectiveRadius(dock({ environment: 'rural', droneModel: 'M350' }))
-    // M350 endurance is ~16km, so the cap still binds; assert the branch
-    // explicitly instead with a direct spec check.
-    expect(r.enduranceKm).toBeGreaterThan(r.capKm)
-    expect(r.bound).toBe('cap')
+  it('reports endurance as binding when endurance is below the cap', () => {
+    // No catalogued airframe is endurance-bound (all three exceed both the 3km
+    // and 5km caps), so this branch is exercised through the exported pure
+    // helper rather than a catalog entry. Testing it matters: if real datasheet
+    // figures land lower than these provisional ones, this becomes the live
+    // branch and it must already be correct.
+    const r = radiusFromTerms({ enduranceKm: 2, capKm: 5, override: undefined })
+    expect(r.radiusKm).toBe(2)
+    expect(r.bound).toBe('endurance')
   })
 
   it('every catalogued drone carries all four derivation terms', () => {
@@ -835,6 +836,21 @@ export interface RadiusBreakdown {
   bound: 'endurance' | 'cap' | 'override'
 }
 
+// Split out from effectiveRadius so the endurance-bound branch is reachable in
+// a test: no catalogued airframe is currently endurance-bound, but the branch
+// must be correct before real datasheet figures arrive.
+export function radiusFromTerms(terms: {
+  enduranceKm: number
+  capKm: number
+  override: number | undefined
+}): RadiusBreakdown {
+  const { enduranceKm, capKm, override } = terms
+  if (override != null) return { radiusKm: override, enduranceKm, capKm, bound: 'override' }
+  return enduranceKm <= capKm
+    ? { radiusKm: enduranceKm, enduranceKm, capKm, bound: 'endurance' }
+    : { radiusKm: capKm, enduranceKm, capKm, bound: 'cap' }
+}
+
 // The aircraft can usually fly much further than we plan for; BVLOS and
 // airspace rules bind first. Reporting both terms lets the inspector show the
 // headroom rather than an unexplained number.
@@ -845,13 +861,7 @@ export function effectiveRadius(dock: PlannedDock): RadiusBreakdown {
   const enduranceKm = Math.max(0, (spec.cruiseKph / 60) * outLegMin)
   const capKm =
     dock.environment === 'urban' ? DOCK_RANGE.URBAN_RANGE_KM : DOCK_RANGE.RURAL_RANGE_KM
-
-  if (dock.radiusKmOverride != null) {
-    return { radiusKm: dock.radiusKmOverride, enduranceKm, capKm, bound: 'override' }
-  }
-  return enduranceKm <= capKm
-    ? { radiusKm: enduranceKm, enduranceKm, capKm, bound: 'endurance' }
-    : { radiusKm: capKm, enduranceKm, capKm, bound: 'cap' }
+  return radiusFromTerms({ enduranceKm, capKm, override: dock.radiusKmOverride })
 }
 ```
 
@@ -987,7 +997,7 @@ describe('computeCoverage', () => {
     if (!r.ok) throw new Error('expected ok')
     expect(r.perDock).toHaveLength(1)
     expect(r.perDock[0].dockId).toBe('d1')
-    expect(r.perDock[0].contributionKm2).toBeCloseTo(78.5, 0)
+    expect(r.perDock[0].grossContributionKm2).toBeCloseTo(78.5, 0)
   })
 })
 ```
@@ -1082,7 +1092,7 @@ export function computeCoverage(plan: DeploymentPlan): CoverageResult {
 
   const perDock = buffers.map((b) => ({
     dockId: b.dock.id,
-    contributionKm2: km2(intersect(featureCollection([b.geom, aoiGeom]))),
+    grossContributionKm2: km2(intersect(featureCollection([b.geom, aoiGeom]))),
   }))
 
   return {
@@ -1805,7 +1815,9 @@ export function usePlannerLayers(
     setData(map, PLANNER_SOURCES.aoi, aoiFeatures(plan))
     setData(map, PLANNER_SOURCES.docks, dockFeatures(plan))
     setData(map, PLANNER_SOURCES.rings, ringFeatures(plan))
-  }, [mapRef, ready, plan.rev, plan])
+    // `plan` alone is the correct dependency: every mutation returns a new
+    // object, so plan.rev would be a redundant second key on the same change.
+  }, [mapRef, ready, plan])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1991,7 +2003,8 @@ import type { MutableRefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 import { DOCK_RANGE } from '@/modules/console/domain'
 import { isMapUsable } from '@/modules/console/map/mapLifecycle'
-import { PLANNER_SOURCES } from './plannerStyle'
+import type { GeoJSONSource } from 'maplibre-gl'
+import { PLANNER_SOURCES, dockFeatures, ringFeatures } from './plannerStyle'
 import { addDock, nextId, updateDock } from '../domain/plan'
 import { usePlanStore } from '../store/planStore'
 import type { PlannedDock } from '../domain/types'
@@ -2049,8 +2062,11 @@ export function useDockPlacement(
     }
   }, [mapRef, ready])
 
-  // Drag: move the dock imperatively while the pointer is down, commit on
-  // dragend so the coverage recompute runs once, not once per mousemove.
+  // Drag. The store is NOT touched until mouseup: committing per mousemove
+  // would re-render every panel and rebuild all N ring buffers on each frame,
+  // which visibly stutters once a plan has tens of docks. During the drag the
+  // dock and ring sources are fed directly instead, so the map still tracks
+  // the cursor at full rate.
   useEffect(() => {
     const map = mapRef.current
     if (!ready || !isMapUsable(map)) return
@@ -2062,13 +2078,25 @@ export function useDockPlacement(
       dragId = String(hit.properties?.id ?? '')
       map.dragPan.disable()
     }
+
     const onMove = (e: maplibregl.MapMouseEvent) => {
       if (!dragId) return
-      const { plan, setPlan } = usePlanStore.getState()
-      setPlan(updateDock(plan, dragId, { position: [e.lngLat.lng, e.lngLat.lat] }))
+      // Imperative preview only: build the moved plan, push its geometry to
+      // the map, and throw it away. Nothing enters React state.
+      const preview = updateDock(usePlanStore.getState().plan, dragId, {
+        position: [e.lngLat.lng, e.lngLat.lat],
+      })
+      const docksSrc = map.getSource(PLANNER_SOURCES.docks) as GeoJSONSource | undefined
+      const ringsSrc = map.getSource(PLANNER_SOURCES.rings) as GeoJSONSource | undefined
+      docksSrc?.setData(dockFeatures(preview))
+      ringsSrc?.setData(ringFeatures(preview))
     }
-    const onUp = () => {
+
+    const onUp = (e: maplibregl.MapMouseEvent) => {
       if (!dragId) return
+      const { plan, setPlan } = usePlanStore.getState()
+      // The single commit for the whole gesture: one rev bump, one recompute.
+      setPlan(updateDock(plan, dragId, { position: [e.lngLat.lng, e.lngLat.lat] }))
       dragId = null
       map.dragPan.enable()
     }

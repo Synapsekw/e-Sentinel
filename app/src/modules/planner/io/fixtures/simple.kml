@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Placemark>
+      <name>AOI ONE</name>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        54.50,24.21 54.70,24.21 54.70,24.39 54.50,24.39 54.50,24.21
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+    <Placemark>
+      <name>A POINT</name>
+      <Point><coordinates>54.6,24.3</coordinates></Point>
+    </Placemark>
+  </Document>
+</kml>
