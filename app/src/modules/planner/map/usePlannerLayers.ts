@@ -63,6 +63,14 @@ export function usePlannerLayers(
     const aoiId = selection?.type === 'aoi' ? selection.id : ''
     // The empty id matches nothing, which is how "no selection" is expressed
     // -- see the layers' initial filters in plannerStyle.ts.
+    //
+    // The getLayer guards below are belt-and-suspenders here, not load-
+    // bearing: buildPlannerStyle() builds these layers into the style once,
+    // and usePlannerBasemap only ever toggles raster/label visibility -- it
+    // never calls setStyle, so the layers can't have been removed out from
+    // under this effect. Contrast console/map/updateLiveLayers.ts's identical
+    // guard around coverage-line-hi, which IS required there: the console's
+    // basemap swap removes and re-adds that layer via a live setStyle.
     if (map.getLayer('planner-rings-line-hi')) {
       map.setFilter('planner-rings-line-hi', ['==', ['get', 'id'], dockId])
     }

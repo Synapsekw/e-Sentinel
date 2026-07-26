@@ -21,7 +21,7 @@ export interface OfflineChipProps {
   className?: string
 }
 
-export default function OfflineChip({ className = 'chip warn' }: OfflineChipProps = {}) {
+export default function OfflineChip({ className = 'chip warn' }: OfflineChipProps) {
   const offline = useAppStore((s) => s.offline)
 
   return (

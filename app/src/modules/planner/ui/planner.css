@@ -278,7 +278,7 @@
 :root[data-maplayer='light'] .pl-panel,
 :root[data-maplayer='sat'] .pl-panel,
 :root[data-maplayer='terrain'] .pl-panel {
-  background: #12151c;
+  background: var(--panel-opaque);
   border-color: rgba(255, 255, 255, 0.12);
 }
 :root[data-maplayer='light'] .pl-row,
@@ -287,14 +287,14 @@
 :root[data-maplayer='light'] .pl-input,
 :root[data-maplayer='sat'] .pl-input,
 :root[data-maplayer='terrain'] .pl-input {
-  background: #0d1015;
+  background: var(--panel-opaque2);
 }
 /* The strip spans the map between the two panels, so it is glass over the
    raster with nothing behind it at all. */
 :root[data-maplayer='light'] .planner-summary,
 :root[data-maplayer='sat'] .planner-summary,
 :root[data-maplayer='terrain'] .planner-summary {
-  background: #12151c;
+  background: var(--panel-opaque);
 }
 
 .pl-panel {

@@ -15,6 +15,7 @@ import type { MutableRefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 import { isMapUsable } from '@/modules/console/map/mapLifecycle'
 import { usePlanStore } from '../store/planStore'
+import type { PlannerSelection } from '../store/planStore'
 
 const DOCK_LAYER = 'planner-docks-circle'
 const RING_LAYER = 'planner-rings-fill'
@@ -66,6 +67,16 @@ export function usePlannerSelection(
     // even when nothing is being dragged (a plain map pan also ends in a
     // click), and coupling the two hooks through shared mutable state would
     // be worse than each reading the pointer for itself.
+    //
+    // Edge case (identified in review, not reachable through the UI today):
+    // if this effect re-registers strictly *between* a mousedown and its
+    // matching mouseup -- i.e. `enabled` flips false->true mid-gesture --
+    // `downAt` starts null, so onUp's early return leaves suppressNextClick
+    // false and a drag-ending click could register a selection. Not fixed
+    // with machinery here because `enabled` (PlannerShell's drawMode ===
+    // 'idle' && !placing) only ever changes on discrete user actions --
+    // arming/disarming placement, entering/leaving draw mode -- never mid-
+    // drag, so the window this would need doesn't open in practice.
     let downAt: { x: number; y: number } | null = null
     let suppressNextClick = false
 
@@ -89,7 +100,12 @@ export function usePlannerSelection(
       return false
     }
 
-    const select = (sel: { type: 'aoi' | 'dock'; id: string }) => {
+    // Typed as the full exported PlannerSelection (which already includes
+    // null), not a re-spelled inline object type or a NonNullable narrowing
+    // of it -- onMapClick's clear-on-bare-map case below needs to pass null
+    // through this same helper too, so every click path (dock, ring, aoi,
+    // bare map) ends up calling the store the same way.
+    const select = (sel: PlannerSelection) => {
       usePlanStore.getState().select(sel)
     }
 
@@ -129,7 +145,7 @@ export function usePlannerSelection(
       const present = HIT_LAYERS.filter((id) => !!map.getLayer(id))
       if (present.length && map.queryRenderedFeatures(e.point, { layers: present }).length) return
       if (!claimClick()) return
-      usePlanStore.getState().select(null)
+      select(null)
     }
 
     const setCursor = (cursor: string) => {

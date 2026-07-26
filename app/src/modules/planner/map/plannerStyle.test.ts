@@ -202,6 +202,15 @@ describe('planner-aoi-fill', () => {
     const paint = (fill as { paint?: Record<string, unknown> }).paint ?? {}
     expect((paint['fill-color'] as unknown[])[1]).toEqual(['==', ['get', 'valid'], true])
   })
+
+  it('shares the same valid-check condition between fill-color and fill-opacity', () => {
+    // Both paint properties are driven off the shared AOI_VALID constant in
+    // plannerStyle.ts -- this pins fill-opacity's condition down too, not
+    // just fill-color's, so the two can't silently diverge.
+    const fill = buildPlannerStyle().layers.find((l) => l.id === 'planner-aoi-fill')
+    const paint = (fill as { paint?: Record<string, unknown> }).paint ?? {}
+    expect((paint['fill-opacity'] as unknown[])[1]).toEqual(['==', ['get', 'valid'], true])
+  })
 })
 
 describe('planner-rings-line-hi', () => {
@@ -224,5 +233,27 @@ describe('planner-rings-line-hi', () => {
     expect(paintOf('planner-rings-line-hi')['line-width']).toBeGreaterThan(
       paintOf('planner-rings-line')['line-width'],
     )
+  })
+})
+
+describe('planner-aoi-line-hi', () => {
+  it('exists on the aoi source, immediately above the ordinary aoi outline', () => {
+    const style = buildPlannerStyle()
+    const ids = style.layers.map((l) => l.id)
+    expect(ids).toContain('planner-aoi-line-hi')
+    expect(ids.indexOf('planner-aoi-line-hi')).toBe(ids.indexOf('planner-aoi-line') + 1)
+  })
+
+  it('starts filtered to nothing, so no area is highlighted before a selection', () => {
+    const hi = buildPlannerStyle().layers.find((l) => l.id === 'planner-aoi-line-hi')
+    expect((hi as { filter?: unknown }).filter).toEqual(['==', ['get', 'id'], ''])
+  })
+
+  it('draws solid where the ordinary aoi outline is dashed', () => {
+    const layers = buildPlannerStyle().layers
+    const paintOf = (id: string) =>
+      (layers.find((l) => l.id === id) as { paint?: Record<string, unknown> }).paint ?? {}
+    expect(paintOf('planner-aoi-line')['line-dasharray']).toBeDefined()
+    expect(paintOf('planner-aoi-line-hi')['line-dasharray']).toBeUndefined()
   })
 })

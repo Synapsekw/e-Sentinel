@@ -72,10 +72,13 @@ function DockInspector({ dockId }: { dockId: string }) {
   function handleName(e: ChangeEvent<HTMLInputElement>) {
     patchDock(dockId, { name: e.target.value })
   }
-  // A range input always reports a parseable number in its value, so the
-  // NaN guard the old number box needed (a bare "-" or "." mid-typing) has no
-  // equivalent here. Clearing the override is a separate, explicit action --
-  // see handleResetRadius.
+  // Real user interaction with a range input cannot land on the empty or
+  // partial states (a bare "-" or "." mid-typing) the old number box needed
+  // a NaN guard for -- the browser only ever hands back a value on the slider's
+  // own step/min/max grid. That's a fact about the UI, not a type guarantee:
+  // a raw fireEvent.change in a test, or other direct DOM manipulation, can
+  // still set an arbitrary string. Clearing the override is a separate,
+  // explicit action -- see handleResetRadius.
   function handleRadius(e: ChangeEvent<HTMLInputElement>) {
     patchDock(dockId, { radiusKmOverride: Number(e.target.value) })
   }

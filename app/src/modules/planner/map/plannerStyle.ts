@@ -1,4 +1,4 @@
-import type { StyleSpecification } from 'maplibre-gl'
+import type { ExpressionSpecification, StyleSpecification } from 'maplibre-gl'
 import type { Feature, FeatureCollection, Point, Polygon, MultiPolygon } from 'geojson'
 import buffer from '@turf/buffer'
 import { feature, featureCollection } from '@turf/helpers'
@@ -15,6 +15,13 @@ export const PLANNER_SOURCES = {
 } as const
 
 const empty = (): FeatureCollection => ({ type: 'FeatureCollection', features: [] })
+
+// Shared by planner-aoi-fill's fill-color and fill-opacity below: both need
+// the exact same "is this AOI valid" test, and spelling it out twice would
+// let a future edit to one silently diverge from the other. See the comment
+// on planner-aoi-fill for why it's ['==', ['get','valid'], true] rather than
+// the bare ['get','valid'].
+const AOI_VALID = ['==', ['get', 'valid'], true] as ExpressionSpecification
 
 export function aoiFeatures(plan: DeploymentPlan): FeatureCollection {
   return featureCollection(
@@ -102,8 +109,8 @@ export function buildPlannerStyle(): StyleSpecification {
         type: 'fill',
         source: PLANNER_SOURCES.aoi,
         paint: {
-          'fill-color': ['case', ['==', ['get', 'valid'], true], '#e8ecf3', '#ff5a5a'],
-          'fill-opacity': ['case', ['==', ['get', 'valid'], true], 0.07, 0.14],
+          'fill-color': ['case', AOI_VALID, '#e8ecf3', '#ff5a5a'],
+          'fill-opacity': ['case', AOI_VALID, 0.07, 0.14],
         },
       },
       {

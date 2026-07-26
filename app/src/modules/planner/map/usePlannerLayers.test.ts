@@ -220,7 +220,16 @@ describe('usePlannerLayers selection highlight', () => {
       { initialProps: { selection: null as PlannerSelection } },
     )
     fake.ringsSetData.mockClear()
+    fake.setFilter.mockClear()
     rerender({ selection: { type: 'dock', id: 'dock-1' } })
     expect(fake.ringsSetData).not.toHaveBeenCalled()
+    // Positive half of the same assertion: the selection effect did run --
+    // setData was skipped because it's the wrong effect for the job, not
+    // because nothing happened at all.
+    expect(fake.setFilter).toHaveBeenCalledWith('planner-rings-line-hi', [
+      '==',
+      ['get', 'id'],
+      'dock-1',
+    ])
   })
 })
