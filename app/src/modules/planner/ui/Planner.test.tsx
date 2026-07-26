@@ -35,9 +35,11 @@ vi.mock('@/modules/console/map/MapContext', () => ({
 vi.mock('maplibre-gl', () => ({ default: { Map: class {} } }))
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}))
 
-// This suite's vite config does not set test.globals: true, so
-// @testing-library/react's auto-cleanup never registers (see
-// useCoverageDriver.test.ts for the same note).
+// vite.config.ts now sets test.globals: true, so @testing-library/react's
+// auto-cleanup DOES register. This explicit cleanup() is kept anyway: it is
+// idempotent, it keeps this file correct on its own terms rather than
+// depending on a config flag holding still, and the timer reset below has to
+// happen here regardless (see useCoverageDriver.test.ts for the same note).
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
