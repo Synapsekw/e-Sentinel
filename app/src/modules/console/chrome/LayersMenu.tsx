@@ -8,16 +8,7 @@
 
 import TopMenu from './TopMenu'
 import { useAppStore } from '@/shared/store'
-import type { MapLayer } from '@/shared/store'
-
-const LAYER_LABELS: Record<MapLayer, string> = {
-  dark: 'DARK',
-  light: 'LIGHT',
-  sat: 'SATELLITE',
-  terrain: 'TERRAIN',
-}
-
-const LAYER_ORDER: MapLayer[] = ['dark', 'light', 'sat', 'terrain']
+import { LAYER_LABELS, LAYER_ORDER } from '@/modules/console/map/basemap'
 
 export default function LayersMenu() {
   const layer = useAppStore((s) => s.layer)

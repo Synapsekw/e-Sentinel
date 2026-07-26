@@ -157,3 +157,25 @@ export function applyPlaceLabelTheme(map: maplibregl.Map, eff: string | null): v
 export function glyphsUrl(): string {
   return `${import.meta.env.BASE_URL}assets/fonts/{fontstack}/{range}.pbf`
 }
+
+// ---------------------------------------------------------------------------
+// Basemap naming, shared by the console topbar/LayersMenu and the planner's
+// PlannerLayersMenu. Previously written out three times; this module's header
+// already records why basemap facts live in exactly one place.
+// ---------------------------------------------------------------------------
+
+export const LAYER_LABELS: Record<MapLayer, string> = {
+  dark: 'DARK',
+  light: 'LIGHT',
+  sat: 'SATELLITE',
+  terrain: 'TERRAIN',
+}
+
+// Row order in every basemap picker. Darkest to lightest, imagery last.
+export const LAYER_ORDER: MapLayer[] = ['dark', 'light', 'sat', 'terrain']
+
+// The dropdown trigger's text. Both modules name the ACTIVE basemap in the
+// button so it is readable without opening the menu.
+export function layerButtonLabel(layer: MapLayer): string {
+  return `LAYERS · ${LAYER_LABELS[layer] ?? String(layer).toUpperCase()}`
+}

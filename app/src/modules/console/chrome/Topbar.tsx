@@ -40,19 +40,9 @@ import { DATA_DOCKS } from '@/modules/console/domain'
 import { useCountUp } from '@/modules/console/hud/useCountUp'
 import { clearSelection, openMediaLibrary } from '@/modules/console/selection'
 import { newMissionButtonState, missionsButtonState } from '@/modules/console/control/controlModel'
+import { layerButtonLabel } from '@/modules/console/map/basemap'
 import Clock from './Clock'
 import OfflineChip from '../OfflineChip'
-
-// panels.js:1973 (LAYER_LABELS). Needed here only to paint the #btn-layers
-// trigger label (updateLayersButtonLabel, panels.js:1986-1991); Task 5's
-// LayersMenu.tsx owns the actual dropdown and its own copy of this map for
-// the same reason DocksMenu/FilterMenu are a separate file from this one.
-const LAYER_LABELS: Record<string, string> = {
-  dark: 'DARK',
-  light: 'LIGHT',
-  sat: 'SATELLITE',
-  terrain: 'TERRAIN',
-}
 
 export interface TopbarProps {
   onExitToOrbit: () => void
@@ -85,7 +75,7 @@ export default function Topbar({
   }
 
   const filterLabel = dockFilter === 'ALL' ? 'FILTER' : 'FILTER · ' + dockFilter
-  const layerLabel = 'LAYERS · ' + (LAYER_LABELS[layer] ?? layer.toUpperCase())
+  const layerLabel = layerButtonLabel(layer)
 
   return (
     <>
