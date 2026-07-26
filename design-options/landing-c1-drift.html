@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Landing C1 · Drift</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800&family=IBM+Plex+Mono:wght@400;500&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0b0e;
+  --panel:rgba(255,255,255,.035);
+  --panel2:rgba(255,255,255,.06);
+  --line:rgba(255,255,255,.09);
+  --txt:#c9cfda;
+  --dim:#7d8697;
+  --faint:#5a6375;
+  --red:#ff5a5a;
+  --ok:#4ade80;
+  --sans:'Nunito Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  --disp:'Poppins',var(--sans);
+  --mono:'IBM Plex Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--txt);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+#bg{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+.landing{position:relative;z-index:1;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:64px 24px}
+.landing-inner{display:flex;flex-direction:column;align-items:center}
+
+.landing-brand{text-align:center;margin-bottom:56px}
+.landing-brand h1{
+  font-family:var(--disp);font-weight:700;font-size:clamp(38px,4.6vw,58px);line-height:1;
+  letter-spacing:.26em;text-indent:.26em;color:#fff;margin-bottom:16px;
+}
+.landing-mark{font-family:var(--mono);font-size:12px;letter-spacing:.26em;color:#b9c2d2;margin-bottom:14px}
+.landing-sub{font-family:var(--mono);font-size:10px;letter-spacing:.34em;text-transform:uppercase;color:var(--dim)}
+
+.modules{display:grid;grid-template-columns:repeat(2,minmax(300px,344px));gap:18px;width:100%;max-width:706px}
+.mcard{
+  display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:26px 28px 22px;color:inherit;text-decoration:none;
+  transition:transform .18s ease,border-color .18s ease,background .18s ease;
+}
+.mcard[data-enabled="true"]:hover{transform:translateY(-3px);border-color:rgba(255,90,90,.45);background:var(--panel2)}
+.mcard[data-enabled="true"]:focus-visible{outline:2px solid var(--red);outline-offset:3px}
+.mcard[data-enabled="false"]{background:rgba(255,255,255,.014);cursor:default}
+.m-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.m-num{font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;color:var(--faint)}
+.mcard h2{font-family:var(--disp);font-weight:700;font-size:19px;line-height:1.2;color:#fff;margin-bottom:10px}
+.mcard[data-enabled="false"] h2{color:#aeb6c4}
+.m-blurb{font-size:13px;line-height:1.6;color:#98a1b2;flex:1}
+.m-go{
+  margin-top:20px;padding-top:15px;border-top:1px solid var(--line);
+  font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);
+  display:flex;align-items:center;justify-content:space-between;transition:color .18s ease;
+}
+.mcard[data-enabled="true"]:hover .m-go{color:var(--red)}
+.m-go .arw{transition:transform .18s ease}
+.mcard[data-enabled="true"]:hover .m-go .arw{transform:translateX(3px)}
+
+.m-status{
+  display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.14em;text-transform:uppercase;border:1px solid var(--line);border-radius:99px;padding:4px 10px;
+}
+.m-status .dot{width:6px;height:6px;border-radius:50%}
+.m-status.online{color:var(--ok)} .m-status.online .dot{background:var(--ok)}
+.m-status.planned{color:var(--dim)} .m-status.planned .dot{background:var(--dim)}
+
+.landing-foot{margin-top:48px;font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);text-align:center}
+
+.variant-chip{
+  position:fixed;right:18px;bottom:16px;z-index:2;font-family:var(--mono);font-size:9px;
+  letter-spacing:.22em;color:var(--dim);border:1px solid var(--line);border-radius:99px;
+  padding:6px 12px;background:rgba(10,11,14,.6);backdrop-filter:blur(6px);
+}
+
+@media (max-width:760px){
+  .modules{grid-template-columns:minmax(0,1fr);max-width:360px}
+  .landing-brand{margin-bottom:40px}
+}
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+
+<main class="landing">
+  <div class="landing-inner">
+    <header class="landing-brand">
+      <h1>SENTINEL</h1>
+      <div class="landing-mark">e-Sentinel C2</div>
+      <div class="landing-sub">Physical Intelligence · Unified Drone Operations</div>
+    </header>
+
+    <nav class="modules" aria-label="Modules">
+      <a class="mcard" data-enabled="true" href="#">
+        <div class="m-head"><span class="m-num">01</span><span class="m-status online"><span class="dot"></span>Online</span></div>
+        <h2>Simulation</h2>
+        <p class="m-blurb">National grid command and control. 104 docks, live fleet, mission video debriefs.</p>
+        <div class="m-go"><span>Open module</span><span class="arw">&rarr;</span></div>
+      </a>
+      <a class="mcard" data-enabled="true" href="#">
+        <div class="m-head"><span class="m-num">02</span><span class="m-status online"><span class="dot"></span>Online</span></div>
+        <h2>Deployment Planner</h2>
+        <p class="m-blurb">Draw a customer area, place docks, read coverage and overlap before a single flight.</p>
+        <div class="m-go"><span>Open module</span><span class="arw">&rarr;</span></div>
+      </a>
+      <div class="mcard" data-enabled="false" aria-disabled="true">
+        <div class="m-head"><span class="m-num">03</span><span class="m-status planned"><span class="dot"></span>Planned</span></div>
+        <h2>Telemetry</h2>
+        <p class="m-blurb">Flight history, track replay, and fleet performance analytics.</p>
+        <div class="m-go"><span>Not yet deployed</span><span></span></div>
+      </div>
+      <div class="mcard" data-enabled="false" aria-disabled="true">
+        <div class="m-head"><span class="m-num">04</span><span class="m-status planned"><span class="dot"></span>Planned</span></div>
+        <h2>Compliance</h2>
+        <p class="m-blurb">Drone logbook, approvals, and a regulatory audit trail.</p>
+        <div class="m-go"><span>Not yet deployed</span><span></span></div>
+      </div>
+    </nav>
+
+    <footer class="landing-foot">© 2026 e&amp; · Simulated environment · All operational data synthetic</footer>
+  </div>
+</main>
+
+<div class="variant-chip">C1 · DRIFT</div>
+
+<script>
+(function(){
+  var cv=document.getElementById('bg'), ctx=cv.getContext('2d');
+  var reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var inner=document.querySelector('.landing-inner');
+  var grid=document.querySelector('.modules');
+
+  var W=0,H=0,DPR=1,maxR=1;
+  var origin={x:0,y:0}, box={cx:0,cy:0,hw:0,hh:0};
+  var parts=[], rings=[];
+  var WAVE_MS=2600, elapsed=0, last=0, raf=null, nextRing=2000;
+
+  function hash(x,y){
+    var n=(x*374761393+y*668265263)|0;
+    n=(n^(n>>13))|0; n=Math.imul(n,1274126177);
+    return ((n^(n>>16))>>>0)/4294967295;
+  }
+  function noise(x,y){
+    var xi=Math.floor(x), yi=Math.floor(y), xf=x-xi, yf=y-yi;
+    var u=xf*xf*(3-2*xf), v=yf*yf*(3-2*yf);
+    var a=hash(xi,yi), b=hash(xi+1,yi), c=hash(xi,yi+1), d=hash(xi+1,yi+1);
+    return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;
+  }
+
+  function measure(){
+    var g=grid.getBoundingClientRect();
+    origin.x=g.left+g.width/2; origin.y=g.top+g.height/2;
+    var b=inner.getBoundingClientRect();
+    box.cx=b.left+b.width/2; box.cy=b.top+b.height/2; box.hw=b.width/2; box.hh=b.height/2;
+    maxR=Math.max(Math.hypot(origin.x,origin.y),Math.hypot(W-origin.x,origin.y),
+                  Math.hypot(origin.x,H-origin.y),Math.hypot(W-origin.x,H-origin.y));
+  }
+  function shelter(x,y){
+    var dx=Math.abs(x-box.cx)-box.hw-16, dy=Math.abs(y-box.cy)-box.hh-16;
+    if(dx<0)dx=0; if(dy<0)dy=0;
+    var d=Math.hypot(dx,dy)/240;
+    return 0.12+0.88*(d>1?1:d);
+  }
+  function seed(p){
+    p.x=Math.random()*W; p.y=Math.random()*H;
+    p.life=0; p.max=3000+Math.random()*4800;
+  }
+  function build(){
+    var n=Math.round(W*H/5200); if(n<130)n=130; if(n>440)n=440;
+    parts=[]; rings=[];
+    for(var i=0;i<n;i++){
+      // Two depths: a fine fast layer and a heavier slow one. The contrast is
+      // what stops the field reading as uniform noise.
+      var coarse=Math.random()<0.32;
+      var p={coarse:coarse, red:Math.random()<0.045,
+             sp:coarse?(52+Math.random()*26):(88+Math.random()*46),
+             wt:coarse?1.35:0.85};
+      seed(p); p.life=Math.random()*p.max;
+      parts.push(p);
+    }
+    ctx.fillStyle='#0a0b0e'; ctx.fillRect(0,0,W,H);
+  }
+  function resize(){
+    DPR=Math.min(window.devicePixelRatio||1,2);
+    W=window.innerWidth; H=window.innerHeight;
+    cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+    cv.style.width=W+'px'; cv.style.height=H+'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    measure(); build();
+  }
+  function waveR(){
+    if(elapsed>=WAVE_MS) return maxR+600;
+    var p=elapsed/WAVE_MS, e=1-Math.pow(1-p,3);
+    return e*(maxR+120);
+  }
+
+  function step(ts,dt){
+    ctx.fillStyle='rgba(10,11,14,0.040)';
+    ctx.fillRect(0,0,W,H);
+
+    var wr=waveR(), entering=elapsed<WAVE_MS+400, tt=ts/1000;
+
+    for(var i=0;i<parts.length;i++){
+      var p=parts[i];
+      p.life+=dt;
+      if(p.life>p.max||p.x<-40||p.x>W+40||p.y<-40||p.y>H+40){ seed(p); continue; }
+
+      var ang=noise(p.x/340, p.y/340 + tt*0.030)*6.283*1.7;
+      var ox=p.x-origin.x, oy=p.y-origin.y, od=Math.hypot(ox,oy)||1;
+      var vx=Math.cos(ang)*0.88+(ox/od)*0.26;
+      var vy=Math.sin(ang)*0.88+(oy/od)*0.26;
+      var sp=p.sp*(dt/1000);
+      var nx=p.x+vx*sp, ny=p.y+vy*sp;
+
+      var r=Math.hypot(p.x-origin.x,p.y-origin.y);
+      var f=(wr-r)/110; f=f<=0?0:(f>=1?1:f);
+      if(f>0){
+        var fade=Math.min(1,p.life/520)*Math.min(1,(p.max-p.life)/1000);
+        var al=f*shelter(p.x,p.y)*fade*(p.coarse?0.60:0.42);
+        if(entering) al*=(1+1.4*Math.max(0,1-Math.abs(r-wr)/80));
+        if(al>0.006){
+          ctx.lineWidth=p.wt;
+          ctx.strokeStyle=p.red?'rgba(255,90,90,'+Math.min(0.75,al*0.85).toFixed(3)+')'
+                               :'rgba(180,200,230,'+Math.min(0.75,al).toFixed(3)+')';
+          ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(nx,ny); ctx.stroke();
+        }
+      }
+      p.x=nx; p.y=ny;
+    }
+
+    if(!reduce){
+      nextRing-=dt;
+      if(nextRing<=0){ nextRing=4400+Math.random()*3200; rings.push({t:0}); }
+    }
+    for(var k=rings.length-1;k>=0;k--){
+      var rg=rings[k]; rg.t+=dt;
+      var kk=rg.t/6800;
+      if(kk>=1){ rings.splice(k,1); continue; }
+      ctx.strokeStyle='rgba(168,190,222,'+(Math.sin(Math.PI*kk)*0.055).toFixed(3)+')';
+      ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(origin.x,origin.y,kk*(maxR*1.25),0,6.283); ctx.stroke();
+    }
+
+    if(entering&&wr<maxR+120){
+      var cf=1-elapsed/(WAVE_MS+400);
+      ctx.strokeStyle='rgba(176,196,226,'+(0.10*cf).toFixed(3)+')';
+      ctx.lineWidth=1.4;
+      ctx.beginPath(); ctx.arc(origin.x,origin.y,wr,0,6.283); ctx.stroke();
+    }
+  }
+
+  function frame(ts){
+    var dt=last?ts-last:16.7; last=ts;
+    if(dt>50)dt=50;
+    elapsed+=dt; step(ts,dt);
+    raf=requestAnimationFrame(frame);
+  }
+  function start(){ if(raf===null){ last=0; raf=requestAnimationFrame(frame); } }
+  function stop(){ if(raf!==null){ cancelAnimationFrame(raf); raf=null; } }
+  function still(){ elapsed=WAVE_MS+2000; for(var i=0;i<340;i++) step(i*16.7,16.7); }
+
+  resize();
+  var rt=null;
+  window.addEventListener('resize',function(){
+    clearTimeout(rt); rt=setTimeout(function(){ resize(); if(reduce) still(); },150);
+  });
+
+  if(reduce){ still(); }
+  else{
+    document.addEventListener('visibilitychange',function(){ if(document.hidden) stop(); else start(); });
+    start();
+  }
+})();
+</script>
+</body>
+</html>
