@@ -72,20 +72,15 @@ function DockInspector({ dockId }: { dockId: string }) {
   function handleName(e: ChangeEvent<HTMLInputElement>) {
     patchDock(dockId, { name: e.target.value })
   }
-  function handleOverride(e: ChangeEvent<HTMLInputElement>) {
-    const raw = e.target.value
-    if (raw === '') {
-      patchDock(dockId, { radiusKmOverride: undefined })
-      return
-    }
-    const parsed = Number(raw)
-    // An interim invalid numeric input (e.g. a bare "-" or "." while typing)
-    // yields NaN, which is not `null`/`undefined` -- left unguarded, it would
-    // flow into radiusFromTerms and render as "NaN KM" downstream. Simply
-    // ignore the keystroke until it parses to a real number rather than
-    // committing a NaN override.
-    if (Number.isNaN(parsed)) return
-    patchDock(dockId, { radiusKmOverride: parsed })
+  // A range input always reports a parseable number in its value, so the
+  // NaN guard the old number box needed (a bare "-" or "." mid-typing) has no
+  // equivalent here. Clearing the override is a separate, explicit action --
+  // see handleResetRadius.
+  function handleRadius(e: ChangeEvent<HTMLInputElement>) {
+    patchDock(dockId, { radiusKmOverride: Number(e.target.value) })
+  }
+  function handleResetRadius() {
+    patchDock(dockId, { radiusKmOverride: undefined })
   }
   function handleRemove() {
     const state = usePlanStore.getState()
@@ -153,14 +148,23 @@ function DockInspector({ dockId }: { dockId: string }) {
         </select>
       </label>
       <label className="pl-field">
-        <span className="lbl">Radius override KM (blank = derived)</span>
+        <span className="lbl">Coverage radius · {breakdown.radiusKm.toFixed(2)} KM</span>
         <input
-          className="pl-input"
-          type="number"
+          className="pl-slider"
+          type="range"
           min={0}
           step={0.1}
-          value={dock.radiusKmOverride ?? ''}
-          onChange={handleOverride}
+          // The airframe's physical reach is the ceiling: a planning tool
+          // should not let you draw a ring the aircraft cannot fly. One
+          // exception -- parsePlan deliberately does not validate this field
+          // (see planIo.ts), so an imported or hand-edited plan can carry a
+          // larger value. Extend the max to it rather than clamping, so the
+          // control shows what is actually stored. Same principle as the
+          // incompatible-drone <option> above: never display a value other
+          // than the one the plan holds.
+          max={Math.max(Math.ceil(breakdown.enduranceKm), Math.ceil(dock.radiusKmOverride ?? 0))}
+          value={breakdown.radiusKm}
+          onChange={handleRadius}
         />
       </label>
 
@@ -172,6 +176,15 @@ function DockInspector({ dockId }: { dockId: string }) {
             AIRFRAME REACHES {breakdown.enduranceKm.toFixed(2)} KM ·{' '}
             {(breakdown.enduranceKm - breakdown.capKm).toFixed(2)} KM HEADROOM UNUSED
           </div>
+        ) : null}
+        {dock.radiusKmOverride != null ? (
+          // A slider has no empty state, so this is the only way back to the
+          // derived radius. The old number input got it for free by being
+          // cleared; without this the derived value is unreachable once the
+          // slider is touched.
+          <button type="button" className="pl-reset-btn" onClick={handleResetRadius}>
+            RESET TO DERIVED
+          </button>
         ) : null}
       </div>
 
