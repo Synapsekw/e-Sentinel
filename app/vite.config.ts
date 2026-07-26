@@ -102,5 +102,17 @@ export default defineConfig(({ command, isPreview }) => ({
   test: {
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
+    // @testing-library/react registers its auto-cleanup by calling the
+    // AMBIENT `afterEach`, which only exists when vitest injects its helpers
+    // as globals. Without this, auto-cleanup silently never registers and
+    // every rendering test leaks its mounts into the later tests in the same
+    // file — leftover components stay subscribed to the store and react to a
+    // subsequent test's updates. Individual files worked around it with an
+    // explicit cleanup() in afterEach; those calls stay (cleanup() is
+    // idempotent, and they keep those files correct if this is ever
+    // reverted). Every test file imports describe/it/expect from 'vitest'
+    // explicitly, so this needs no matching "vitest/globals" entry in
+    // tsconfig's `types`.
+    globals: true,
   },
 }))

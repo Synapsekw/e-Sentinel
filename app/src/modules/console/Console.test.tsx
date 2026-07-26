@@ -60,6 +60,17 @@ describe('console chrome composition (Console.tsx / Phase 1D Task 8)', () => {
   })
 
   afterEach(() => {
+    // Unmount BEFORE restoring the store. vitest runs afterEach hooks in
+    // reverse registration order, and @testing-library/react registers its
+    // auto-cleanup hook at import time (line 25) — i.e. before this one — so
+    // auto-cleanup runs LAST, after this hook. Restoring the store first
+    // would therefore push an update into a tree that is still mounted, from
+    // outside act(). That was always true; it only became *visible* once
+    // vite.config.ts enabled `test.globals`, because RTL only flips
+    // IS_REACT_ACT_ENVIRONMENT on when `beforeAll`/`afterAll` exist as
+    // globals for it to hook. cleanup() is idempotent, so the later
+    // auto-cleanup pass and the file-level afterEach(cleanup) both stay fine.
+    cleanup()
     useAppStore.setState(originalState)
   })
 
