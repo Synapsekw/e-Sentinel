@@ -5,7 +5,8 @@ import { feature, featureCollection } from '@turf/helpers'
 import { buildBaseStyle } from '@/modules/console/map/style'
 import { effectiveRadius } from '../domain/catalog'
 import { BUFFER_STEPS } from '../domain/coverage'
-import type { DeploymentPlan } from '../domain/types'
+import { aoiBoundsPolygon } from '../domain/geometry'
+import type { Aoi, DeploymentPlan } from '../domain/types'
 
 export const PLANNER_SOURCES = {
   aoi: 'planner-aoi',
@@ -16,21 +17,39 @@ export const PLANNER_SOURCES = {
 
 const empty = (): FeatureCollection => ({ type: 'FeatureCollection', features: [] })
 
-// Shared by planner-aoi-fill's fill-color and fill-opacity below: both need
-// the exact same "is this AOI valid" test, and spelling it out twice would
-// let a future edit to one silently diverge from the other. See the comment
-// on planner-aoi-fill for why it's ['==', ['get','valid'], true] rather than
-// the bare ['get','valid'].
+// Shared by planner-aoi-fill's fill-color and fill-opacity and by
+// planner-aoi-line's line-color below: all three need the exact same "is this
+// AOI valid" test, and spelling it out three times would let a future edit to
+// one silently diverge from the others. See the comment on planner-aoi-fill
+// for why it's ['==', ['get','valid'], true] rather than the bare
+// ['get','valid'].
 const AOI_VALID = ['==', ['get', 'valid'], true] as ExpressionSpecification
 
 export function aoiFeatures(plan: DeploymentPlan): FeatureCollection {
   return featureCollection(
-    // turf's featureCollection() wants a single concrete Feature<G> element
-    // type; the array literal built from a.geometry's Polygon|MultiPolygon
-    // union does not narrow to that on its own, so this recast is type-only.
-    plan.aois.map((a) =>
-      feature(a.geometry, { id: a.id, name: a.name, valid: a.valid }),
-    ) as Feature<Polygon | MultiPolygon>[],
+    plan.aois
+      // A self-intersecting ring is dropped by MapLibre's GeoJSON tiler, so
+      // handing one straight through paints nothing at all -- fill, outline
+      // and the selection hit-test alike. Invalid areas are rendered from a
+      // bounding rectangle the tiler will keep; see aoiBoundsPolygon. The
+      // `valid` property still rides along, so planner-aoi-fill and
+      // planner-aoi-line tint the stand-in as the alert it is.
+      //
+      // Substituting HERE, and not in the store, keeps the plan's real
+      // geometry intact for computeCoverage, export and the area readout:
+      // this function is a render adapter, and usePlannerLayers is its only
+      // consumer.
+      .map((a) => ({ a, geometry: a.valid ? a.geometry : aoiBoundsPolygon(a.geometry) }))
+      // A geometry too degenerate even to bound (a ring collapsed to a line)
+      // has no drawable stand-in; it keeps its INVALID badge in the plan
+      // tree, which is the only place it could ever have been visible.
+      .filter((x): x is { a: Aoi; geometry: Polygon | MultiPolygon } => x.geometry !== null)
+      // turf's featureCollection() wants a single concrete Feature<G> element
+      // type; the array literal built from a.geometry's Polygon|MultiPolygon
+      // union does not narrow to that on its own, so this recast is type-only.
+      .map(({ a, geometry }) =>
+        feature(geometry, { id: a.id, name: a.name, valid: a.valid }),
+      ) as Feature<Polygon | MultiPolygon>[],
   )
 }
 
@@ -95,15 +114,17 @@ export function buildPlannerStyle(): StyleSpecification {
       // one object. Not green (that means coverage here) and not red (brand +
       // alerts only, per PRODUCT.md) -- except for an INVALID ring, which
       // computeCoverage excludes from the result entirely, and which is
-      // therefore exactly the alert case. In practice that alert branch is
-      // dead: MapLibre's GeoJSON tiler drops a self-intersecting ring
-      // outright, so an invalid AOI paints neither fill nor outline -- it's
-      // invisible on the map, not visibly excluded (verified via
-      // querySourceFeatures('planner-aoi') returning only the valid AOI with
-      // a bowtie polygon in the plan). Left as-is: it's correct for any
-      // invalid geometry the tiler does keep, and it costs nothing. Follow-up
-      // logged to render invalid areas from a bounding box or convex hull,
-      // which the tiler accepts, so they show up at all.
+      // therefore exactly the alert case.
+      //
+      // This branch used to be unreachable: MapLibre's GeoJSON tiler drops a
+      // self-intersecting ring outright, so an invalid AOI painted neither
+      // fill nor outline and was simply absent from the map. aoiFeatures now
+      // substitutes a bounding rectangle the tiler keeps, so the tint below
+      // is what the user actually sees for a broken area.
+      //
+      // The opacity is deliberately higher than the valid case: it has to
+      // read as an alert, and it is competing with a rectangle rather than
+      // the drawn shape.
       //
       // The condition is spelled ['==', ['get','valid'], true] rather than a
       // bare ['get','valid']: `get` is typed `value` by MapLibre's expression
@@ -172,11 +193,18 @@ export function buildPlannerStyle(): StyleSpecification {
         filter: ['==', ['get', 'id'], ''],
         paint: { 'line-color': '#3ddc97', 'line-width': 2.5, 'line-opacity': 1 },
       },
+      // Red for an invalid area, matching planner-aoi-fill's wash, so the two
+      // cannot drift apart. line-dasharray is not data-driven in MapLibre, so
+      // the dash is shared and colour alone carries the distinction.
       {
         id: 'planner-aoi-line',
         type: 'line',
         source: PLANNER_SOURCES.aoi,
-        paint: { 'line-color': '#e8ecf3', 'line-width': 1.5, 'line-dasharray': [2, 1] },
+        paint: {
+          'line-color': ['case', AOI_VALID, '#e8ecf3', '#ff5a5a'],
+          'line-width': 1.5,
+          'line-dasharray': [2, 1],
+        },
       },
       // The selected area's outline, same filtered-to-one-id technique.
       // Brighter and solid where the ordinary outline is dashed.

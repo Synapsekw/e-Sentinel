@@ -29,6 +29,26 @@ const aoi: Aoi = {
     ],
   },
 }
+// A bowtie: the edges (54.5,24.2)->(54.7,24.4) and (54.7,24.2)->(54.5,24.4)
+// cross, which is the shape MapLibre's tiler discards.
+const invalidAoi: Aoi = {
+  id: 'a2',
+  name: 'BOWTIE',
+  source: 'drawn',
+  valid: false,
+  geometry: {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [54.5, 24.2],
+        [54.7, 24.4],
+        [54.7, 24.2],
+        [54.5, 24.4],
+        [54.5, 24.2],
+      ],
+    ],
+  },
+}
 const dock: PlannedDock = {
   id: 'd1',
   name: 'D1',
@@ -50,11 +70,83 @@ describe('buildPlannerStyle', () => {
     expect(style.sources['tracks']).toBeUndefined()
     expect(style.sources['wizard-preview']).toBeUndefined()
   })
+
+  it('outlines an invalid AOI in alert red, matching its fill', () => {
+    const layers = buildPlannerStyle().layers
+    const line = layers.find((l) => l.id === 'planner-aoi-line')
+    const fill = layers.find((l) => l.id === 'planner-aoi-fill')
+    const valid = ['==', ['get', 'valid'], true]
+    expect(line?.type).toBe('line')
+    // Same condition and same red as the fill, so outline and wash cannot
+    // drift apart.
+    expect((line as { paint: Record<string, unknown> }).paint['line-color']).toEqual([
+      'case',
+      valid,
+      '#e8ecf3',
+      '#ff5a5a',
+    ])
+    expect((fill as { paint: Record<string, unknown> }).paint['fill-color']).toEqual([
+      'case',
+      valid,
+      '#e8ecf3',
+      '#ff5a5a',
+    ])
+  })
 })
 
 describe('feature builders', () => {
   it('builds one polygon feature per valid AOI', () => {
     const fc = aoiFeatures(addAoi(createPlan(), aoi))
+    expect(fc.features).toHaveLength(1)
+    expect(fc.features[0].properties?.id).toBe('a1')
+  })
+
+  it('passes a valid AOI through with its own geometry untouched', () => {
+    // Guards the branch, not the rendering: substituting on the wrong side
+    // of the valid test would still produce a drawable polygon, so no
+    // assertion about the invalid case would catch it.
+    const fc = aoiFeatures(addAoi(createPlan(), aoi))
+    expect(fc.features[0].geometry).toEqual(aoi.geometry)
+  })
+
+  it('renders an invalid AOI from its bounding box, which the tiler accepts', () => {
+    const fc = aoiFeatures(addAoi(createPlan(), invalidAoi))
+    expect(fc.features).toHaveLength(1)
+    expect(fc.features[0].geometry).toEqual({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [54.5, 24.2],
+          [54.7, 24.2],
+          [54.7, 24.4],
+          [54.5, 24.4],
+          [54.5, 24.2],
+        ],
+      ],
+    })
+    // The paint expressions and the selection hit-test both key off these.
+    expect(fc.features[0].properties?.valid).toBe(false)
+    expect(fc.features[0].properties?.id).toBe('a2')
+    expect(fc.features[0].properties?.name).toBe('BOWTIE')
+  })
+
+  it('drops an unboundable AOI without losing its valid siblings', () => {
+    const flat: Aoi = {
+      ...invalidAoi,
+      id: 'a3',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [54.5, 24.2],
+            [54.7, 24.2],
+            [54.6, 24.2],
+            [54.5, 24.2],
+          ],
+        ],
+      },
+    }
+    const fc = aoiFeatures(addAoi(addAoi(createPlan(), aoi), flat))
     expect(fc.features).toHaveLength(1)
     expect(fc.features[0].properties?.id).toBe('a1')
   })
