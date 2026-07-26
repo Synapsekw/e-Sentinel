@@ -515,3 +515,61 @@ describe('suggestLayout', () => {
     })
   })
 })
+
+describe('suggestLayout dock naming', () => {
+  it('names auto-placed docks with the same DOCK NN convention as manual placement', () => {
+    // A square AOI big enough that the greedy loop places at least one dock.
+    const aoi: Aoi = {
+      id: 'a1',
+      name: 'BOX',
+      source: 'drawn',
+      valid: true,
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [54.5, 24.2],
+            [54.7, 24.2],
+            [54.7, 24.4],
+            [54.5, 24.4],
+            [54.5, 24.2],
+          ],
+        ],
+      },
+    }
+    const result = suggestLayout(addAoi(createPlan(), aoi))
+    expect(result.docks.length).toBeGreaterThan(0)
+    for (const d of result.docks) {
+      expect(d.name).toMatch(/^DOCK \d{2,}$/)
+      expect(d.name).not.toContain('PROPOSED')
+      // Provenance stays on `source`, which already drives PlanTree's AUTO
+      // badge and plannerStyle's #7aa2f7 marker colour.
+      expect(d.source).toBe('auto')
+    }
+  })
+
+  it('numbers its own run from 01 upward without gaps', () => {
+    const aoi: Aoi = {
+      id: 'a1',
+      name: 'BOX',
+      source: 'drawn',
+      valid: true,
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [54.5, 24.2],
+            [54.7, 24.2],
+            [54.7, 24.4],
+            [54.5, 24.4],
+            [54.5, 24.2],
+          ],
+        ],
+      },
+    }
+    const result = suggestLayout(addAoi(createPlan(), aoi))
+    expect(result.docks.map((d) => d.name)).toEqual(
+      result.docks.map((_, i) => `DOCK ${String(i + 1).padStart(2, '0')}`),
+    )
+  })
+})

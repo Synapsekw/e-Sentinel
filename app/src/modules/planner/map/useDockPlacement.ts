@@ -5,7 +5,7 @@ import type { GeoJSONSource } from 'maplibre-gl'
 import { DOCK_RANGE } from '@/modules/console/domain'
 import { isMapUsable } from '@/modules/console/map/mapLifecycle'
 import { PLANNER_SOURCES, dockFeatures, ringFeatures } from './plannerStyle'
-import { addDock, nextId, updateDock } from '../domain/plan'
+import { addDock, nextDockName, nextId, updateDock } from '../domain/plan'
 import { usePlanStore } from '../store/planStore'
 import type { PlannedDock } from '../domain/types'
 
@@ -15,11 +15,16 @@ import type { PlannedDock } from '../domain/types'
 // helper to the maplibre-gl type.
 type LngLatLike = { lng: number; lat: number }
 
-export function dockFromClick(lngLat: LngLatLike, seq: number): PlannedDock {
+// Takes the resolved name rather than a sequence number: the caller holds the
+// plan, and naming now comes from domain/plan.ts's nextDockName so the manual
+// and auto paths cannot drift apart or collide after a removal. Previously
+// this built `DOCK ${seq}` from a `plan.docks.length + 1` the caller computed,
+// which is exactly the colliding form.
+export function dockFromClick(lngLat: LngLatLike, name: string): PlannedDock {
   const coords: [number, number] = [lngLat.lng, lngLat.lat]
   return {
     id: nextId('dock'),
-    name: `DOCK ${String(seq).padStart(2, '0')}`,
+    name,
     position: coords,
     dockModel: 'DOCK3',
     droneModel: 'M4TD',
@@ -98,7 +103,7 @@ export function useDockPlacement(
       // @typescript-eslint/unbound-method (see useCoverageDriver.ts for the
       // same pattern).
       const state = usePlanStore.getState()
-      state.setPlan(addDock(state.plan, dockFromClick(e.lngLat, state.plan.docks.length + 1)))
+      state.setPlan(addDock(state.plan, dockFromClick(e.lngLat, nextDockName(state.plan))))
       setPlacing(false)
     }
 

@@ -22,7 +22,14 @@ import { usePlannerBasemap } from '@/modules/planner/map/usePlannerBasemap'
 import { useCoverageDriver } from '@/modules/planner/engine/useCoverageDriver'
 import { buildPlannerStyle } from '@/modules/planner/map/plannerStyle'
 import { usePlanStore } from '@/modules/planner/store/planStore'
-import { addAoi, adoptIdsFrom, nextId, setDocks } from '@/modules/planner/domain/plan'
+import {
+  addAoi,
+  adoptIdsFrom,
+  nextAoiName,
+  nextId,
+  setDocks,
+  uniqueName,
+} from '@/modules/planner/domain/plan'
 import { suggestLayout } from '@/modules/planner/domain/autoPlace'
 import { serializePlan, parsePlan } from '@/modules/planner/domain/planIo'
 import { isValidAoiGeometry } from '@/modules/planner/domain/geometry'
@@ -121,7 +128,7 @@ export function PlannerShell() {
     const state = usePlanStore.getState()
     const aoi: Aoi = {
       id: nextId('aoi'),
-      name: `AOI ${state.plan.aois.length + 1}`,
+      name: nextAoiName(state.plan),
       geometry,
       source: 'drawn',
       // Important 4 (final whole-branch review): this used to be hardcoded
@@ -198,7 +205,14 @@ export function PlannerShell() {
     }
     const state = usePlanStore.getState()
     let next = state.plan
-    for (const aoi of result.aois) next = addAoi(next, aoi)
+    for (const aoi of result.aois) {
+      // Importing one file twice used to produce two identically-named areas.
+      // Deduped against the names already in the plan AND the ones added
+      // earlier in this same loop, so a file containing two same-named
+      // placemarks is handled too.
+      const taken = next.aois.map((a) => a.name)
+      next = addAoi(next, { ...aoi, name: uniqueName(aoi.name, taken) })
+    }
     state.setPlan(next)
     setImportMessage({
       level: 'info',

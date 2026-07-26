@@ -12,8 +12,8 @@ import type { PlannedDock } from '../domain/types'
 describe('dockFromClick', () => {
   beforeEach(() => resetIdsForTest())
 
-  it('creates a manual dock at the clicked position', () => {
-    const d = dockFromClick({ lng: 54.6, lat: 24.3 }, 1)
+  it('creates a manual dock at the clicked position with the name it is given', () => {
+    const d = dockFromClick({ lng: 54.6, lat: 24.3 }, 'DOCK 01')
     expect(d.position).toEqual([54.6, 24.3])
     expect(d.source).toBe('manual')
     expect(d.name).toBe('DOCK 01')
@@ -22,17 +22,19 @@ describe('dockFromClick', () => {
   it('auto-detects urban placement from the position', () => {
     // Abu Dhabi Corniche is inside an URBAN_CENTERS circle in the sim's
     // dock range model, so a dock dropped there defaults to urban (3km).
-    const d = dockFromClick({ lng: 54.349, lat: 24.477 }, 1)
+    const d = dockFromClick({ lng: 54.349, lat: 24.477 }, 'DOCK 01')
     expect(d.environment).toBe('urban')
   })
 
   it('defaults to rural in open desert', () => {
-    const d = dockFromClick({ lng: 53.0, lat: 23.2 }, 1)
+    const d = dockFromClick({ lng: 53.0, lat: 23.2 }, 'DOCK 01')
     expect(d.environment).toBe('rural')
   })
 
-  it('zero-pads the sequence in the generated name', () => {
-    expect(dockFromClick({ lng: 54.6, lat: 24.3 }, 12).name).toBe('DOCK 12')
+  it('does not invent a name of its own', () => {
+    // Naming moved to nextDockName(plan) so both the manual and auto paths
+    // agree and neither can collide after a removal.
+    expect(dockFromClick({ lng: 54.6, lat: 24.3 }, 'JEBEL ALI NORTH').name).toBe('JEBEL ALI NORTH')
   })
 })
 
