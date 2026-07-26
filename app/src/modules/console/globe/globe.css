@@ -19,6 +19,16 @@
   display: flex;
   align-items: center;
   gap: 14px;
+  /* `.g-brand` is a <Link> to the module landing page (GlobeOverlay.tsx), and
+     `#globe-ui` above is `pointer-events: none` so drags fall through to the
+     globe -- so it has to opt back in, exactly as `.g-tag` and
+     `#globe-enter-btn` do. Without this the link renders but never receives a
+     click. */
+  pointer-events: auto;
+  transition: opacity 0.14s ease;
+}
+.g-brand:hover {
+  opacity: 0.72;
 }
 .g-logo {
   height: 30px;

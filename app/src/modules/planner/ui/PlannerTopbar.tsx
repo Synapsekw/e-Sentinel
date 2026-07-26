@@ -93,7 +93,12 @@ export default function PlannerTopbar({
 
   return (
     <header className="pl-topbar">
-      <div className="pl-brand">
+      {/* Home link, matching the console's `.t-brand`/`.g-brand`: the logo
+          goes back to the module landing page from every surface, so the
+          presenter never has to hunt for the way out. The explicit
+          `← MODULES` link at the end of the row stays -- it is the discoverable
+          label; this is the reflex target. */}
+      <Link className="pl-brand" to="/" title="BACK TO MODULES">
         <img
           className="pl-logo"
           src={`${import.meta.env.BASE_URL}assets/img/eand-logo-white.png`}
@@ -103,7 +108,7 @@ export default function PlannerTopbar({
           <div className="pl-title">DEPLOYMENT PLANNER</div>
           <div className="lbl">AOI · DOCKS · COVERAGE</div>
         </div>
-      </div>
+      </Link>
 
       <OfflineChip className="pl-chip pl-chip-warn" />
 

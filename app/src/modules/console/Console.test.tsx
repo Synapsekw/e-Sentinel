@@ -21,8 +21,14 @@
 // panels/hooks.ts and chrome/DockList.tsx's header comments), so this is a
 // faithful, provider-free stand-in for "the console scene, scene-gated".
 
+// Both trees below are wrapped in MemoryRouter: the brand block in <Topbar>
+// and in <GlobeOverlay> is a react-router <Link> back to the module landing
+// page (there is otherwise no route out of /console -- #btn-globe only flips
+// the scene), and <Link> throws outside a router.
+
 import { describe, it, expect, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { useAppStore } from '@/shared/store'
 import type { AppState } from '@/shared/store'
 import GlobeOverlay from './globe/GlobeOverlay'
@@ -36,17 +42,33 @@ import Ticker from './hud/Ticker'
 afterEach(cleanup)
 
 describe('globe overlay chrome', () => {
+  function renderGlobeOverlay(): void {
+    render(
+      <MemoryRouter>
+        <GlobeOverlay
+          onEnter={() => {}}
+          tagRef={{ current: null }}
+          altRef={{ current: null }}
+          enterBtnRef={{ current: null }}
+        />
+      </MemoryRouter>,
+    )
+  }
+
   it('shows the ENTER THEATER control in the globe scene', () => {
     useAppStore.setState({ scene: 'globe', layer: 'dark', offline: false })
-    render(
-      <GlobeOverlay
-        onEnter={() => {}}
-        tagRef={{ current: null }}
-        altRef={{ current: null }}
-        enterBtnRef={{ current: null }}
-      />,
-    )
+    renderGlobeOverlay()
     expect(screen.getByRole('button', { name: /enter theater/i })).toBeTruthy()
+  })
+
+  // The orbital scene hides the topbar entirely (useChromeFade), so this brand
+  // is the only way back to the landing page from the boot scene.
+  it('the orbital brand block is a link to the landing page', () => {
+    useAppStore.setState({ scene: 'globe', layer: 'dark', offline: false })
+    renderGlobeOverlay()
+    const brand = screen.getByText('SENTINEL').closest('a')
+    expect(brand?.getAttribute('href')).toBe('/')
+    expect(brand?.querySelector('img.g-logo')).toBeTruthy()
   })
 })
 
@@ -76,7 +98,7 @@ describe('console chrome composition (Console.tsx / Phase 1D Task 8)', () => {
 
   function renderConsoleTree(): void {
     render(
-      <>
+      <MemoryRouter>
         <ConsoleChrome
           topbar={<Topbar onExitToOrbit={() => {}} />}
           sidebar={<Sidebar />}
@@ -84,7 +106,7 @@ describe('console chrome composition (Console.tsx / Phase 1D Task 8)', () => {
           ticker={<Ticker />}
         />
         <TopMenus />
-      </>,
+      </MemoryRouter>,
     )
   }
 

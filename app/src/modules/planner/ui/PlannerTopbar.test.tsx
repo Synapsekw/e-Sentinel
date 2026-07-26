@@ -58,6 +58,15 @@ describe('PlannerTopbar grouping', () => {
     }
     expect(screen.getByRole('link', { name: /MODULES/ })).toBeInTheDocument()
   })
+
+  // Same gesture as the console's `.t-brand`/`.g-brand`: the logo goes home
+  // from every surface, so the presenter never has to hunt for the way out.
+  it('the brand block is a link to the landing page', () => {
+    renderTopbar()
+    const brand = screen.getByText('DEPLOYMENT PLANNER').closest('a')
+    expect(brand).toHaveAttribute('href', '/')
+    expect(brand?.querySelector('img.pl-logo')).toBeTruthy()
+  })
 })
 
 describe('PlannerTopbar offline chip', () => {
