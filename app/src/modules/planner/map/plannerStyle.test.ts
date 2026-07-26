@@ -163,3 +163,43 @@ describe('ringFeatures', () => {
     expect(vertexCount).toBeGreaterThan(64)
   })
 })
+
+describe('planner-aoi-fill', () => {
+  it('exists on the AOI source', () => {
+    const style = buildPlannerStyle()
+    const fill = style.layers.find((l) => l.id === 'planner-aoi-fill')
+    expect(fill).toBeDefined()
+    expect(fill?.type).toBe('fill')
+    expect((fill as { source?: string }).source).toBe(PLANNER_SOURCES.aoi)
+  })
+
+  it('sits below the coverage rings so ring green and gap red read on top', () => {
+    const ids = buildPlannerStyle().layers.map((l) => l.id)
+    expect(ids.indexOf('planner-aoi-fill')).toBeLessThan(ids.indexOf('planner-rings-fill'))
+    expect(ids.indexOf('planner-aoi-fill')).toBeLessThan(ids.indexOf('planner-gaps-fill'))
+  })
+
+  it('keeps the AOI outline above the fill', () => {
+    const ids = buildPlannerStyle().layers.map((l) => l.id)
+    expect(ids.indexOf('planner-aoi-fill')).toBeLessThan(ids.indexOf('planner-aoi-line'))
+  })
+
+  it('tints an invalid ring with the alert colour and leaves a valid one neutral', () => {
+    const fill = buildPlannerStyle().layers.find((l) => l.id === 'planner-aoi-fill')
+    const paint = (fill as { paint?: Record<string, unknown> }).paint ?? {}
+    // ['case', ['==', ['get','valid'], true], <valid>, <invalid>]
+    const color = paint['fill-color'] as unknown[]
+    expect(color[0]).toBe('case')
+    expect(color[2]).toBe('#e8ecf3')
+    expect(color[3]).toBe('#ff5a5a')
+  })
+
+  it('reads the boolean through an explicit == so MapLibre accepts the case condition', () => {
+    // ['get','valid'] alone is typed `value`, not `boolean`, and fails style
+    // validation as a `case` condition even though the property is a real
+    // boolean.
+    const fill = buildPlannerStyle().layers.find((l) => l.id === 'planner-aoi-fill')
+    const paint = (fill as { paint?: Record<string, unknown> }).paint ?? {}
+    expect((paint['fill-color'] as unknown[])[1]).toEqual(['==', ['get', 'valid'], true])
+  })
+})

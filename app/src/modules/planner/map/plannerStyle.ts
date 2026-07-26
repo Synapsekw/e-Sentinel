@@ -76,6 +76,36 @@ export function buildPlannerStyle(): StyleSpecification {
     },
     layers: [
       ...base.layers,
+      // The AOI's own wash. Without it a committed polygon was a dashed
+      // outline over bare map until dock rings greened its interior in --
+      // the AOI read as "transparent until you add the first dock".
+      //
+      // Bottom of the planner block on purpose: coverage green
+      // (planner-rings-fill) and gap red (planner-gaps-fill) must read on
+      // top of this, not under it.
+      //
+      // Neutral steel matching planner-aoi-line, so outline and fill read as
+      // one object. Not green (that means coverage here) and not red (brand +
+      // alerts only, per PRODUCT.md) -- except for an INVALID ring, which
+      // computeCoverage excludes from the result entirely, and which is
+      // therefore exactly the alert case. That makes the exclusion visible on
+      // the map rather than only as the INVALID GEOMETRY badge in the panel.
+      //
+      // The condition is spelled ['==', ['get','valid'], true] rather than a
+      // bare ['get','valid']: `get` is typed `value` by MapLibre's expression
+      // checker while `case` requires `boolean`, so the bare form fails style
+      // validation even though the underlying property is a real boolean.
+      // (planner-docks-circle's ['match', ['get','source'], ...] below is fine
+      // because `match` does accept a `value` input.)
+      {
+        id: 'planner-aoi-fill',
+        type: 'fill',
+        source: PLANNER_SOURCES.aoi,
+        paint: {
+          'fill-color': ['case', ['==', ['get', 'valid'], true], '#e8ecf3', '#ff5a5a'],
+          'fill-opacity': ['case', ['==', ['get', 'valid'], true], 0.07, 0.14],
+        },
+      },
       {
         id: 'planner-rings-fill',
         type: 'fill',
