@@ -36,6 +36,11 @@ export interface MapViewProps {
   initialCenter?: [number, number]
   initialZoom?: number
   styleSpec?: StyleSpecification
+  // False for consumers that manage their own basemap. The planner does
+  // (usePlannerBasemap), and must: useBasemap drives operational-layer
+  // visibility off the console's `scene`, which would strip the planner's
+  // uae-places/uae-roads cartography. See useBasemap's `enabled` comment.
+  manageBasemap?: boolean
 }
 
 export default function MapView({
@@ -43,6 +48,7 @@ export default function MapView({
   initialCenter = MAP_VIEW_DEFAULTS.center,
   initialZoom = MAP_VIEW_DEFAULTS.zoom,
   styleSpec,
+  manageBasemap = true,
 }: MapViewProps) {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -106,7 +112,7 @@ export default function MapView({
     // change would build a second map.
   )
 
-  useBasemap(mapRef, ready)
+  useBasemap(mapRef, ready, manageBasemap)
   useOffline(mapRef)
 
   const contextValue = useMemo(() => ({ mapRef, ready }), [ready])

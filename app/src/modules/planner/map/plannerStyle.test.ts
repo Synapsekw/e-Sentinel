@@ -163,3 +163,110 @@ describe('ringFeatures', () => {
     expect(vertexCount).toBeGreaterThan(64)
   })
 })
+
+describe('planner-aoi-fill', () => {
+  it('exists on the AOI source', () => {
+    const style = buildPlannerStyle()
+    const fill = style.layers.find((l) => l.id === 'planner-aoi-fill')
+    expect(fill).toBeDefined()
+    expect(fill?.type).toBe('fill')
+    expect((fill as { source?: string }).source).toBe(PLANNER_SOURCES.aoi)
+  })
+
+  it('sits below the coverage rings so ring green and gap red read on top', () => {
+    const ids = buildPlannerStyle().layers.map((l) => l.id)
+    expect(ids.indexOf('planner-aoi-fill')).toBeLessThan(ids.indexOf('planner-rings-fill'))
+    expect(ids.indexOf('planner-aoi-fill')).toBeLessThan(ids.indexOf('planner-gaps-fill'))
+  })
+
+  it('keeps the AOI outline above the fill', () => {
+    const ids = buildPlannerStyle().layers.map((l) => l.id)
+    expect(ids.indexOf('planner-aoi-fill')).toBeLessThan(ids.indexOf('planner-aoi-line'))
+  })
+
+  it('carries an alert-colour branch for an invalid ring, even though the tiler drops such rings before it can paint', () => {
+    // MapLibre's GeoJSON tiler drops a self-intersecting ring outright, so
+    // this branch never actually paints for the invalidity case that occurs
+    // in practice -- an invalid AOI renders as nothing, not as a red tint.
+    // Pinned here anyway because the expression is still correct for any
+    // invalid geometry the tiler does keep, and free to leave in place.
+    const fill = buildPlannerStyle().layers.find((l) => l.id === 'planner-aoi-fill')
+    const paint = (fill as { paint?: Record<string, unknown> }).paint ?? {}
+    // ['case', ['==', ['get','valid'], true], <valid>, <invalid>]
+    const color = paint['fill-color'] as unknown[]
+    expect(color[0]).toBe('case')
+    expect(color[2]).toBe('#e8ecf3')
+    expect(color[3]).toBe('#ff5a5a')
+  })
+
+  it('reads the boolean through an explicit == so MapLibre accepts the case condition', () => {
+    // ['get','valid'] alone is typed `value`, not `boolean`, and fails style
+    // validation as a `case` condition even though the property is a real
+    // boolean.
+    const fill = buildPlannerStyle().layers.find((l) => l.id === 'planner-aoi-fill')
+    const paint = (fill as { paint?: Record<string, unknown> }).paint ?? {}
+    expect((paint['fill-color'] as unknown[])[1]).toEqual(['==', ['get', 'valid'], true])
+  })
+
+  it('shares the same valid-check condition between fill-color and fill-opacity', () => {
+    // Both paint properties are driven off the shared AOI_VALID constant in
+    // plannerStyle.ts -- this pins fill-opacity's condition down too, not
+    // just fill-color's, so the two can't silently diverge.
+    const fill = buildPlannerStyle().layers.find((l) => l.id === 'planner-aoi-fill')
+    const paint = (fill as { paint?: Record<string, unknown> }).paint ?? {}
+    expect((paint['fill-opacity'] as unknown[])[1]).toEqual(['==', ['get', 'valid'], true])
+  })
+})
+
+describe('planner-rings-line-hi', () => {
+  it('exists on the rings source, above the ordinary ring outline', () => {
+    const style = buildPlannerStyle()
+    const ids = style.layers.map((l) => l.id)
+    expect(ids).toContain('planner-rings-line-hi')
+    expect(ids.indexOf('planner-rings-line')).toBeLessThan(ids.indexOf('planner-rings-line-hi'))
+  })
+
+  it('paints above planner-gaps-fill, so a selected ring is never washed out by the red gap overlay', () => {
+    // Both planner-rings-line-hi and planner-aoi-line-hi mean "this is what
+    // you selected" and must be equally prominent; the latter already sits
+    // above gaps-fill.
+    const ids = buildPlannerStyle().layers.map((l) => l.id)
+    expect(ids.indexOf('planner-gaps-fill')).toBeLessThan(ids.indexOf('planner-rings-line-hi'))
+  })
+
+  it('starts filtered to nothing, so no ring is highlighted before a selection', () => {
+    const hi = buildPlannerStyle().layers.find((l) => l.id === 'planner-rings-line-hi')
+    expect((hi as { filter?: unknown }).filter).toEqual(['==', ['get', 'id'], ''])
+  })
+
+  it('draws thicker than the ordinary ring outline so it reads as selected', () => {
+    const layers = buildPlannerStyle().layers
+    const paintOf = (id: string) =>
+      (layers.find((l) => l.id === id) as { paint?: Record<string, number> }).paint ?? {}
+    expect(paintOf('planner-rings-line-hi')['line-width']).toBeGreaterThan(
+      paintOf('planner-rings-line')['line-width'],
+    )
+  })
+})
+
+describe('planner-aoi-line-hi', () => {
+  it('exists on the aoi source, immediately above the ordinary aoi outline', () => {
+    const style = buildPlannerStyle()
+    const ids = style.layers.map((l) => l.id)
+    expect(ids).toContain('planner-aoi-line-hi')
+    expect(ids.indexOf('planner-aoi-line-hi')).toBe(ids.indexOf('planner-aoi-line') + 1)
+  })
+
+  it('starts filtered to nothing, so no area is highlighted before a selection', () => {
+    const hi = buildPlannerStyle().layers.find((l) => l.id === 'planner-aoi-line-hi')
+    expect((hi as { filter?: unknown }).filter).toEqual(['==', ['get', 'id'], ''])
+  })
+
+  it('draws solid where the ordinary aoi outline is dashed', () => {
+    const layers = buildPlannerStyle().layers
+    const paintOf = (id: string) =>
+      (layers.find((l) => l.id === id) as { paint?: Record<string, unknown> }).paint ?? {}
+    expect(paintOf('planner-aoi-line')['line-dasharray']).toBeDefined()
+    expect(paintOf('planner-aoi-line-hi')['line-dasharray']).toBeUndefined()
+  })
+})

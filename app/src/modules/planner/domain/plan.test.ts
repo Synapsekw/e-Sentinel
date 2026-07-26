@@ -11,6 +11,9 @@ import {
   resetNowForTest,
   nextId,
   adoptIdsFrom,
+  nextDockName,
+  nextAoiName,
+  uniqueName,
 } from './plan'
 import type { Aoi, DeploymentPlan, PlannedDock } from './types'
 
@@ -191,5 +194,96 @@ describe('plan mutations', () => {
 
       expect(minted).not.toBe('aoi-2')
     })
+  })
+})
+
+function dockNamed(id: string, name: string): PlannedDock {
+  return {
+    id,
+    name,
+    position: [54.6, 24.3],
+    dockModel: 'DOCK3',
+    droneModel: 'M4TD',
+    environment: 'rural',
+    source: 'manual',
+  }
+}
+
+function aoiNamed(id: string, name: string): Aoi {
+  return {
+    id,
+    name,
+    source: 'drawn',
+    valid: true,
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [54.5, 24.2],
+          [54.7, 24.2],
+          [54.7, 24.4],
+          [54.5, 24.2],
+        ],
+      ],
+    },
+  }
+}
+
+describe('nextDockName', () => {
+  it('starts at DOCK 01 on an empty plan', () => {
+    expect(nextDockName({ docks: [] })).toBe('DOCK 01')
+  })
+
+  it('zero-pads to two digits', () => {
+    expect(nextDockName({ docks: [dockNamed('d1', 'DOCK 01')] })).toBe('DOCK 02')
+  })
+
+  it('numbers from the highest existing number, not the array length', () => {
+    // The bug: length+1 after a removal collides. DOCK 01 + DOCK 03 is length
+    // 2, so length+1 would mint a second DOCK 03.
+    const docks = [dockNamed('d1', 'DOCK 01'), dockNamed('d3', 'DOCK 03')]
+    expect(nextDockName({ docks })).toBe('DOCK 04')
+  })
+
+  it('ignores renamed docks that do not match the pattern', () => {
+    const docks = [dockNamed('d1', 'JEBEL ALI NORTH'), dockNamed('d2', 'DOCK 07')]
+    expect(nextDockName({ docks })).toBe('DOCK 08')
+  })
+
+  it('does not zero-pad past two digits', () => {
+    expect(nextDockName({ docks: [dockNamed('d1', 'DOCK 99')] })).toBe('DOCK 100')
+  })
+})
+
+describe('nextAoiName', () => {
+  it('starts at AOI 1', () => {
+    expect(nextAoiName({ aois: [] })).toBe('AOI 1')
+  })
+
+  it('numbers from the highest existing number, not the array length', () => {
+    const aois = [aoiNamed('a1', 'AOI 1'), aoiNamed('a3', 'AOI 3')]
+    expect(nextAoiName({ aois })).toBe('AOI 4')
+  })
+
+  it('ignores imported names that do not match the pattern', () => {
+    expect(nextAoiName({ aois: [aoiNamed('a1', 'AOI ONE')] })).toBe('AOI 1')
+  })
+})
+
+describe('uniqueName', () => {
+  it('leaves a name that collides with nothing untouched', () => {
+    expect(uniqueName('AOI ONE', ['AOI TWO'])).toBe('AOI ONE')
+  })
+
+  it('suffixes a collision', () => {
+    expect(uniqueName('AOI ONE', ['AOI ONE'])).toBe('AOI ONE (2)')
+  })
+
+  it('keeps counting past an existing suffix', () => {
+    expect(uniqueName('AOI ONE', ['AOI ONE', 'AOI ONE (2)'])).toBe('AOI ONE (3)')
+  })
+
+  it('handles an empty taken list', () => {
+    expect(uniqueName('IMPORTED AREA', [])).toBe('IMPORTED AREA')
   })
 })

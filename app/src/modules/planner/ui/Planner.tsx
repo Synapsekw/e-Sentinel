@@ -17,12 +17,20 @@ import { useMap } from '@/modules/console/map/MapContext'
 import { useAoiDraw } from '@/modules/planner/map/useAoiDraw'
 import type { AoiDrawMode } from '@/modules/planner/map/useAoiDraw'
 import { useDockPlacement } from '@/modules/planner/map/useDockPlacement'
+import { usePlannerSelection } from '@/modules/planner/map/usePlannerSelection'
 import { usePlannerLayers } from '@/modules/planner/map/usePlannerLayers'
 import { usePlannerBasemap } from '@/modules/planner/map/usePlannerBasemap'
 import { useCoverageDriver } from '@/modules/planner/engine/useCoverageDriver'
 import { buildPlannerStyle } from '@/modules/planner/map/plannerStyle'
 import { usePlanStore } from '@/modules/planner/store/planStore'
-import { addAoi, adoptIdsFrom, nextId, setDocks } from '@/modules/planner/domain/plan'
+import {
+  addAoi,
+  adoptIdsFrom,
+  nextAoiName,
+  nextId,
+  setDocks,
+  uniqueName,
+} from '@/modules/planner/domain/plan'
 import { suggestLayout } from '@/modules/planner/domain/autoPlace'
 import { serializePlan, parsePlan } from '@/modules/planner/domain/planIo'
 import { isValidAoiGeometry } from '@/modules/planner/domain/geometry'
@@ -86,6 +94,7 @@ export function PlannerShell() {
   const { mapRef, ready } = useMap()
   const plan = usePlanStore((s) => s.plan)
   const coverage = usePlanStore((s) => s.coverage)
+  const selection = usePlanStore((s) => s.selection)
   const [drawMode, setDrawMode] = useState<AoiDrawMode>('idle')
   const [importMessage, setImportMessage] = useState<ImportMessage>(null)
   const [layoutStatus, setLayoutStatus] = useState<LayoutStatus | null>(null)
@@ -109,7 +118,7 @@ export function PlannerShell() {
   }, [])
 
   useCoverageDriver()
-  usePlannerLayers(mapRef, ready, plan, coverage)
+  usePlannerLayers(mapRef, ready, plan, coverage, selection)
   // Applies the topbar's LAYERS pick to the raster stack and stamps
   // data-maplayer on <html> so planner.css's var(--chrome) glass tracks the
   // basemap. Nothing set raster visibility here before, so the planner showed
@@ -121,7 +130,7 @@ export function PlannerShell() {
     const state = usePlanStore.getState()
     const aoi: Aoi = {
       id: nextId('aoi'),
-      name: `AOI ${state.plan.aois.length + 1}`,
+      name: nextAoiName(state.plan),
       geometry,
       source: 'drawn',
       // Important 4 (final whole-branch review): this used to be hardcoded
@@ -139,6 +148,12 @@ export function PlannerShell() {
   // Important 5: gate dock dragging on the draw mode being idle -- see
   // useDockPlacement's drawModeIdle parameter comment.
   const dockPlacement = useDockPlacement(mapRef, ready, drawMode === 'idle')
+  // Selection is the fourth gesture competing for a map click, after draw
+  // vertices, armed placement and dock dragging. Gated on the other three
+  // being stood down -- the same "one active capture mode at a time" rule
+  // handleSetDrawMode / handleToggleDockPlacement already keep between
+  // themselves.
+  usePlannerSelection(mapRef, ready, drawMode === 'idle' && !dockPlacement.placing)
 
   // Escape stands down an in-progress draw, the same convention
   // useDockPlacement already applies to armed dock placement. useAoiDraw
@@ -198,7 +213,14 @@ export function PlannerShell() {
     }
     const state = usePlanStore.getState()
     let next = state.plan
-    for (const aoi of result.aois) next = addAoi(next, aoi)
+    for (const aoi of result.aois) {
+      // Importing one file twice used to produce two identically-named areas.
+      // Deduped against the names already in the plan AND the ones added
+      // earlier in this same loop, so a file containing two same-named
+      // placemarks is handled too.
+      const taken = next.aois.map((a) => a.name)
+      next = addAoi(next, { ...aoi, name: uniqueName(aoi.name, taken) })
+    }
     state.setPlan(next)
     setImportMessage({
       level: 'info',
@@ -376,6 +398,7 @@ export default function Planner() {
         initialCenter={PLANNER_CENTER}
         initialZoom={PLANNER_ZOOM}
         styleSpec={buildPlannerStyle()}
+        manageBasemap={false}
       >
         <PlannerShell />
       </MapView>

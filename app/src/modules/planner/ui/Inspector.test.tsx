@@ -8,7 +8,7 @@ import '@testing-library/jest-dom/vitest'
 import Inspector from './Inspector'
 import { usePlanStore } from '../store/planStore'
 import { createPlan, addDock, resetIdsForTest } from '../domain/plan'
-import { DOCK_MODELS, DRONES } from '../domain/catalog'
+import { DOCK_MODELS, DRONES, effectiveRadius } from '../domain/catalog'
 import type { PlannedDock } from '../domain/types'
 
 // vite.config.ts now sets test.globals: true, so @testing-library/react's
@@ -115,5 +115,77 @@ describe('Inspector / DockInspector drone compatibility', () => {
     expect(droneSelectEl.value).toBe('M4TD')
     expect(screen.getByText(/INCOMPATIBLE/i)).toBeInTheDocument()
     expect(screen.getByText(/MATRICE 4TD.*NOT COMPATIBLE.*DOCK 2/i)).toBeInTheDocument()
+  })
+})
+
+describe('Inspector / DockInspector radius slider', () => {
+  beforeEach(() => resetIdsForTest())
+
+  it('renders a slider rather than a number box', () => {
+    selectDock(baseDock)
+    render(<Inspector />)
+    const slider = screen.getByLabelText(/Coverage radius/)
+    expect(slider).toHaveAttribute('type', 'range')
+  })
+
+  it('shows the derived radius when no override is set', () => {
+    selectDock(baseDock)
+    render(<Inspector />)
+    const derived = effectiveRadius(baseDock).radiusKm
+    expect(screen.getByLabelText(/Coverage radius/)).toHaveValue(String(derived))
+  })
+
+  it('caps the slider at the airframe endurance', () => {
+    selectDock(baseDock)
+    render(<Inspector />)
+    const endurance = effectiveRadius(baseDock).enduranceKm
+    expect(screen.getByLabelText(/Coverage radius/)).toHaveAttribute(
+      'max',
+      String(Math.ceil(endurance)),
+    )
+  })
+
+  it('writes radiusKmOverride when dragged', () => {
+    selectDock(baseDock)
+    render(<Inspector />)
+    fireEvent.change(screen.getByLabelText(/Coverage radius/), { target: { value: '4.5' } })
+    expect(usePlanStore.getState().plan.docks[0].radiusKmOverride).toBe(4.5)
+  })
+
+  it('reports MANUAL OVERRIDE once dragged', () => {
+    selectDock({ ...baseDock, radiusKmOverride: 4.5 })
+    render(<Inspector />)
+    expect(screen.getByText(/MANUAL OVERRIDE/)).toBeInTheDocument()
+    expect(screen.getByText('4.50 KM')).toBeInTheDocument()
+  })
+
+  it('offers RESET TO DERIVED only while an override is set', () => {
+    selectDock(baseDock)
+    const { unmount } = render(<Inspector />)
+    expect(screen.queryByRole('button', { name: /RESET TO DERIVED/ })).not.toBeInTheDocument()
+    unmount()
+
+    selectDock({ ...baseDock, radiusKmOverride: 4.5 })
+    render(<Inspector />)
+    expect(screen.getByRole('button', { name: /RESET TO DERIVED/ })).toBeInTheDocument()
+  })
+
+  it('clears the override back to derived', () => {
+    selectDock({ ...baseDock, radiusKmOverride: 4.5 })
+    render(<Inspector />)
+    fireEvent.click(screen.getByRole('button', { name: /RESET TO DERIVED/ }))
+    expect(usePlanStore.getState().plan.docks[0].radiusKmOverride).toBeUndefined()
+  })
+
+  it('extends the slider max rather than lying about an out-of-range stored override', () => {
+    // parsePlan deliberately does not validate radiusKmOverride, so an
+    // imported or hand-edited plan can carry a value beyond the airframe's
+    // reach. The control must show what is stored, not silently clamp it --
+    // the same principle as the incompatible-drone option above.
+    selectDock({ ...baseDock, radiusKmOverride: 40 })
+    render(<Inspector />)
+    const slider = screen.getByLabelText(/Coverage radius/)
+    expect(slider).toHaveAttribute('max', '40')
+    expect(slider).toHaveValue('40')
   })
 })

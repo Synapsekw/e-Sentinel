@@ -125,10 +125,18 @@ function radiusForPosition(lon: number, lat: number, droneModel: DroneModelId): 
   return radiusForEnvironment(environmentAt(lon, lat), droneModel)
 }
 
-function makeDock(lon: number, lat: number, droneModel: DroneModelId): PlannedDock {
+// `seq` is this RUN's 1-based index, not a plan-wide count: suggestLayout
+// returns a complete replacement array (setDocks), so the first dock of a run
+// is always DOCK 01. Naming matches the manual path (nextDockName) rather than
+// the old `PROPOSED <lon> <lat>`, which was both unlike every other dock name
+// and unreadable in the one field the user is expected to edit. Provenance
+// lives on `source: 'auto'`, which already drives PlanTree's AUTO badge and
+// plannerStyle's #7aa2f7 marker colour -- a name is an identity, a source is a
+// state.
+function makeDock(lon: number, lat: number, droneModel: DroneModelId, seq: number): PlannedDock {
   return {
     id: nextId('dock'),
-    name: `PROPOSED ${lon.toFixed(3)} ${lat.toFixed(3)}`,
+    name: `DOCK ${String(seq).padStart(2, '0')}`,
     position: [lon, lat],
     dockModel: dockModelFor(droneModel),
     droneModel,
@@ -357,7 +365,7 @@ export function suggestLayout(
     }
   }
 
-  const newDocks = chosen.map(([lon, lat]) => makeDock(lon, lat, droneModel))
+  const newDocks = chosen.map(([lon, lat], i) => makeDock(lon, lat, droneModel, i + 1))
   const docks = [...existingDocks, ...newDocks]
   const exact = computeCoverage(setDocks(plan, docks))
   return { docks, achievedPct: exact.ok ? exact.coveragePct : 0, stoppedBy }

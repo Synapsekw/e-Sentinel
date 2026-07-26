@@ -1,6 +1,38 @@
 #!/bin/sh
-# Lints/format-fixes only staged files under app/. The legacy vanilla sim is
+# Lints and format-checks app/ before a commit lands. The legacy vanilla sim is
 # not covered here. Enable once per clone: git config core.hooksPath .githooks
+#
+# WHY THIS IS NOT lint-staged ANYMORE
+#
+# This checkout's absolute path contains an "&" (.../E& C&C/...). lint-staged
+# resolves the local `eslint` binary, prepends app/node_modules/.bin to PATH and
+# spawns it -- on Windows, through cmd.exe, which treats "&" as a command
+# separator. The prepended PATH is split at the ampersand, so the spawn became:
+#
+#   'C' is not recognized as an internal or external command
+#   Error: Cannot find module 'C:\Users\D\OneDrive\Desktop\eslint\bin\eslint.js'
+#
+# and EVERY commit staging a .ts/.tsx file failed. (Commits touching only
+# repo-root files passed by accident: lint-staged runs from app/ and matched
+# nothing, so it never spawned anything.)
+#
+# app/.npmrc already fixes this class of breakage for `npm run <script>` by
+# pinning npm's script-shell to Git Bash by absolute path. lint-staged's own
+# subprocess spawns do not go through npm's script-shell, so they never
+# inherited that fix, and lint-staged v15 exposes no per-task shell option to
+# give them one. Running the repo's own npm scripts instead routes through the
+# shell .npmrc already pins, which is the same workaround this checkout has
+# relied on for its dev-server configs.
+#
+# Two deliberate consequences of the switch:
+#  - Scope is the whole app/ tree, not just staged files. Slower, but strictly
+#    stronger, and it matches what CI actually gates on.
+#  - Nothing is auto-fixed anymore. `eslint --fix` / `prettier --write` used to
+#    rewrite files mid-commit; now a lint or formatting slip FAILS the commit and
+#    you fix it yourself with `cd app && npm run lint -- --fix && npm run format`.
+#    Preferred: a hook that silently rewrites what you are committing means the
+#    diff you reviewed is not always the diff that lands.
 cd app || exit 0
-[ -d node_modules ] || { echo "pre-commit: app/node_modules missing, skipping lint-staged (run: cd app && npm install)"; exit 0; }
-npx --no-install lint-staged
+[ -d node_modules ] || { echo "pre-commit: app/node_modules missing, skipping checks (run: cd app && npm install)"; exit 0; }
+npm run lint || exit 1
+npm run format:check || exit 1

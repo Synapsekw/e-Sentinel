@@ -14,11 +14,18 @@
 
 import { useAppStore } from '@/shared/store'
 
-export default function OfflineChip() {
+export interface OfflineChipProps {
+  // The planner does not import chrome.css (see planner.css's header), so it
+  // supplies its own pl-* classes. Default reproduces the console's markup
+  // exactly, so every existing call site is unaffected.
+  className?: string
+}
+
+export default function OfflineChip({ className = 'chip warn' }: OfflineChipProps) {
   const offline = useAppStore((s) => s.offline)
 
   return (
-    <div className="chip warn" id="offline-chip" hidden={!offline}>
+    <div className={className} id="offline-chip" hidden={!offline}>
       OFFLINE MODE · VECTOR MAP
     </div>
   )

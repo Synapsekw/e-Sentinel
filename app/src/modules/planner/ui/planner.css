@@ -95,6 +95,30 @@
   padding: 6px 11px;
 }
 
+/* Offline indicator, the planner's counterpart to chrome.css's .chip.warn.
+   Amber, not red: offline is a degraded state, not an alert, and red stays
+   reserved for brand + alerts. Toggled via the `hidden` attribute rather than
+   unmounting, matching OfflineChip's existing behaviour. */
+.pl-chip {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 6px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.pl-chip-warn {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
+.pl-chip[hidden] {
+  display: none;
+}
+
 .pl-hidden-input {
   display: none;
 }
@@ -233,16 +257,16 @@
 
 /* Bright-basemap legibility, the planner's counterpart to chrome.css's
    :root[data-maplayer='light'] #side / #rpanel rule. Both panels are
-   near-transparent glass by default (var(--panel), 3.5% white) so the dark
-   map reads through them. Over the light, sat and terrain rasters that glass
+   near-transparent glass by default (var(--panel), 3.5% white) so the dark map
+   reads through them. Over the light, sat and terrain rasters that glass
    leaves the light UI text unreadable, so they take the opaque dark backing
    instead.
 
-   This rule did not exist before the LAYERS control landed, and it did not
-   need to: the planner had no way to select a bright basemap, so it was
-   always dark. Adding the control without this made every panel label wash
-   out the moment a user picked LIGHT, SAT or TERRAIN. Caught in browser
-   verification, not by any test. */
+   The panel backing alone was not enough: the inner .pl-panel tiles and the
+   summary strip are themselves translucent, so over satellite imagery the
+   micro-labels, the KM2 readouts and the dock rows still washed out. Caught in
+   browser verification on the sat basemap, not by any test -- contrast is not
+   something the unit tests can see. */
 :root[data-maplayer='light'] .pl-side,
 :root[data-maplayer='light'] .pl-rpanel,
 :root[data-maplayer='sat'] .pl-side,
@@ -250,6 +274,27 @@
 :root[data-maplayer='terrain'] .pl-side,
 :root[data-maplayer='terrain'] .pl-rpanel {
   background: var(--chrome);
+}
+:root[data-maplayer='light'] .pl-panel,
+:root[data-maplayer='sat'] .pl-panel,
+:root[data-maplayer='terrain'] .pl-panel {
+  background: var(--panel-opaque);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+:root[data-maplayer='light'] .pl-row,
+:root[data-maplayer='sat'] .pl-row,
+:root[data-maplayer='terrain'] .pl-row,
+:root[data-maplayer='light'] .pl-input,
+:root[data-maplayer='sat'] .pl-input,
+:root[data-maplayer='terrain'] .pl-input {
+  background: var(--panel-opaque2);
+}
+/* The strip spans the map between the two panels, so it is glass over the
+   raster with nothing behind it at all. */
+:root[data-maplayer='light'] .planner-summary,
+:root[data-maplayer='sat'] .planner-summary,
+:root[data-maplayer='terrain'] .planner-summary {
+  background: var(--panel-opaque);
 }
 
 .pl-panel {
@@ -459,6 +504,25 @@
 .pl-radius-headroom {
   margin-top: 4px;
 }
+/* Secondary to .pl-remove-btn: clearing a radius override is a small
+   correction, not a destructive action, so it stays a quiet ghost control. */
+.pl-reset-btn {
+  margin-top: 10px;
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pl-reset-btn:hover {
+  border-style: solid;
+  color: #fff;
+}
 .pl-remove-btn {
   margin-top: 16px;
   width: 100%;
@@ -519,4 +583,47 @@
 }
 .ps-layout-alert {
   color: var(--red);
+}
+
+/* Responsive drop-out, the planner's counterpart to chrome.css:564-586.
+   Every child of .pl-topbar is flex:none with no wrap, so without this the row
+   simply overflows: measured at a 1024px viewport, `← MODULES` ended at
+   1080px, fully off-screen. Shed in order of disposability, and never drop the
+   only entry point to a feature -- the same constraint the console's rules
+   state. */
+@media (max-width: 1720px) {
+  /* The brand's sub-label repeats what the summary strip already shows.
+     1720px, not 1500px: matches the console's #topbar breakpoint for the
+     same rule (chrome.css:564, .t-brand .lbl) deliberately, so the two
+     modules drop their sub-label at the same viewport width instead of the
+     planner showing one the console has already hidden. */
+  .pl-brand .lbl {
+    display: none;
+  }
+}
+@media (max-width: 1500px) {
+  .pl-topbar {
+    gap: 8px;
+  }
+}
+@media (max-width: 1280px) {
+  .pl-topbar {
+    gap: 6px;
+    padding: 0 10px;
+  }
+  .pl-btn {
+    padding: 7px 9px;
+    letter-spacing: 0.06em;
+  }
+}
+@media (max-width: 1120px) {
+  /* The offline chip is a status indicator, not a control, and the map itself
+     visibly changes when offline -- so it yields before any button does. */
+  .pl-chip {
+    display: none;
+  }
+  /* The logo is decoration next to the module title. */
+  .pl-logo {
+    display: none;
+  }
 }

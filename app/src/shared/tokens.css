@@ -21,6 +21,17 @@
      the data-maplayer attribute map.js sets on <html> when the layer changes. */
   --chrome: rgba(10, 11, 14, 0.82);
   --chrome-blur: blur(10px);
+  /* Opaque bright-basemap backing for surfaces nested inside the chrome glass
+     (planner's .pl-panel/.planner-summary and, one level deeper, .pl-row/
+     .pl-input). --panel/--panel2 cannot serve here: both are translucent
+     white overlays meant to let the dark map read through, which is exactly
+     what makes them illegible over a light/sat/terrain basemap in the first
+     place. These carry no alpha channel, and --panel-opaque2 is deliberately
+     the darker of the pair so a row/input still reads as recessed inside its
+     parent panel, the same two-level hierarchy --panel/--panel2 express when
+     translucent. */
+  --panel-opaque: #12151c;
+  --panel-opaque2: #0d1015;
 }
 :root[data-maplayer='light'],
 :root[data-maplayer='sat'],

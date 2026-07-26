@@ -1,4 +1,4 @@
-import type { StyleSpecification } from 'maplibre-gl'
+import type { ExpressionSpecification, StyleSpecification } from 'maplibre-gl'
 import type { Feature, FeatureCollection, Point, Polygon, MultiPolygon } from 'geojson'
 import buffer from '@turf/buffer'
 import { feature, featureCollection } from '@turf/helpers'
@@ -15,6 +15,13 @@ export const PLANNER_SOURCES = {
 } as const
 
 const empty = (): FeatureCollection => ({ type: 'FeatureCollection', features: [] })
+
+// Shared by planner-aoi-fill's fill-color and fill-opacity below: both need
+// the exact same "is this AOI valid" test, and spelling it out twice would
+// let a future edit to one silently diverge from the other. See the comment
+// on planner-aoi-fill for why it's ['==', ['get','valid'], true] rather than
+// the bare ['get','valid'].
+const AOI_VALID = ['==', ['get', 'valid'], true] as ExpressionSpecification
 
 export function aoiFeatures(plan: DeploymentPlan): FeatureCollection {
   return featureCollection(
@@ -76,6 +83,43 @@ export function buildPlannerStyle(): StyleSpecification {
     },
     layers: [
       ...base.layers,
+      // The AOI's own wash. Without it a committed polygon was a dashed
+      // outline over bare map until dock rings greened its interior in --
+      // the AOI read as "transparent until you add the first dock".
+      //
+      // Bottom of the planner block on purpose: coverage green
+      // (planner-rings-fill) and gap red (planner-gaps-fill) must read on
+      // top of this, not under it.
+      //
+      // Neutral steel matching planner-aoi-line, so outline and fill read as
+      // one object. Not green (that means coverage here) and not red (brand +
+      // alerts only, per PRODUCT.md) -- except for an INVALID ring, which
+      // computeCoverage excludes from the result entirely, and which is
+      // therefore exactly the alert case. In practice that alert branch is
+      // dead: MapLibre's GeoJSON tiler drops a self-intersecting ring
+      // outright, so an invalid AOI paints neither fill nor outline -- it's
+      // invisible on the map, not visibly excluded (verified via
+      // querySourceFeatures('planner-aoi') returning only the valid AOI with
+      // a bowtie polygon in the plan). Left as-is: it's correct for any
+      // invalid geometry the tiler does keep, and it costs nothing. Follow-up
+      // logged to render invalid areas from a bounding box or convex hull,
+      // which the tiler accepts, so they show up at all.
+      //
+      // The condition is spelled ['==', ['get','valid'], true] rather than a
+      // bare ['get','valid']: `get` is typed `value` by MapLibre's expression
+      // checker while `case` requires `boolean`, so the bare form fails style
+      // validation even though the underlying property is a real boolean.
+      // (planner-docks-circle's ['match', ['get','source'], ...] below is fine
+      // because `match` does accept a `value` input.)
+      {
+        id: 'planner-aoi-fill',
+        type: 'fill',
+        source: PLANNER_SOURCES.aoi,
+        paint: {
+          'fill-color': ['case', AOI_VALID, '#e8ecf3', '#ff5a5a'],
+          'fill-opacity': ['case', AOI_VALID, 0.07, 0.14],
+        },
+      },
       {
         id: 'planner-rings-fill',
         type: 'fill',
@@ -108,11 +152,40 @@ export function buildPlannerStyle(): StyleSpecification {
         // change to any of the coverage math.
         paint: { 'fill-color': '#ff5a5a', 'fill-opacity': 0.18 },
       },
+      // The selected dock's ring. Filtered to one id by usePlannerLayers, the
+      // same technique the console uses for coverage-line-hi -- so selecting a
+      // dock costs one setFilter, never a geometry rebuild.
+      //
+      // Starts filtered to the empty id rather than being hidden via
+      // visibility: one mechanism (the filter) owns what this layer draws, so
+      // there is no second piece of state to keep in agreement with it.
+      //
+      // Above planner-gaps-fill, not below it: a selected ring and an
+      // uncovered gap are both "this is what you selected" / "this needs
+      // attention" signals, and the red gap wash must not paint over the
+      // highlight. planner-aoi-line-hi already sits above gaps-fill for the
+      // same reason; this keeps the two highlight layers equally prominent.
+      {
+        id: 'planner-rings-line-hi',
+        type: 'line',
+        source: PLANNER_SOURCES.rings,
+        filter: ['==', ['get', 'id'], ''],
+        paint: { 'line-color': '#3ddc97', 'line-width': 2.5, 'line-opacity': 1 },
+      },
       {
         id: 'planner-aoi-line',
         type: 'line',
         source: PLANNER_SOURCES.aoi,
         paint: { 'line-color': '#e8ecf3', 'line-width': 1.5, 'line-dasharray': [2, 1] },
+      },
+      // The selected area's outline, same filtered-to-one-id technique.
+      // Brighter and solid where the ordinary outline is dashed.
+      {
+        id: 'planner-aoi-line-hi',
+        type: 'line',
+        source: PLANNER_SOURCES.aoi,
+        filter: ['==', ['get', 'id'], ''],
+        paint: { 'line-color': '#ffffff', 'line-width': 2.5 },
       },
       {
         id: 'planner-docks-circle',

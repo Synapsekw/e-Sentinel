@@ -60,9 +60,23 @@ function applyBasemap(map: maplibregl.Map): void {
 // click handlers, all funneled through one subscription here). The
 // subscription is narrowed to those three fields so unrelated store writes
 // (e.g. future phases' fields) don't needlessly re-apply the basemap.
-export function useBasemap(mapRef: MutableRefObject<maplibregl.Map | null>, ready: boolean): void {
+// `enabled` exists for ONE caller: the planner. MapView is shared by /console
+// and /planner, and this hook is the console's -- its apply step drives
+// OPERATIONAL_LAYER_IDS off the store's `scene`, and `uae-places`/`uae-roads`
+// are in that list. The planner has no scene of its own (the store default is
+// 'globe'), so left enabled this hook hides the planner's city labels and road
+// network on a cold load, and leaves them visible only if the user happened to
+// enter the console theater first -- cartography that depended on navigation
+// history. The planner owns its basemap through usePlannerBasemap; this hook
+// must not also write those layers. A parameter, not a condition around the
+// call site: React forbids conditional hook calls.
+export function useBasemap(
+  mapRef: MutableRefObject<maplibregl.Map | null>,
+  ready: boolean,
+  enabled = true,
+): void {
   useEffect(() => {
-    if (!ready) return
+    if (!enabled || !ready) return
     const map = mapRef.current
     if (!map) return
 
@@ -85,5 +99,5 @@ export function useBasemap(mapRef: MutableRefObject<maplibregl.Map | null>, read
       }
     })
     return unsubscribe
-  }, [mapRef, ready])
+  }, [mapRef, ready, enabled])
 }

@@ -35,9 +35,16 @@ function applyPlannerBasemap(map: maplibregl.Map): void {
   document.documentElement.dataset.maplayer = layer
   applyRasterVisibility(map, eff)
   applyPlaceLabelTheme(map, eff)
-  // No setOperationalLayersVisible here: OPERATIONAL_LAYER_IDS are the
-  // console's simulation layers (docks/drones/missions/tracks/wizard), none of
-  // which the planner's style (buildBaseStyle, not buildStyle) contains.
+  // No setOperationalLayersVisible here -- and deliberately so, not because
+  // the list is irrelevant. OPERATIONAL_LAYER_IDS mixes two different kinds
+  // of layer: console simulation layers (docks/drones/missions/tracks/
+  // wizard), which are genuinely absent from the planner's style
+  // (buildBaseStyle, not buildStyle); and UAE cartography (`uae-places`,
+  // `uae-roads`), which the planner's style DOES contain and which must stay
+  // visible here. Driving the whole list off `scene === 'console'` -- what
+  // useBasemap's `enabled` does when left on for the planner -- hides the
+  // planner's city labels and road network on a cold load. See useBasemap's
+  // `enabled` parameter comment for the fuller account of that bug.
 }
 
 // Applies the app-level basemap selection to the planner's map: once when the

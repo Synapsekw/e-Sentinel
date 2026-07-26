@@ -72,20 +72,18 @@ function DockInspector({ dockId }: { dockId: string }) {
   function handleName(e: ChangeEvent<HTMLInputElement>) {
     patchDock(dockId, { name: e.target.value })
   }
-  function handleOverride(e: ChangeEvent<HTMLInputElement>) {
-    const raw = e.target.value
-    if (raw === '') {
-      patchDock(dockId, { radiusKmOverride: undefined })
-      return
-    }
-    const parsed = Number(raw)
-    // An interim invalid numeric input (e.g. a bare "-" or "." while typing)
-    // yields NaN, which is not `null`/`undefined` -- left unguarded, it would
-    // flow into radiusFromTerms and render as "NaN KM" downstream. Simply
-    // ignore the keystroke until it parses to a real number rather than
-    // committing a NaN override.
-    if (Number.isNaN(parsed)) return
-    patchDock(dockId, { radiusKmOverride: parsed })
+  // Real user interaction with a range input cannot land on the empty or
+  // partial states (a bare "-" or "." mid-typing) the old number box needed
+  // a NaN guard for -- the browser only ever hands back a value on the slider's
+  // own step/min/max grid. That's a fact about the UI, not a type guarantee:
+  // a raw fireEvent.change in a test, or other direct DOM manipulation, can
+  // still set an arbitrary string. Clearing the override is a separate,
+  // explicit action -- see handleResetRadius.
+  function handleRadius(e: ChangeEvent<HTMLInputElement>) {
+    patchDock(dockId, { radiusKmOverride: Number(e.target.value) })
+  }
+  function handleResetRadius() {
+    patchDock(dockId, { radiusKmOverride: undefined })
   }
   function handleRemove() {
     const state = usePlanStore.getState()
@@ -153,14 +151,30 @@ function DockInspector({ dockId }: { dockId: string }) {
         </select>
       </label>
       <label className="pl-field">
-        <span className="lbl">Radius override KM (blank = derived)</span>
+        <span className="lbl">Coverage radius</span>
         <input
-          className="pl-input"
-          type="number"
-          min={0}
+          className="pl-slider"
+          type="range"
+          // Not 0: a zero-radius dock has no buffer at all, and
+          // domain/coverage.ts drops a dock with no buffer from the result,
+          // which with a single dock collapses computeCoverage to
+          // { ok: false, reason: 'degenerate' } -- a completely uncovered AOI
+          // would then paint no red gap overlay and the summary strip would
+          // report a geometry problem instead of 0% coverage. 0.1 keeps the
+          // far-left stop a real, if tiny, dock.
+          min={0.1}
           step={0.1}
-          value={dock.radiusKmOverride ?? ''}
-          onChange={handleOverride}
+          // The airframe's physical reach is the ceiling: a planning tool
+          // should not let you draw a ring the aircraft cannot fly. One
+          // exception -- parsePlan deliberately does not validate this field
+          // (see planIo.ts), so an imported or hand-edited plan can carry a
+          // larger value. Extend the max to it rather than clamping, so the
+          // control shows what is actually stored. Same principle as the
+          // incompatible-drone <option> above: never display a value other
+          // than the one the plan holds.
+          max={Math.max(Math.ceil(breakdown.enduranceKm), Math.ceil(dock.radiusKmOverride ?? 0))}
+          value={breakdown.radiusKm}
+          onChange={handleRadius}
         />
       </label>
 
@@ -172,6 +186,15 @@ function DockInspector({ dockId }: { dockId: string }) {
             AIRFRAME REACHES {breakdown.enduranceKm.toFixed(2)} KM ·{' '}
             {(breakdown.enduranceKm - breakdown.capKm).toFixed(2)} KM HEADROOM UNUSED
           </div>
+        ) : null}
+        {dock.radiusKmOverride != null ? (
+          // A slider has no empty state, so this is the only way back to the
+          // derived radius. The old number input got it for free by being
+          // cleared; without this the derived value is unreachable once the
+          // slider is touched.
+          <button type="button" className="pl-reset-btn" onClick={handleResetRadius}>
+            RESET TO DERIVED
+          </button>
         ) : null}
       </div>
 

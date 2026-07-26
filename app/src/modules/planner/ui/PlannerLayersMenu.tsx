@@ -1,9 +1,9 @@
 // The planner's LAYERS basemap picker (spec section 4). Labels and order are
-// verbatim from the console's chrome/LayersMenu.tsx -- one product, one set of
-// basemap names -- but this reuses the topbar's own pl-dropdown / pl-menu /
-// pl-menu-item pattern (the same one DRAW uses) rather than importing the
-// console's TopMenu, which is bound to the console store's `openMenu` slice
-// and to #topbar ids that do not exist here.
+// imported from the console's map/basemap.ts, not copied -- one product, one
+// set of basemap names -- but this reuses the topbar's own pl-dropdown /
+// pl-menu / pl-menu-item pattern (the same one DRAW uses) rather than
+// importing the console's TopMenu, which is bound to the console store's
+// `openMenu` slice and to #topbar ids that do not exist here.
 //
 // Reads `layer`/`setLayer` straight off useAppStore rather than taking them as
 // props: the basemap is an app-level display preference already modelled
@@ -11,16 +11,7 @@
 // behaviour a single product should have. Open/closed state IS a prop, because
 // PlannerTopbar owns "only one dropdown open at a time".
 import { useAppStore } from '@/shared/store'
-import type { MapLayer } from '@/shared/store'
-
-const LAYER_LABELS: Record<MapLayer, string> = {
-  dark: 'DARK',
-  light: 'LIGHT',
-  sat: 'SATELLITE',
-  terrain: 'TERRAIN',
-}
-
-const LAYER_ORDER: MapLayer[] = ['dark', 'light', 'sat', 'terrain']
+import { LAYER_LABELS, LAYER_ORDER, layerButtonLabel } from '@/modules/console/map/basemap'
 
 export interface PlannerLayersMenuProps {
   open: boolean
@@ -41,7 +32,7 @@ export default function PlannerLayersMenu({ open, onToggle, onClose }: PlannerLa
         aria-expanded={open}
         onClick={onToggle}
       >
-        LAYERS ▾
+        {layerButtonLabel(layer)} ▾
       </button>
       {open ? (
         <div className="pl-menu" role="menu">

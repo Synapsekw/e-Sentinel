@@ -7,10 +7,12 @@ import { usePlannerLayers } from './usePlannerLayers'
 import { PLANNER_SOURCES } from './plannerStyle'
 import { createPlan, addAoi, addDock } from '../domain/plan'
 import type { Aoi, CoverageResult, DeploymentPlan, PlannedDock } from '../domain/types'
+import type { PlannerSelection } from '../store/planStore'
 
 // Same fake-map convention as useDockPlacement.test.ts: only the slice of
 // maplibregl.Map this hook actually touches (getSource().setData, plus the
-// `style` field isMapUsable probes).
+// `style` field isMapUsable probes). Task 8 adds getLayer/setFilter to that
+// slice for the selection-highlight effect, which calls both.
 function makeFakeMap() {
   const setDataSpies: Record<string, ReturnType<typeof vi.fn>> = {
     [PLANNER_SOURCES.aoi]: vi.fn(),
@@ -21,11 +23,22 @@ function makeFakeMap() {
   const sources = Object.fromEntries(
     Object.entries(setDataSpies).map(([id, setData]) => [id, { setData }]),
   )
+  const setFilter = vi.fn()
   const map = {
     style: {},
     getSource: vi.fn((id: string) => sources[id]),
+    // Both highlight layers exist in the real style, so getLayer must return
+    // something truthy for their ids -- the hook only calls setFilter when
+    // getLayer says the layer is there.
+    getLayer: vi.fn(() => ({})),
+    setFilter,
   }
-  return { map: map as unknown as maplibregl.Map, setDataSpies }
+  return {
+    map: map as unknown as maplibregl.Map,
+    setDataSpies,
+    setFilter,
+    ringsSetData: setDataSpies[PLANNER_SOURCES.rings],
+  }
 }
 
 const AOI: Aoi = {
@@ -71,7 +84,7 @@ describe('usePlannerLayers', () => {
     const mapRef: MutableRefObject<maplibregl.Map | null> = { current: map }
     const plan = addDock(addAoi(createPlan(), AOI), DOCK)
 
-    renderHook(() => usePlannerLayers(mapRef, true, plan, NO_AOI))
+    renderHook(() => usePlannerLayers(mapRef, true, plan, NO_AOI, null))
 
     expect(setDataSpies[PLANNER_SOURCES.aoi]).toHaveBeenCalledTimes(1)
     expect(setDataSpies[PLANNER_SOURCES.docks]).toHaveBeenCalledTimes(1)
@@ -88,7 +101,7 @@ describe('usePlannerLayers', () => {
     const plan = addDock(addAoi(createPlan(), AOI), DOCK)
 
     const { rerender } = renderHook(
-      ({ p }: { p: DeploymentPlan }) => usePlannerLayers(mapRef, true, p, NO_AOI),
+      ({ p }: { p: DeploymentPlan }) => usePlannerLayers(mapRef, true, p, NO_AOI, null),
       {
         initialProps: { p: plan },
       },
@@ -119,7 +132,7 @@ describe('usePlannerLayers', () => {
     const plan = addDock(addAoi(createPlan(), AOI), DOCK)
 
     const { rerender } = renderHook(
-      ({ p }: { p: DeploymentPlan }) => usePlannerLayers(mapRef, true, p, NO_AOI),
+      ({ p }: { p: DeploymentPlan }) => usePlannerLayers(mapRef, true, p, NO_AOI, null),
       {
         initialProps: { p: plan },
       },
@@ -137,5 +150,86 @@ describe('usePlannerLayers', () => {
     rerender({ p: edited })
 
     expect(setDataSpies[PLANNER_SOURCES.docks]).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('usePlannerLayers selection highlight', () => {
+  it('filters the highlight ring to the selected dock', () => {
+    const fake = makeFakeMap()
+    const mapRef = { current: fake.map }
+    renderHook(() =>
+      usePlannerLayers(
+        mapRef,
+        true,
+        createPlan(),
+        { ok: false, reason: 'no-aoi' },
+        {
+          type: 'dock',
+          id: 'dock-7',
+        },
+      ),
+    )
+    expect(fake.setFilter).toHaveBeenCalledWith('planner-rings-line-hi', [
+      '==',
+      ['get', 'id'],
+      'dock-7',
+    ])
+  })
+
+  it('filters the highlight ring to nothing when there is no selection', () => {
+    const fake = makeFakeMap()
+    const mapRef = { current: fake.map }
+    renderHook(() =>
+      usePlannerLayers(mapRef, true, createPlan(), { ok: false, reason: 'no-aoi' }, null),
+    )
+    expect(fake.setFilter).toHaveBeenCalledWith('planner-rings-line-hi', ['==', ['get', 'id'], ''])
+  })
+
+  it('filters the AOI outline highlight to the selected area', () => {
+    const fake = makeFakeMap()
+    const mapRef = { current: fake.map }
+    renderHook(() =>
+      usePlannerLayers(
+        mapRef,
+        true,
+        createPlan(),
+        { ok: false, reason: 'no-aoi' },
+        {
+          type: 'aoi',
+          id: 'aoi-2',
+        },
+      ),
+    )
+    expect(fake.setFilter).toHaveBeenCalledWith('planner-aoi-line-hi', [
+      '==',
+      ['get', 'id'],
+      'aoi-2',
+    ])
+  })
+
+  it('does not rebuild ring geometry when only the selection changes', () => {
+    // The load-bearing performance assertion: a selection click must not
+    // rebuild N 64-step ring buffers. Same reasoning as Important 8's
+    // plan.aois/plan.docks dependency narrowing.
+    const fake = makeFakeMap()
+    const mapRef = { current: fake.map }
+    const plan = createPlan()
+    const coverage = { ok: false, reason: 'no-aoi' } as const
+    const { rerender } = renderHook(
+      ({ selection }) => usePlannerLayers(mapRef, true, plan, coverage, selection),
+      { initialProps: { selection: null as PlannerSelection } },
+    )
+    fake.ringsSetData.mockClear()
+    fake.setFilter.mockClear()
+    rerender({ selection: { type: 'dock', id: 'dock-1' } })
+    expect(fake.ringsSetData).not.toHaveBeenCalled()
+    // Positive half of the same assertion: the selection effect did run --
+    // setData was skipped because it's the wrong effect for the job, not
+    // because nothing happened at all.
+    expect(fake.setFilter).toHaveBeenCalledWith('planner-rings-line-hi', [
+      '==',
+      ['get', 'id'],
+      'dock-1',
+    ])
   })
 })
