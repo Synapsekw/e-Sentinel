@@ -584,3 +584,40 @@
 .ps-layout-alert {
   color: var(--red);
 }
+
+/* Responsive drop-out, the planner's counterpart to chrome.css:564-586.
+   Every child of .pl-topbar is flex:none with no wrap, so without this the row
+   simply overflows: measured at a 1024px viewport, `← MODULES` ended at
+   1080px, fully off-screen. Shed in order of disposability, and never drop the
+   only entry point to a feature -- the same constraint the console's rules
+   state. */
+@media (max-width: 1500px) {
+  .pl-topbar {
+    gap: 8px;
+  }
+  /* The brand's sub-label repeats what the summary strip already shows. */
+  .pl-brand .lbl {
+    display: none;
+  }
+}
+@media (max-width: 1280px) {
+  .pl-topbar {
+    gap: 6px;
+    padding: 0 10px;
+  }
+  .pl-btn {
+    padding: 7px 9px;
+    letter-spacing: 0.06em;
+  }
+}
+@media (max-width: 1120px) {
+  /* The offline chip is a status indicator, not a control, and the map itself
+     visibly changes when offline -- so it yields before any button does. */
+  .pl-chip {
+    display: none;
+  }
+  /* The logo is decoration next to the module title. */
+  .pl-logo {
+    display: none;
+  }
+}
