@@ -1,60 +1,155 @@
+/* Landing page. Scaled for the room it is presented in: a projector or 4K
+   display, often across a meeting table, so the hero is fluid, the card grid
+   occupies a real column rather than a small centred box, and secondary text
+   sits at two distinct sizes instead of everything at 9.5px mono.
+
+   Local greys (#5a6375 and the card body/heading tones) are deliberately not
+   promoted into tokens.css: they are landing-only steps between --dim and
+   --line, and nothing else in the app needs them yet. */
+
 .landing {
+  position: relative;
   min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 24px;
+}
+/* The animated fleet. Fixed and behind everything, never interactive: it is
+   decoration, and DroneField marks it aria-hidden for the same reason. */
+.landing-field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.landing-inner {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 40px;
-  padding: 48px 24px;
 }
+
+/* ---------- brand ---------- */
 .landing-brand {
   text-align: center;
+  margin-bottom: 56px;
 }
 .landing-brand h1 {
-  font-size: 34px;
-  letter-spacing: 0.32em;
+  font-size: clamp(38px, 4.6vw, 58px);
+  line-height: 1;
   font-weight: 700;
+  /* The trailing letter's tracking is real width, so the wordmark reads as
+     optically off-centre without a matching indent to cancel it. */
+  letter-spacing: 0.26em;
+  text-indent: 0.26em;
   color: #fff;
-  margin: 16px 0 10px;
+  margin-bottom: 16px;
+}
+.landing-mark {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.26em;
+  color: #b9c2d2;
+  margin-bottom: 14px;
 }
 .landing-sub {
-  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--dim);
 }
+
+/* ---------- module grid ---------- */
 .modules {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 260px));
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(300px, 344px));
+  gap: 18px;
+  width: 100%;
+  max-width: 706px;
 }
 .mcard {
-  display: block;
+  display: flex;
+  flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 18px 20px;
+  border-radius: 12px;
+  padding: 26px 28px 22px;
   transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
 }
 .mcard[data-enabled='true']:hover {
-  border-color: rgba(255, 255, 255, 0.22);
+  transform: translateY(-3px);
+  border-color: rgba(255, 90, 90, 0.45);
   background: var(--panel2);
 }
+.mcard[data-enabled='true']:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 3px;
+}
+/* Planned modules read as recessed, not faded. An opacity wash here would
+   drag the body copy under contrast minimums to say something the wording
+   ("Not yet deployed") already says. */
 .mcard[data-enabled='false'] {
-  opacity: 0.55;
+  background: rgba(255, 255, 255, 0.014);
   cursor: default;
 }
 .m-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 18px;
+}
+.m-num {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  color: #5a6375;
 }
 .mcard h2 {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 19px;
+  line-height: 1.2;
+  font-weight: 700;
   color: #fff;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
+.mcard[data-enabled='false'] h2 {
+  color: #aeb6c4;
+}
+.m-blurb {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #98a1b2;
+  flex: 1;
+}
+.m-go {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #5a6375;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: color 0.18s ease;
+}
+.mcard[data-enabled='true']:hover .m-go {
+  color: var(--red);
+}
+.m-go .arw {
+  transition: transform 0.18s ease;
+}
+.mcard[data-enabled='true']:hover .m-go .arw {
+  transform: translateX(3px);
+}
+
 .m-status {
   display: inline-flex;
   align-items: center;
@@ -90,6 +185,23 @@
 .m-status.planned .dot {
   background: var(--dim);
 }
+
 .landing-foot {
-  margin-top: 8px;
+  margin-top: 48px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #5a6375;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .modules {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 360px;
+  }
+  .landing-brand {
+    margin-bottom: 40px;
+  }
 }

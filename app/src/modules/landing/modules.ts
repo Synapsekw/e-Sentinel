@@ -10,14 +10,19 @@ export interface ModuleCard {
   enabled: boolean
 }
 
-// Single source of truth for the landing cards. Mirrors the legacy index.html
-// copy exactly (no em dashes; middot separators).
+// Single source of truth for the landing cards.
+//
+// The blurbs were middot-separated keyword dumps carried 1:1 from the legacy
+// index.html, set in 9.5px tracked-out mono like every other label on the
+// page. They are now one readable sentence each, which is what lets the card
+// carry two type registers (mono for the number and status, body text for the
+// description) instead of one. No em dashes, per the house convention.
 export const MODULES: ModuleCard[] = [
   {
     num: '01',
     slug: 'console',
     title: 'Simulation',
-    blurb: 'NATIONAL GRID C2 · 104 DOCKS · LIVE FLEET · MISSION VIDEO DEBRIEFS',
+    blurb: 'National grid command and control. 104 docks, live fleet, mission video debriefs.',
     status: 'online',
     statusLabel: 'ONLINE',
     enabled: true,
@@ -26,12 +31,14 @@ export const MODULES: ModuleCard[] = [
     num: '02',
     slug: 'planner',
     title: 'Deployment Planner',
-    // The blurb keeps AI CO-PLANNER, which does not exist yet: this copy is
-    // carried 1:1 from the legacy index.html the landing page was ported from,
-    // and the card describes the module's intent. Recorded in
-    // docs/superpowers/specs/2026-07-26-planner-hardening-design.md (section 9)
-    // so it reads as a decision rather than an oversight.
-    blurb: 'CUSTOMER AOI · DOCK PLACEMENT · COVERAGE & OVERLAP · AI CO-PLANNER',
+    // This blurb used to end in AI CO-PLANNER, a capability that does not
+    // exist. Keeping it was a deliberate call recorded in
+    // docs/superpowers/specs/2026-07-26-planner-hardening-design.md (section
+    // 9) on the grounds that the card described the module's intent. That call
+    // is deliberately REVERSED here: the landing page is shown to government
+    // clients and partners, so every card now claims only what the module
+    // actually does today. Re-add it when the co-planner ships, not before.
+    blurb: 'Draw a customer area, place docks, read coverage and overlap before a single flight.',
     status: 'online',
     statusLabel: 'ONLINE',
     enabled: true,
@@ -40,7 +47,7 @@ export const MODULES: ModuleCard[] = [
     num: '03',
     slug: 'telemetry',
     title: 'Telemetry',
-    blurb: 'FLIGHT HISTORY · TRACK REPLAY · PERFORMANCE ANALYTICS',
+    blurb: 'Flight history, track replay, and fleet performance analytics.',
     status: 'planned',
     statusLabel: 'PLANNED',
     enabled: false,
@@ -49,7 +56,7 @@ export const MODULES: ModuleCard[] = [
     num: '04',
     slug: 'compliance',
     title: 'Compliance',
-    blurb: 'DRONE LOGBOOK · APPROVALS · REGULATORY AUDIT TRAIL',
+    blurb: 'Drone logbook, approvals, and a regulatory audit trail.',
     status: 'planned',
     statusLabel: 'PLANNED',
     enabled: false,
