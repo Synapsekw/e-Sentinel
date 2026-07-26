@@ -98,7 +98,35 @@ Home point is 28.782 N, 48.004 E — Kuwait. Every other SENTINEL surface is UAE
 Telemetry frames wherever the log says; it has no UAE default camera when a flight is
 open.
 
-### 3.6 "Track" is already taken
+They are also **survey grids, not transits**: 22.1 km of path inside a 790 × 710 m
+bounding box, flown in `GPSWaypoint` mode with 683 photos captured. Fit-to-bounds
+therefore lands around z16, and the rendered path is a dense lawnmower pattern rather than
+a long line. That reads well on a large screen — it looks like the real survey work it is
+— but the path layer must stay legible at that density, so the traversed/untraversed
+distinction carries more weight here than a line width would.
+
+### 3.6 Decode is cheap; raw frames are enormous
+
+Measured on the 27,229-record log, Node 24, M-series Mac:
+
+| | |
+|---|---|
+| Keychain fetch (one-time, offline) | 1.29 s |
+| `frames(keychains)` decode | **414 ms** |
+| Frames with valid coordinates | 27,228 / 27,228 |
+| Raw `Frame[]` as JSON | **65.2 MB** |
+
+Two consequences. Decode speed is a non-issue, so the Web Worker is justified purely by
+section 3.4's main-thread restriction and not by performance. And the 65.2 MB figure is
+what makes section 6's normalization seam load-bearing rather than tidy: a 9 MB log
+inflates roughly sevenfold if DJI's 100-field frame shape is retained. Nothing caches raw
+frames.
+
+Flight modes observed across the log — `GPSAtti`, `EngineStart`, `AutoTakeoff`,
+`GPSWaypoint`, `ConfirmLanding` — are real enum values, so `FlightSample.mode` displays
+directly without a synthesised label.
+
+### 3.7 "Track" is already taken
 
 `modules/console/panels/TrackPanel.tsx` and `domain/tracks` use *track* for detected
 ground targets. This module uses **flight** (a log), **flight path** (the geometry), and
@@ -116,12 +144,13 @@ A committed `.env.example` documents it. Read **only** by `tools/bake-flights.mj
 Node. It is deliberately not `VITE_`-prefixed: that prefix would inline the key into the
 client bundle, which is precisely the exposure this design avoids.
 
-**Open risk.** The key on hand is described as a DJI *Cloud API* key. The keychain
-endpoint expects the key from a developer.dji.com app of type *Open API* (surfaced as
-"SDK key"). These may be the same credential or may not. **Verifying the key against one
-real log is the first task of implementation** — if it fails, the decode-in-browser
-approach collapses and the fallback is offline conversion to CSV, which changes sections
-5 and 6 entirely.
+**Verified 2026-07-26.** The key on hand was described as a DJI *Cloud API* key, and the
+keychain endpoint documents the *Open API* "SDK key" — so whether the two are the same
+credential was the single risk the whole design rested on. Tested against
+`5_DJIFlightRecord_2026-02-17_[09-27-04].txt`: HTTP 200, `result.code 0`, real AES
+keychains returned, and `frames(keychains)` decoded 27,228 frames with valid coordinates
+on every one. The risk is retired; sections 5 and 6 stand as written. See section 3.6 for
+the measurements.
 
 ## 5. Data pipeline
 
@@ -354,7 +383,7 @@ Flip `telemetry` from `planned` to `online` in `modules/landing/modules.ts`.
 
 The current blurb — "Flight history, track replay, and fleet performance analytics" —
 must change. It promises fleet analytics this module does not do, and it uses the word
-*track* in the sense section 3.6 forbids. `modules.ts` already records a deliberate
+*track* in the sense section 3.7 forbids. `modules.ts` already records a deliberate
 decision that every card claims only what the module does today, because the landing page
 is shown to government clients and partners. Replace with:
 
@@ -362,8 +391,7 @@ is shown to government clients and partners. Replace with:
 
 ## 12. Implementation order
 
-1. **Verify `DJI_API_KEY` against a real log** (section 4). Everything downstream assumes
-   it works; nothing else should be built until it is proven.
+1. ~~Verify `DJI_API_KEY` against a real log.~~ **Done 2026-07-26** — see section 4.
 2. `tools/bake-flights.mjs` + `.env.example`; bake the three M400 logs into
    `app/public/flights/`.
 3. `domain/` types, `flightPath.ts`, `filters.ts`, `format.ts` with their tests.
