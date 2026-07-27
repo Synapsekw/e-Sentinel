@@ -10,7 +10,7 @@
 // Task 3's temporary scaffolding button (`AoiDrawTrigger`, a raw inline-
 // styled <button> spiking useAoiDraw end to end) is removed here, replaced
 // by the real chrome below.
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type GeoJSON from 'geojson'
 import MapView from '@/modules/console/map/MapView'
 import { useMap } from '@/modules/console/map/MapContext'
@@ -46,6 +46,8 @@ import { describeSuggestOutcome, isLayoutStatusCurrent } from './suggestOutcome'
 import { plural } from './pluralize'
 import type { SuggestOutcome } from './suggestOutcome'
 import { SCRATCH_KEY, loadScratch } from './scratch'
+import { usePlanLibrary } from './usePlanLibrary'
+import type { LibraryMessage } from './usePlanLibrary'
 import './planner.css'
 
 // Working camera for the planner: the whole UAE in frame at a zoom you can
@@ -78,6 +80,10 @@ export function PlannerShell() {
   const [suggestBusy, setSuggestBusy] = useState(false)
   const sideCollapsed = useAppStore((s) => s.sideCollapsed)
   const rpanelCollapsed = useAppStore((s) => s.rpanelCollapsed)
+  // useCallback so the hook's own useCallback chain does not re-create every
+  // handler on each render of this component.
+  const notify = useCallback((message: LibraryMessage) => setImportMessage(message), [])
+  const library = usePlanLibrary(notify)
   // The frame currently pending for handleSuggestLayout's yield (see its
   // comment). One ref, not two: the outer frame's callback overwrites this
   // with the inner frame's handle, so there is only ever one handle
@@ -331,6 +337,7 @@ export function PlannerShell() {
         onExportPlan={handleExportPlan}
         onSuggestLayout={handleSuggestLayout}
         suggestBusy={suggestBusy}
+        library={library}
       />
       {importMessage ? (
         <div className={`pl-alert${importMessage.level === 'error' ? ' pl-alert-error' : ''}`}>

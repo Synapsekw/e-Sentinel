@@ -5,6 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import { MemoryRouter } from 'react-router-dom'
 import PlannerTopbar from './PlannerTopbar'
 import { useAppStore } from '@/shared/store'
+import type { PlanLibrary } from './usePlanLibrary'
 
 const pristine = useAppStore.getState()
 
@@ -12,6 +13,30 @@ afterEach(() => {
   cleanup()
   useAppStore.setState(pristine)
 })
+
+// Mirrors PlansMenu.test.tsx's stubLibrary -- same 15-member shape, since
+// PlansMenu now renders live under PlannerTopbar and needs a complete
+// PlanLibrary to do so.
+function stubLibrary(over: Partial<PlanLibrary> = {}): PlanLibrary {
+  return {
+    entries: [],
+    skipped: 0,
+    available: true,
+    dirty: false,
+    currentPlanId: 'plan-current',
+    isSaved: () => false,
+    refresh: vi.fn(),
+    savePlan: vi.fn(),
+    saveAsNew: vi.fn(),
+    openPlan: vi.fn(),
+    renamePlan: vi.fn(),
+    duplicatePlan: vi.fn(),
+    deletePlan: vi.fn(),
+    exportLibraryFile: vi.fn(),
+    importLibraryFile: vi.fn(),
+    ...over,
+  }
+}
 
 function renderTopbar() {
   return render(
@@ -27,6 +52,7 @@ function renderTopbar() {
         onExportPlan={vi.fn()}
         onSuggestLayout={vi.fn()}
         suggestBusy={false}
+        library={stubLibrary()}
       />
     </MemoryRouter>,
   )
@@ -51,12 +77,20 @@ describe('PlannerTopbar grouping', () => {
       '+ DOCK',
       'SUGGEST LAYOUT',
       'IMPORT AOI',
-      'IMPORT PLAN',
-      'EXPORT PLAN',
+      'PLANS ▾',
     ]) {
       expect(screen.getAllByRole('button').some((b) => b.textContent?.includes(label))).toBe(true)
     }
     expect(screen.getByRole('link', { name: /MODULES/ })).toBeInTheDocument()
+  })
+
+  it('no longer carries standalone plan import/export buttons', () => {
+    // They moved into the PLANS dropdown: the topbar row already starts
+    // dropping items at 1120px, so three plan-io buttons became one.
+    renderTopbar()
+    expect(screen.queryByRole('button', { name: 'IMPORT PLAN' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'EXPORT PLAN' })).toBeNull()
+    expect(screen.getByRole('button', { name: /PLANS/ })).toBeInTheDocument()
   })
 
   // Same gesture as the console's `.t-brand`/`.g-brand`: the logo goes home

@@ -9,6 +9,8 @@ import { Link } from 'react-router-dom'
 import type { AoiDrawMode } from '@/modules/planner/map/useAoiDraw'
 import OfflineChip from '@/modules/console/OfflineChip'
 import PlannerLayersMenu from './PlannerLayersMenu'
+import PlansMenu from './PlansMenu'
+import type { PlanLibrary } from './usePlanLibrary'
 
 export interface PlannerTopbarProps {
   drawMode: AoiDrawMode
@@ -24,6 +26,7 @@ export interface PlannerTopbarProps {
   // Only the SUGGEST LAYOUT button reacts to it: the rest of the topbar stays
   // live, since nothing else here is what the user is waiting on.
   suggestBusy: boolean
+  library: PlanLibrary
 }
 
 const DRAW_LABEL: Record<AoiDrawMode, string> = {
@@ -44,6 +47,7 @@ export default function PlannerTopbar({
   onExportPlan,
   onSuggestLayout,
   suggestBusy,
+  library,
 }: PlannerTopbarProps) {
   // One `openMenu` rather than one boolean per dropdown: two independent
   // booleans can both be true, which would put two absolutely-positioned
@@ -51,11 +55,11 @@ export default function PlannerTopbar({
   // `controlMode` and Planner.tsx applies to draw-vs-dock-placement (Minor 6):
   // a single variable makes "only one at a time" unrepresentable-otherwise
   // instead of merely well-behaved.
-  const [openMenu, setOpenMenu] = useState<'draw' | 'layers' | null>(null)
+  const [openMenu, setOpenMenu] = useState<'draw' | 'layers' | 'plans' | null>(null)
   const drawRef = useRef<HTMLDivElement | null>(null)
   const layersRef = useRef<HTMLDivElement | null>(null)
+  const plansRef = useRef<HTMLDivElement | null>(null)
   const aoiInputRef = useRef<HTMLInputElement | null>(null)
-  const planInputRef = useRef<HTMLInputElement | null>(null)
 
   // Close whichever dropdown is open on an outside click, same convention as
   // a native <select>/menu: without this it only ever closes via picking an
@@ -69,6 +73,7 @@ export default function PlannerTopbar({
       const target = e.target as Node
       if (drawRef.current?.contains(target)) return
       if (layersRef.current?.contains(target)) return
+      if (plansRef.current?.contains(target)) return
       setOpenMenu(null)
     }
     document.addEventListener('mousedown', onDocClick)
@@ -84,11 +89,6 @@ export default function PlannerTopbar({
     const file = e.target.files?.[0]
     e.target.value = ''
     if (file) onImportAoiFile(file)
-  }
-  function handlePlanFile(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (file) onImportPlanFile(file)
   }
 
   return (
@@ -182,30 +182,16 @@ export default function PlannerTopbar({
         onChange={handleAoiFile}
       />
 
-      {/* Not part of the brief's enumerated topbar button list, but "plan
-          JSON export/import" (this task's Step 4) needs an import path to
-          be more than half a feature -- EXPORT PLAN with nothing to load it
-          back into would be a dead end. Kept visually secondary (ghost
-          style, smaller) so it doesn't compete with the primary tool row. */}
-      <button
-        type="button"
-        className="pl-btn pl-btn-ghost"
-        onClick={() => planInputRef.current?.click()}
-        title="Load a plan JSON file exported from this or another session"
-      >
-        IMPORT PLAN
-      </button>
-      <input
-        ref={planInputRef}
-        type="file"
-        accept=".json"
-        className="pl-hidden-input"
-        onChange={handlePlanFile}
-      />
-
-      <button type="button" className="pl-btn" onClick={onExportPlan}>
-        EXPORT PLAN
-      </button>
+      <div className="pl-dropdown" ref={plansRef}>
+        <PlansMenu
+          open={openMenu === 'plans'}
+          onToggle={() => setOpenMenu((v) => (v === 'plans' ? null : 'plans'))}
+          onClose={() => setOpenMenu(null)}
+          library={library}
+          onImportPlanFile={onImportPlanFile}
+          onExportPlan={onExportPlan}
+        />
+      </div>
 
       <Link className="lbl pl-back" to="/">
         ← MODULES
