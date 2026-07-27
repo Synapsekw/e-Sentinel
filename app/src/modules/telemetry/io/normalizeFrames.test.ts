@@ -126,3 +126,70 @@ describe('normalizeFrames', () => {
     expect(normalizeFrames([f], meta).samples[0].voltage).toBe(0)
   })
 })
+
+// Regression tests for corrupt clocks. Real DJI logs contain them: the
+// 5,049-frame m400-2026-02-17-0846 log carries one frame stamped 2095-04-15
+// and one stamped 2012-05-04 among frames otherwise all on 2026-02-17. They
+// are valid dates, so the finite check does not catch them, and left in they
+// freeze traversedCoords partway through the flight and break sampleAt's
+// binary search. Found by running the real log through, not by fixtures.
+describe('normalizeFrames with corrupt timestamps', () => {
+  it('drops a frame stamped far in the future', () => {
+    const path = normalizeFrames(
+      [
+        raw('2026-02-17T06:27:04.000Z'),
+        raw('2095-04-15T15:16:56.476Z'),
+        raw('2026-02-17T06:27:06.000Z'),
+      ],
+      meta,
+    )
+    expect(path.samples).toHaveLength(2)
+    expect(path.samples.map((s) => s.t)).toEqual([0, 2])
+  })
+
+  it('drops a frame stamped far in the past', () => {
+    const path = normalizeFrames(
+      [
+        raw('2026-02-17T06:27:04.000Z'),
+        raw('2012-05-04T21:40:06.158Z'),
+        raw('2026-02-17T06:27:06.000Z'),
+      ],
+      meta,
+    )
+    expect(path.samples).toHaveLength(2)
+  })
+
+  // The median anchor exists for this case: anchoring on the first frame
+  // would make every good frame look corrupt and empty the whole log.
+  it('survives a corrupt FIRST frame', () => {
+    const path = normalizeFrames(
+      [
+        raw('2095-04-15T15:16:56.476Z'),
+        raw('2026-02-17T06:27:04.000Z'),
+        raw('2026-02-17T06:27:05.000Z'),
+        raw('2026-02-17T06:27:06.000Z'),
+      ],
+      meta,
+    )
+    expect(path.samples).toHaveLength(3)
+    expect(path.samples[0].t).toBe(0)
+  })
+
+  it('always emits samples in non-decreasing time order', () => {
+    const path = normalizeFrames(
+      [
+        raw('2026-02-17T06:27:04.000Z'),
+        raw('2026-02-17T06:27:08.000Z'),
+        raw('2026-02-17T06:27:06.000Z'),
+        raw('2026-02-17T06:27:10.000Z'),
+      ],
+      meta,
+    )
+    const ts = path.samples.map((s) => s.t)
+    expect(ts).toEqual([...ts].sort((a, b) => a - b))
+  })
+
+  it('returns an empty path when every frame has a corrupt clock spread', () => {
+    expect(normalizeFrames([raw('nonsense'), raw('also nonsense')], meta).samples).toEqual([])
+  })
+})
