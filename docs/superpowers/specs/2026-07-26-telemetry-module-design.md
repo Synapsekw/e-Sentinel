@@ -22,7 +22,7 @@ In scope:
 
 1. An offline bake tool that fetches DJI keychains and builds a flight catalog.
 2. A Web Worker that decodes DJI TXT logs to a normalized `FlightPath`.
-3. A flight library with filters, backed by a committed catalog plus session drop-ins.
+3. A flight library with filters, backed by a locally baked catalog plus session drop-ins.
 4. A map + scrubber + frame-panel review surface.
 5. IndexedDB caching of decoded flights.
 6. Module 03 landing card to ONLINE, with an honest blurb.
@@ -58,15 +58,22 @@ Confirmed by running `dji-log-parser-js` against all three files with no key at 
 |---|---|---|---|---|---|---|---|
 | `5_…[09-27-04]` | Matrice 400 | `1581F8DBW258U00A` | 2026-02-17 06:27:04 | 45m 23s | 22.1 km | 50 m | 27,229 |
 | `15_…[09-52-28]` | Matrice 400 | `1581F8DBW259400A` | 2026-02-17 06:52:28 | 34m 52s | 10.6 km | 104 m | 20,915 |
-| `15_…[11-46-26]` | Matrice 400 | `1581F8DBW259400A` | 2026-02-17 08:46:26 | 16m 50s | 6.0 km | 50 m | 5,050 |
+| `15_…[11-46-26]` | `dji aircraft` | `1581F5FKC257P00D` | 2026-02-17 08:46:26 | 16m 50s | 6.0 km | 50 m | 5,050 |
 
 This is load-bearing: **the entire library catalog can be built with no key and no
 decryption.** Only opening a flight needs keychains. It is why an unkeyed flight still
 renders as a full library row rather than an error.
 
-Two distinct airframes are present (`…258U00A` and `…259400A`), and the first two flights
-overlap in time — so grouping the library by aircraft serial carries real meaning rather
-than being decoration, and the aircraft filter has something to filter.
+Three distinct airframes are present (`…258U00A`, `…259400A`, `…257P00D`), and the first
+two flights overlap in time — so grouping the library by aircraft serial carries real
+meaning rather than being decoration, and the aircraft filter has something to filter.
+
+Note the third log reports `aircraftName` as the generic string `dji aircraft` rather than
+a model. **`aircraftName` is therefore not a reliable identity** and must never be the
+grouping key or a filter's identity: group and filter by `aircraftSn`, and treat the name
+as a display string only. A group heading reading "dji aircraft" is the honest rendering
+of what that log contains, and is preferable to inventing a model name the log does not
+claim.
 
 Note for implementation: `Details.totalDistance` is documented as metres but reads
 `10.586…` for a 35-minute flight at up to 17 m/s. It is kilometres. Verify against decoded
@@ -183,7 +190,7 @@ tool ever runs — `m400-2026-02-17-0927.txt`, not
 trouble. The tool does not rename anything; it reads whatever `.txt` files it finds and
 uses each filename stem as the flight id.
 
-### 5.2 Asset location
+### 5.2 Asset location, and why the logs are not committed
 
 `app/public/flights/`, which Vite copies into `dist/` automatically.
 
@@ -191,7 +198,32 @@ This deliberately differs from `videos/`, which sits at the repo root behind a d
 plugin and an explicit deploy-workflow step. That arrangement exists because 241 MB would
 be duplicated into every build. The three logs total 19 MB; paying that copy on each build
 buys us no dev-server middleware, no range-request handling, and no deploy-workflow
-change. Revisit only if the catalog grows past roughly 100 MB.
+change.
+
+**The logs, their keychains and the generated `index.json` are gitignored, not committed.**
+Decided 2026-07-27, reversing this section's original instruction, after checking what
+committing them would actually do:
+
+- `github.com/Synapsekw/e-Sentinel` is a **public** repository.
+- `.github/workflows/deploy.yml` copies `app/dist/.` — which includes everything under
+  `app/public/` — to GitHub Pages.
+
+So committing them would publish real survey flight coordinates, timestamps, aircraft
+serial numbers and the AES keys to decrypt every frame, to a public website and to
+permanent git history. These are real customer flights over what appears to be pipeline
+or infrastructure survey work; every other operational figure in SENTINEL is synthetic
+(README: "all operational data is synthetic except live tower site locations"). Real
+flight data does not get the same treatment as invented dock positions.
+
+The consequence is that **a fresh clone has an empty flight library**, and so does the
+deployed Pages build. That is a supported state, not a broken one: section 9 already
+requires a missing or malformed `index.json` to degrade to an empty library with a working
+drop-in path, so no code changes to accommodate it. The presenter's own machine keeps the
+full three-flight library by running the bake tool locally. A committed
+`app/public/flights/README.md` explains how.
+
+This costs nothing architecturally. The bake tool, the catalog format, the worker and the
+whole UI are unchanged; only the question of which machine holds the data differs.
 
 ### 5.3 Online
 
@@ -274,9 +306,14 @@ app/src/modules/telemetry/
     FramePanel.tsx  Scrubber.tsx  telemetry.css
 ```
 
-`vite.config.ts` gains one `manualChunks` line pinning `dji-log-parser-js` to its own
-chunk, so 703 KB never reaches the entry bundle. `App.tsx` swaps `ModulePlaceholder` for
-a `lazy()` `Telemetry`, matching how `/console` and `/planner` are loaded.
+`App.tsx` swaps `ModulePlaceholder` for a `lazy()` `Telemetry`, matching how `/console`
+and `/planner` are loaded.
+
+`vite.config.ts` needs **no** `manualChunks` entry for the parser, contrary to an earlier
+draft of this section. `djiLog.worker.ts` is the only importer of `dji-log-parser-js`, and
+Vite compiles a `?worker` import as its own separate bundle — so the 703 KB never enters
+the main module graph in the first place. A `manualChunks` rule would match nothing. The
+implementation plan asserts this against real build output rather than assuming it.
 
 ## 8. UI surface
 

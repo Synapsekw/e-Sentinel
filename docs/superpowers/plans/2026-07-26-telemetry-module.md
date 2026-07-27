@@ -10,6 +10,103 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-26-telemetry-module-design.md`
 
+## Progress
+
+- [x] **Task 1** — deps + `.env.example` (`3a1719f`)
+- [x] **Task 2** — logs staged locally, NOT committed (gitignored; no commit by design)
+- [x] **Task 3** — bake tool + keychains generated locally (`5b1afc0`, fixed in `22fb60e`)
+- [x] **Task 4** — domain types (`795aa3a`)
+- [x] **Task 5** — flight path queries (`8600ee2`)
+- [x] **Task 6** — catalog filters and sorting (`ba58088`)
+- [x] **Task 7** — telemetry formatting (`20cab87`)
+- [x] **Task 8** — catalog loading and validation (`7832078`)
+- [x] **Task 9** — frame normalization (`a590305`, corrupt-clock fix in `14b1960`)
+- [x] **Task 10** — decode worker and client (`e97b2896`)
+- [x] **Task 11** — decoded path cache (`29b45f7`)
+- [x] **Task 12** — telemetry store (`61c15a9`)
+- [x] **Task 13** — map style + feature builders (`b8b878e`)
+- [x] **Task 14** — path/cursor bound to the map (`88c9834`)
+- [x] **Task 15** — module stylesheet (`9bd77b7`)
+- [x] **Task 16** — scrubber (`491858f`)
+- [x] **Task 17** — frame panel (`cef4a09`)
+- [x] **Task 18** — library filters (`55f87d9`)
+- [x] **Task 19** — flight library list
+- [x] **Task 20** — topbar (`cf91211`)
+- [x] **Task 21** — flight loading
+- [x] **Task 22** — playback loop (`5d3e637`)
+- [x] **Task 23** — route root, module mounted at /telemetry (`6d5c886`)
+- [x] **Task 24** — integration test (`972f3cb`)
+- [x] **Task 25** — bundle + browser verification (see below)
+- [x] **Task 26** — module 03 online (`0da9c20`)
+- [x] **Task 27** — basemap LAYERS control (`3a5d75d`)
+- [x] **Task 28** — scrubber keyboard shortcuts (`e615335`)
+
+**ALL 28 TASKS COMPLETE**, 2026-07-27. Verified end to end in real Chromium
+against the production build with all three real flight logs.
+
+### Fixes after the 28 tasks, 2026-07-27
+
+Both came from using the module, not from the tests, which stayed green through
+each of them.
+
+- **`ff1f871`** — a dropped file surfaced `dji-log-parser`'s raw Rust backtrace
+  (`no variants matched at 0x0: Info: bad magic at 0x0: 102`) verbatim in the
+  panel. Errors are now classified into messages a reader can act on, with the
+  backtrace kept on the error's `cause` for the console. Behind it was a second
+  defect against spec section 9: a dropped v13+ log was treated as an error at
+  all. The worker now reads the unencrypted `details` block **before** attempting
+  decryption (`io/djiLogMeta.ts`), so a drop-in with no keychain shows its real
+  aircraft, duration, distance and max altitude under `FRAMES LOCKED` — the same
+  degradation the catalog path already gave — instead of the `DROPPED LOG`
+  placeholder the loader used to guess.
+- **`6171f01`** — a file that would not parse left its optimistic session row
+  behind in the library, and the panel rendered a placeholder summary of invented
+  zeroes beside the error. The row is now removed on failure, which fixes both.
+
+Final state: `npm run verify` passes from `app/` — **91 test files, 717 tests**,
+clean lint and typecheck, successful build.
+
+### Task 25 verification results, 2026-07-27
+
+Run against the production build via `npm run preview`, in real Chromium with
+software WebGL (`--use-angle=swiftshader`), since the Chrome extension was not
+connected. All checks passed:
+
+| Check | Result |
+|---|---|
+| Bundle: WASM isolated | `djiLog.worker-*.js` 686 KB, separate chunk; `Telemetry-*.js` 18 KB; entry unchanged |
+| Library populated | 3 flights in 3 aircraft groups (`DJI AIRCRAFT · 57P00D`, `MATRICE 400 · 59400A`, `MATRICE 400 · 58U00A`) |
+| Flight opens and decodes | no FRAMES LOCKED, no error panel, readouts populated |
+| Scrubbing | `T+00:00` to `T+08:25` of `16:50`, readouts follow |
+| Playback at 16x | 3 s wall clock advanced the flight 47 s; pause freezes it |
+| IndexedDB cache | reopening a flight refetched the `.txt` 0 times |
+| Worker chunk loaded | yes; `.txt` and `.keychain.json` both fetched |
+| **WASM main-thread violations** | **0** — the worker approach is validated in a real browser |
+| Map teardown on navigate away | 0 `getSource` errors; the `isMapUsable` guard holds |
+| Console errors | none |
+
+**One bug found and fixed** (`98a4807`): the gimbal readout rendered through
+`fmtHeading`, which wraps into 0..359. A survey camera looking straight down
+sits at -90 and displayed as `270°`. Every unit test passed, because the
+formatter was doing exactly what it was asked — it was being asked the wrong
+question. Only looking at the screen caught it.
+
+**One open question for the product owner**, not fixed: the `ALT ASL` readout
+shows 101 m where `ALT AGL` shows 50 m, and reads 0 at takeoff. DJI documents
+`osd.altitude` as "above sea level", but the log's own `takeOffAltitude` is
+~431 m, so this value is clearly relative to takeoff rather than to sea level.
+The label is probably wrong. Not changed, because picking the right label
+(`ALT (BARO)`? `ALT REL`?) is a domain call, not a code call.
+
+The whole `io/` layer is done. Everything above this line is pure logic plus the
+build tool; nothing renders yet.
+
+**Decision recorded 2026-07-27, after Task 4:** the flight logs, keychains and `index.json
+are gitignored rather than committed, because this repo is public and the Pages workflow
+publishes `app/public/`. Tasks 2, 3, 25 and 26 above were rewritten accordingly, and the
+history that briefly contained the logs was rewound before anything was pushed. See spec
+section 5.2.
+
 ---
 
 ## Conventions this plan assumes
@@ -24,6 +121,11 @@ Read these before Task 1; they are not obvious from the file tree.
 - **Map hooks must guard with `isMapUsable`** from `@/modules/console/map/mapLifecycle` before touching sources. Route unmount removes the map parent-first, so an unguarded `getSource` throws.
 - **No em dashes in user-facing copy** (house convention, see `modules/landing/modules.ts`).
 - **Vocabulary:** *flight*, *flight path*, *frame*. Never *track* — that word means detected ground targets in `modules/console`.
+- **Never detach a store ACTION from the store object.** `@typescript-eslint/unbound-method` is an error here (`--max-warnings 0`), and `TelemetryState` declares actions as method-shorthand signatures, so BOTH of these trip it:
+  - `const setFoo = useTelemetryStore((s) => s.setFoo)` — selecting an action
+  - `const { setFoo } = useTelemetryStore.getState()` — destructuring one
+
+  Call actions inline, always keeping the object on the left: `useTelemetryStore.getState().setFoo(x)`. Select only STATE through the hook, since state is what must trigger a re-render — actions are stable and do not. This bit Tasks 12, 14, 16 and 21 as four separate rediscoveries; the code blocks below are corrected, but check any you add.
 - **Pre-commit hook runs `eslint . --max-warnings 0` and `prettier --check .` from `app/`.** Files under the repo-root `tools/` are outside `app/` and therefore outside both. Keep that file plain and simple.
 
 ---
@@ -37,15 +139,20 @@ Read these before Task 1; they are not obvious from the file tree.
 | `.env.example` | Documents `DJI_API_KEY`. Committed. The real `.env` is gitignored and already populated. |
 | `tools/bake-flights.mjs` | Node. Reads `app/public/flights/*.txt`, fetches keychains from DJI, writes `<id>.keychain.json` and `index.json`. Never runs in the browser. |
 
-### Created — `app/public/flights/`
+### Created — `app/public/flights/` (LOCAL ONLY, gitignored)
+
+**None of these are committed.** This repo is public and the Pages workflow copies
+`app/public/` into the deployed site, so real flight coordinates, aircraft serials and
+frame-decryption keys stay on the developer's machine. Only `README.md` is tracked.
 
 | File | Responsibility |
 |---|---|
-| `m400-2026-02-17-0627.txt` | Real DJI log, serial `…258U00A`, 27,229 records. |
-| `m400-2026-02-17-0652.txt` | Real DJI log, serial `…259400A`, 20,915 records. |
-| `m400-2026-02-17-0846.txt` | Real DJI log, serial `…259400A`, 5,050 records. |
-| `*.keychain.json` | Baked AES keychains, one per log. Generated by the tool. |
-| `index.json` | The catalog. Generated by the tool. |
+| `README.md` | **Committed.** Explains why the directory is empty and how to populate it. |
+| `m400-2026-02-17-0627.txt` | Real DJI log, serial `…258U00A`, 27,229 records. Gitignored. |
+| `m400-2026-02-17-0652.txt` | Real DJI log, serial `…259400A`, 20,915 records. Gitignored. |
+| `m400-2026-02-17-0846.txt` | Real DJI log, serial `…257P00D`, name `dji aircraft`, 5,050 records. Gitignored. |
+| `*.keychain.json` | Baked AES keychains, one per log. Generated by the tool. Gitignored. |
+| `index.json` | The catalog. Generated by the tool. Gitignored. |
 
 ### Created — `app/src/modules/telemetry/`
 
@@ -165,12 +272,17 @@ ls -l app/public/flights/
 
 Expected: three files, approximately 9.1 MB, 6.9 MB and 3.5 MB.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Confirm they are gitignored, and do NOT commit them**
 
 ```bash
-git add app/public/flights/
-git commit -m "feat(telemetry): stage three real M400 flight logs"
+git status --short app/public/flights/
+git check-ignore -v app/public/flights/m400-2026-02-17-0627.txt
 ```
+
+Expected: `git status` reports nothing for the `.txt` files, and `check-ignore` shows
+`.gitignore` matching them. There is no commit in this task — the logs are local-only
+(see the file-structure note above). If `git status` offers to add a `.txt`, STOP: the
+ignore rule is broken and committing would publish real flight data to a public repo.
 
 ---
 
@@ -199,13 +311,15 @@ Not unit-tested — it needs both network and a secret (spec section 10). Its `-
 // tool, not app source: app/tsconfig.json includes only src/, and app's
 // eslint/prettier run from app/. Precedent: the removed tools/bake-geo.mjs.
 
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { DJILog } from '../app/node_modules/dji-log-parser-js/dji_log_parser_js.mjs'
 
 const FLIGHTS_DIR = join(import.meta.dirname, '..', 'app', 'public', 'flights')
 const ENDPOINT = 'https://dev.dji.com/openapi/v1/flight-records/keychains'
 const dryRun = process.argv.includes('--dry-run')
+// Refetch keychains even when a <id>.keychain.json is already on disk.
+const force = process.argv.includes('--force')
 
 function apiKey() {
   if (process.env.DJI_API_KEY) return process.env.DJI_API_KEY
@@ -266,27 +380,53 @@ for (const file of logs) {
   const version = parser.version
   const details = parser.details
 
-  let hasKeychain = false
+  const keychainPath = join(FLIGHTS_DIR, `${id}.keychain.json`)
+
   if (!dryRun && version >= 13) {
-    try {
-      const keychains = await fetchKeychains(parser, key)
-      writeFileSync(join(FLIGHTS_DIR, `${id}.keychain.json`), JSON.stringify(keychains))
-      hasKeychain = true
-      console.log(`  ok   ${id}  v${version}  keychain baked`)
-    } catch (err) {
-      failures++
-      console.error(`  FAIL ${id}  v${version}  ${err.message}`)
+    // Skip logs whose keychain is already on disk. DJI's endpoint is a remote
+    // dependency and the keys do not change. Use --force to refetch anyway.
+    if (existsSync(keychainPath) && !force) {
+      console.log(`  skip ${id}  v${version}  keychain already present`)
+    } else {
+      try {
+        const keychains = await fetchKeychains(parser, key)
+        writeFileSync(keychainPath, JSON.stringify(keychains))
+        console.log(`  ok   ${id}  v${version}  keychain baked`)
+      } catch (err) {
+        failures++
+        console.error(`  FAIL ${id}  v${version}  ${err.message}`)
+      }
     }
   } else {
-    hasKeychain = version < 13
-    console.log(`  ${dryRun ? 'dry ' : 'ok  '} ${id}  v${version}  ${dryRun ? 'catalog only' : 'no keychain needed'}`)
+    console.log(
+      `  ${dryRun ? 'dry ' : 'ok  '} ${id}  v${version}  ${dryRun ? 'catalog only' : 'no keychain needed'}`,
+    )
   }
+
+  // Derived from what is actually on disk, NOT from what this run happened to
+  // do. Deriving it from the run made --dry-run rewrite a good catalog with
+  // hasKeychain:false while the keychain files sat right there, so every
+  // flight rendered as FRAMES LOCKED despite being fully decodable.
+  const hasKeychain = version < 13 || existsSync(keychainPath)
 
   flights.push(catalogEntry(id, file, version, details, hasKeychain))
 }
 
-writeFileSync(join(FLIGHTS_DIR, 'index.json'), JSON.stringify({ version: 1, flights }, null, 2) + '\n')
-console.log(`\nwrote index.json with ${flights.length} flight(s)`)
+// A dry run must not write. It exists to show what WOULD be produced without
+// touching the network or a key; writing index.json made it destructive,
+// which is the opposite of what the name promises.
+if (dryRun) {
+  console.log(`\n--dry-run: index.json NOT written. Would contain ${flights.length} flight(s):`)
+  for (const f of flights) {
+    console.log(`  ${f.id}  ${f.aircraftSn}  ${f.durationS}s  keychain:${f.hasKeychain}`)
+  }
+} else {
+  writeFileSync(
+    join(FLIGHTS_DIR, 'index.json'),
+    JSON.stringify({ version: 1, flights }, null, 2) + '\n',
+  )
+  console.log(`\nwrote index.json with ${flights.length} flight(s)`)
+}
 
 if (failures > 0) {
   console.error(`${failures} keychain fetch(es) failed; those flights show metadata only`)
@@ -301,24 +441,20 @@ cd /Users/danijeljovanovic/Dev/e\&_Sentinel
 node tools/bake-flights.mjs --dry-run
 ```
 
-Expected: three `dry` lines showing `v14`, then `wrote index.json with 3 flight(s)`, exit 0.
+Expected: three `dry` lines showing `v14`, then `--dry-run: index.json NOT written.` followed by the catalog it would produce, exit 0. It must NOT write `index.json`.
 
 - [ ] **Step 3: Verify the dry-run catalog content**
 
-```bash
-cd /Users/danijeljovanovic/Dev/e\&_Sentinel
-node -e "const c=require('./app/public/flights/index.json'); console.log(c.flights.map(f=>[f.id,f.aircraftSn,f.durationS,f.recordCount].join(' ')).join('\n'))"
-```
-
-Expected exactly:
+Read it from the dry run's own stdout in Step 2 — there is no `index.json` to inspect
+yet, by design. The three catalog lines it prints must show exactly:
 
 ```
-m400-2026-02-17-0627 1581F8DBW258U00A 2722.9 27229
-m400-2026-02-17-0652 1581F8DBW259400A 2092.3 20915
-m400-2026-02-17-0846 1581F8DBW259400A 1009.6 5050
+m400-2026-02-17-0627  1581F8DBW258U00A  2722.9s  keychain:false
+m400-2026-02-17-0652  1581F8DBW259400A  2092.3s  keychain:false
+m400-2026-02-17-0846  1581F5FKC257P00D  1009.6s  keychain:false
 ```
 
-If the serials or record counts differ, the wrong files were staged in Task 2. Stop and fix.
+`keychain:false` is correct here: none have been fetched yet. If the serials differ, the wrong files were staged in Task 2. Stop and fix.
 
 - [ ] **Step 4: Run the real bake**
 
@@ -351,9 +487,18 @@ Expected: `frames 5049 withCoords 5049` (or 5050/5050 — the exact count may be
 - [ ] **Step 6: Commit**
 
 ```bash
-git add tools/bake-flights.mjs app/public/flights/index.json app/public/flights/*.keychain.json
-git commit -m "feat(telemetry): bake DJI keychains and flight catalog offline"
+git add tools/bake-flights.mjs app/.prettierignore .gitignore app/public/flights/README.md
+git commit -m "feat(telemetry): bake DJI keychains locally, never into the repo"
 ```
+
+Stage the TOOL and its config only. `index.json` and the `.keychain.json` files are
+gitignored and must never appear in the staged set — verify with `git show --stat HEAD`
+that no `.txt`, `.keychain.json` or `index.json` is listed.
+
+`app/.prettierignore` needs a `public/flights/` entry: the generated keychains are
+single-line JSON and the pre-commit hook's `prettier --check .` would otherwise fail on
+them, even though they are untracked. Precedent: that file already exempts `dist` and
+`package-lock.json` for the same reason.
 
 ---
 
@@ -1096,7 +1241,10 @@ const validFlight = {
   id: 'a', file: 'a.txt', version: 14, encrypted: true, hasKeychain: true,
   aircraftName: 'Matrice 400', aircraftSn: 'SN1',
   startTime: '2026-02-17T06:27:04.690Z',
-  durationS: 2722.9, distanceKm: 22.07, maxHeightM: 50, maxSpeedMs: 17.04,
+  // maxHeightM is 104, NOT 50: a sample height of 49.9 also renders '50 m',
+  // and getByText then matches two elements. The point of this test is that the
+  // summary and the readouts show different numbers from different sources.
+  durationS: 2722.9, distanceKm: 22.07, maxHeightM: 104, maxSpeedMs: 17.04,
   recordCount: 27229, home: { lon: 48.004, lat: 28.782 },
 }
 
@@ -1437,6 +1585,10 @@ export interface RawFrame {
   battery: { chargeLevel: number; voltage?: number }
 }
 
+// A single flight cannot span more than a day. Anything further than this
+// from the log's median timestamp is a corrupt clock, not a long flight.
+const MAX_FLIGHT_MS = 24 * 60 * 60 * 1000
+
 function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0
 }
@@ -1447,8 +1599,9 @@ function mode(state: RawFrame['osd']['flycState']): string {
 
 export function normalizeFrames(frames: RawFrame[], meta: FlightMeta): FlightPath {
   const samples: FlightSample[] = []
-  let t0: number | null = null
 
+  // Pass 1: keep frames that have a parseable clock and a real GPS fix.
+  const usable: { f: RawFrame; ms: number }[] = []
   for (const f of frames) {
     const ms = Date.parse(f.custom?.dateTime ?? '')
     if (!Number.isFinite(ms)) continue
@@ -1459,13 +1612,50 @@ export function normalizeFrames(frames: RawFrame[], meta: FlightMeta): FlightPat
     // stretches the flight path across half the planet.
     if (lat === 0 && lon === 0) continue
 
-    if (t0 === null) t0 = ms
+    usable.push({ f, ms })
+  }
+  if (usable.length === 0) return { meta, samples: [] }
 
+  // Pass 2: drop frames with a CORRUPT clock.
+  //
+  // Real logs carry them. The 5,049-frame m400-2026-02-17-0846 log has two:
+  // one stamped 2095-04-15 and one stamped 2012-05-04, among frames that are
+  // otherwise all 2026-02-17. They are valid dates, so the Number.isFinite
+  // guard above passes them straight through.
+  //
+  // Leaving them in breaks two things downstream, neither obviously:
+  //   - traversedCoords() stops at the first sample past the cursor, so one
+  //     far-future frame freezes the drawn path partway through the flight
+  //     and it never completes.
+  //   - sampleAt()'s binary search assumes t is sorted, and silently returns
+  //     the wrong sample once it is not.
+  //
+  // Anchor on the MEDIAN timestamp, not the first: a corrupt FIRST frame
+  // would otherwise poison the anchor and reject the entire rest of the log.
+  // A couple of outliers cannot move a median.
+  const median = [...usable].sort((a, b) => a.ms - b.ms)[usable.length >> 1].ms
+  const sane = usable.filter((u) => Math.abs(u.ms - median) <= MAX_FLIGHT_MS)
+  if (sane.length === 0) return { meta, samples: [] }
+
+  // t is relative to the earliest SURVIVING frame, so t=0 is the start of the
+  // flight as flown, which is the scrubber's contract.
+  const t0 = Math.min(...sane.map((u) => u.ms))
+  let lastT = -Infinity
+
+  for (const { f, ms } of sane) {
+    const t = (ms - t0) / 1000
+    // Belt and braces: anything still out of order after the median filter is
+    // dropped, so the array handed to sampleAt() is guaranteed sorted.
+    if (t < lastT) continue
+    lastT = t
+
+    const lat = num(f.osd?.latitude)
+    const lon = num(f.osd?.longitude)
     const xs = num(f.osd?.xSpeed)
     const ys = num(f.osd?.ySpeed)
 
     samples.push({
-      t: (ms - t0) / 1000,
+      t,
       lon,
       lat,
       alt: num(f.osd?.altitude),
@@ -1491,7 +1681,7 @@ export function normalizeFrames(frames: RawFrame[], meta: FlightMeta): FlightPat
 cd app && npx vitest run src/modules/telemetry/io/normalizeFrames.test.ts
 ```
 
-Expected: PASS, 13 tests.
+Expected: PASS, 17 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1555,7 +1745,10 @@ self.onmessage = (event: MessageEvent<DecodeRequest>) => {
 - [ ] **Step 2: Write the failing test for the client**
 
 ```ts
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+// `vi` is deliberately NOT imported here: this test drives a hand-written
+// FakeWorker rather than a vitest mock, and tsconfig sets noUnusedLocals, which
+// makes an unused import a hard TS6133 error rather than a warning.
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { decodeFlight, __setWorkerFactory, __resetWorkerFactory } from './parseFlight'
 import type { FlightMeta } from '../domain/types'
 
@@ -2079,11 +2272,18 @@ describe('telemetryStore', () => {
     expect(useTelemetryStore.getState().playing).toBe(false)
   })
 
+  // Called through getState() rather than destructured into a local binding:
+  // destructuring a method off the store trips @typescript-eslint/unbound-method,
+  // and this repo's established fix is to call it in place (see the comments in
+  // planner/ui/PlanTree.tsx and planner/map/useDockPlacement.ts), never to
+  // disable the rule.
   it('cycles the playback rate through 1, 4 and 16', () => {
-    const { cycleRate } = useTelemetryStore.getState()
-    cycleRate(); expect(useTelemetryStore.getState().rate).toBe(4)
-    cycleRate(); expect(useTelemetryStore.getState().rate).toBe(16)
-    cycleRate(); expect(useTelemetryStore.getState().rate).toBe(1)
+    useTelemetryStore.getState().cycleRate()
+    expect(useTelemetryStore.getState().rate).toBe(4)
+    useTelemetryStore.getState().cycleRate()
+    expect(useTelemetryStore.getState().rate).toBe(16)
+    useTelemetryStore.getState().cycleRate()
+    expect(useTelemetryStore.getState().rate).toBe(1)
   })
 
   it('records a load error and clears loading', () => {
@@ -2334,7 +2534,9 @@ describe('traversedFeature', () => {
   it('covers the whole path at the end', () => {
     const geom = traversedFeature(path, 30).features[0].geometry
     expect(geom.type).toBe('LineString')
-    expect((geom as GeoJSON.LineString).coordinates).toHaveLength(2)
+    // No cast: traversedFeature returns FeatureCollection<LineString>, so the
+    // geometry is already narrowed and eslint flags a redundant assertion.
+    expect(geom.coordinates).toHaveLength(2)
   })
 })
 
@@ -2948,13 +3150,22 @@ One coherent grid written up front so every component task below has its classes
 }
 ```
 
-- [ ] **Step 2: Verify the custom properties referenced here all exist**
+> **`--hot` DOES NOT EXIST.** This section originally specified a `--hot` token
+> for the selected row, the drop-in tag and the error state. `src/shared/tokens.css`
+> has no such token; the brand hot red is `--red` (#ff5a5a). More importantly,
+> only the error state should be red at all: PRODUCT.md says "Status colors must
+> NOT overload brand red: red is brand + alert only", and neither a selected row
+> nor a locally-loaded file is an alert. `planner.css` settles the convention —
+> `--amber` for active state (`.pl-btn.active`), `--red` for genuine alerts. The
+> CSS above already reflects this.
+
+- [ ] **Step 2: Verify every custom property used actually exists**
 
 ```bash
-cd app && grep -oE "\-\-(chrome|chrome-blur|line|txt|hot)\b" src/shared/tokens.css | sort -u
+cd app && for t in $(grep -oE "var\(--[a-z-]+\)" src/modules/telemetry/ui/telemetry.css | sed 's/var(--\(.*\))/\1/' | sort -u); do printf "  --%-14s " "$t"; grep -qE "^\s*--$t:" src/shared/tokens.css && echo ok || echo MISSING; done
 ```
 
-Expected: all five of `--chrome`, `--chrome-blur`, `--line`, `--txt`, `--hot` appear. If any is missing, find its real name in `src/shared/tokens.css` and correct the CSS above before continuing — a missing custom property fails silently at runtime.
+Expected: every line reads `ok`. A missing custom property fails silently at runtime, so do not skip this.
 
 - [ ] **Step 3: Commit**
 
@@ -3070,9 +3281,9 @@ export default function Scrubber() {
   const cursorT = useTelemetryStore((s) => s.cursorT)
   const playing = useTelemetryStore((s) => s.playing)
   const rate = useTelemetryStore((s) => s.rate)
-  const setCursor = useTelemetryStore((s) => s.setCursor)
-  const togglePlay = useTelemetryStore((s) => s.togglePlay)
-  const cycleRate = useTelemetryStore((s) => s.cycleRate)
+  // Actions are called through getState(), never selected: selecting one
+  // trips @typescript-eslint/unbound-method. Only state is selected below.
+  const store = useTelemetryStore
 
   const total = pathDuration(path)
   const disabled = total === 0
@@ -3081,13 +3292,13 @@ export default function Scrubber() {
     <div className="tm-scrubber">
       <button
         className="tm-btn"
-        onClick={togglePlay}
+        onClick={() => store.getState().togglePlay()}
         disabled={disabled}
         aria-label={playing ? 'Pause' : 'Play'}
       >
         {playing ? '❚❚' : '▶'}
       </button>
-      <button className="tm-btn" onClick={cycleRate} disabled={disabled}>
+      <button className="tm-btn" onClick={() => store.getState().cycleRate()} disabled={disabled}>
         {rate}×
       </button>
       <input
@@ -3099,7 +3310,7 @@ export default function Scrubber() {
         value={cursorT}
         disabled={disabled}
         aria-label="Flight position"
-        onChange={(e) => setCursor(Number(e.target.value))}
+        onChange={(e) => store.getState().setCursor(Number(e.target.value))}
       />
       <div className="tm-clock lbl">
         {fmtFlightClock(cursorT)} / {fmtMMSS(total)}
@@ -3147,7 +3358,10 @@ const meta: FlightMeta = {
   id: 'a', file: 'a.txt', version: 14, encrypted: true, hasKeychain: true,
   aircraftName: 'Matrice 400', aircraftSn: '1581F8DBW258U00A',
   startTime: '2026-02-17T06:27:04.690Z',
-  durationS: 2722.9, distanceKm: 22.07, maxHeightM: 50, maxSpeedMs: 17.04,
+  // maxHeightM is 104, NOT 50: a sample height of 49.9 also renders '50 m',
+  // and getByText then matches two elements. The point of this test is that the
+  // summary and the readouts show different numbers from different sources.
+  durationS: 2722.9, distanceKm: 22.07, maxHeightM: 104, maxSpeedMs: 17.04,
   recordCount: 27229, home: { lon: 48.004, lat: 28.782 },
 }
 
@@ -3275,11 +3489,13 @@ export default function FramePanel() {
   const sessionFlights = useTelemetryStore((s) => s.sessionFlights)
 
   const selectedMeta =
-    path?.meta ??
-    [...sessionFlights, ...catalog].find((f) => f.id === selectedId) ??
-    null
+    path?.meta ?? [...sessionFlights, ...catalog].find((f) => f.id === selectedId) ?? null
 
-  if (!selectedMeta) {
+  // Nothing to show at all: no selection, no in-flight decode, no error.
+  // Loading/error can legitimately fire before a matching FlightMeta is
+  // resolvable (e.g. a decode kicked off for an id not yet in the catalog),
+  // so those must be able to render even when selectedMeta is still null.
+  if (!selectedId && !path && !loading && !error) {
     return (
       <aside className="tm-panel">
         <div className="tm-empty lbl">SELECT A FLIGHT</div>
@@ -3291,23 +3507,22 @@ export default function FramePanel() {
 
   return (
     <aside className="tm-panel">
-      <Summary meta={selectedMeta} />
+      {selectedMeta && <Summary meta={selectedMeta} />}
 
       {loading && <div className="lbl">DECODING FLIGHT…</div>}
       {error && <div className="tm-error lbl">{error}</div>}
 
-      {!loading && !error && !path && (
+      {!loading && !error && !path && selectedMeta && (
         <div className="tm-locked">
           <div className="lbl">FRAMES LOCKED</div>
           <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-            No keychain baked for this log, so the recorded track cannot be
-            decrypted. Everything above reads from the log's unencrypted
-            details block.
+            No keychain baked for this log, so the recorded track cannot be decrypted. Everything
+            above reads from the log&apos;s unencrypted details block.
           </div>
         </div>
       )}
 
-      {sample && (
+      {path && sample && (
         <div className="tm-readouts">
           <Readout label="ALT AGL" value={fmtMeters(sample.height)} />
           <Readout label="ALT ASL" value={fmtMeters(sample.alt)} />
@@ -3319,10 +3534,7 @@ export default function FramePanel() {
           <Readout label="VOLTAGE" value={`${sample.voltage.toFixed(1)} V`} />
           <Readout label="SATS" value={String(Math.round(sample.sats))} />
           <Readout label="MODE" value={sample.mode} />
-          <Readout
-            label="FROM HOME"
-            value={fmtMeters(distanceFromHomeM(sample, selectedMeta.home))}
-          />
+          <Readout label="FROM HOME" value={fmtMeters(distanceFromHomeM(sample, path.meta.home))} />
         </div>
       )}
     </aside>
@@ -3358,7 +3570,7 @@ git commit -m "feat(telemetry): read telemetry at the cursor"
 ```tsx
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import LibraryFilters from './LibraryFilters'
 import { useTelemetryStore } from '../store/telemetryStore'
@@ -3385,9 +3597,13 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('LibraryFilters', () => {
+  // Scoped with within(): the component also renders a SORT select, so an
+  // unscoped getAllByRole('option') collects all 7 options across both
+  // selects, not the 3 belonging to the aircraft one.
   it('lists every distinct aircraft plus an all option', () => {
     render(<LibraryFilters />)
-    const options = screen.getAllByRole('option').map((o) => o.textContent)
+    const select = screen.getByLabelText(/aircraft/i)
+    const options = within(select).getAllByRole('option').map((o) => o.textContent)
     expect(options[0]).toMatch(/all aircraft/i)
     expect(options).toHaveLength(3)
   })
@@ -3467,8 +3683,8 @@ export default function LibraryFilters() {
   const sessionFlights = useTelemetryStore((s) => s.sessionFlights)
   const filters = useTelemetryStore((s) => s.filters)
   const sort = useTelemetryStore((s) => s.sort)
-  const setFilters = useTelemetryStore((s) => s.setFilters)
-  const setSort = useTelemetryStore((s) => s.setSort)
+  // Actions via getState(), not selectors -- see the conventions section.
+  const store = useTelemetryStore
 
   const ids = useId()
   const aircraft = aircraftOptions([...sessionFlights, ...catalog])
@@ -3482,7 +3698,7 @@ export default function LibraryFilters() {
           type="search"
           placeholder="aircraft, serial, file"
           value={filters.text}
-          onChange={(e) => setFilters({ ...filters, text: e.target.value })}
+          onChange={(e) => store.getState().setFilters({ ...filters, text: e.target.value })}
         />
       </div>
 
@@ -3491,7 +3707,7 @@ export default function LibraryFilters() {
         <select
           id={`${ids}-aircraft`}
           value={filters.aircraftSn ?? ''}
-          onChange={(e) => setFilters({ ...filters, aircraftSn: e.target.value || null })}
+          onChange={(e) => store.getState().setFilters({ ...filters, aircraftSn: e.target.value || null })}
         >
           <option value="">ALL AIRCRAFT</option>
           {aircraft.map((a) => (
@@ -3509,7 +3725,7 @@ export default function LibraryFilters() {
             id={`${ids}-from`}
             type="date"
             value={filters.from ?? ''}
-            onChange={(e) => setFilters({ ...filters, from: e.target.value || null })}
+            onChange={(e) => store.getState().setFilters({ ...filters, from: e.target.value || null })}
           />
         </div>
         <div style={{ flex: 1 }}>
@@ -3518,7 +3734,7 @@ export default function LibraryFilters() {
             id={`${ids}-to`}
             type="date"
             value={filters.to ?? ''}
-            onChange={(e) => setFilters({ ...filters, to: e.target.value || null })}
+            onChange={(e) => store.getState().setFilters({ ...filters, to: e.target.value || null })}
           />
         </div>
       </div>
@@ -3534,7 +3750,7 @@ export default function LibraryFilters() {
             min={0}
             value={filters.minDurationS === 0 ? '' : Math.round(filters.minDurationS / 60)}
             onChange={(e) =>
-              setFilters({ ...filters, minDurationS: Math.max(0, Number(e.target.value) || 0) * 60 })
+              store.getState().setFilters({ ...filters, minDurationS: Math.max(0, Number(e.target.value) || 0) * 60 })
             }
           />
         </div>
@@ -3543,7 +3759,7 @@ export default function LibraryFilters() {
           <select
             id={`${ids}-sort`}
             value={sort}
-            onChange={(e) => setSort(e.target.value as CatalogSort)}
+            onChange={(e) => store.getState().setSort(e.target.value as CatalogSort)}
           >
             {SORTS.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>
@@ -3584,7 +3800,7 @@ git commit -m "feat(telemetry): filter the flight library"
 ```tsx
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import FlightLibrary from './FlightLibrary'
 import { useTelemetryStore } from '../store/telemetryStore'
@@ -3618,13 +3834,18 @@ describe('FlightLibrary', () => {
     expect(screen.getByText(/22\.1 km/)).toBeInTheDocument()
   })
 
+  // Scoped to .tm-list. FlightLibrary renders LibraryFilters, whose aircraft
+  // <select> formats its options exactly as the group headings do
+  // (`${name} · ${sn.slice(-6)}`), so an unscoped query matches 4 elements:
+  // two options and two headings.
   it('groups rows under an aircraft heading', () => {
     useTelemetryStore.getState().setCatalog([
       flight({ id: 'a', aircraftSn: 'SN1' }),
       flight({ id: 'b', aircraftSn: 'SN2' }),
     ])
-    render(<FlightLibrary onOpen={vi.fn()} />)
-    expect(screen.getAllByText(/Matrice 400/)).toHaveLength(2)
+    const { container } = render(<FlightLibrary onOpen={vi.fn()} />)
+    const list = container.querySelector('.tm-list') as HTMLElement
+    expect(within(list).getAllByText(/Matrice 400/)).toHaveLength(2)
   })
 
   it('calls onOpen with the flight when a row is clicked', () => {
@@ -3715,7 +3936,7 @@ export default function FlightLibrary({ onOpen }: FlightLibraryProps) {
   const filters = useTelemetryStore((s) => s.filters)
   const sort = useTelemetryStore((s) => s.sort)
   const selectedId = useTelemetryStore((s) => s.selectedId)
-  const clearSessionFlights = useTelemetryStore((s) => s.clearSessionFlights)
+  // Action via getState(), not a selector -- see the conventions section.
 
   const visible = useMemo(
     () => selectVisibleFlights({ catalog, sessionFlights, filters, sort }),
@@ -3728,7 +3949,7 @@ export default function FlightLibrary({ onOpen }: FlightLibraryProps) {
     <aside className="tm-library">
       <LibraryFilters />
       {sessionFlights.length > 0 && (
-        <button className="tm-btn" style={{ margin: '0 12px 8px' }} onClick={clearSessionFlights}>
+        <button className="tm-btn" style={{ margin: '0 12px 8px' }} onClick={() => useTelemetryStore.getState().clearSessionFlights()}>
           CLEAR {sessionFlights.length} DROPPED
         </button>
       )}
@@ -4134,31 +4355,30 @@ export function useFlightLoader() {
 
   const openFlight = useCallback(
     async (meta: FlightMeta) => {
-      const { select, setLoading, setPath, setError } = store.getState()
-      select(meta.id)
+      store.getState().select(meta.id)
 
       const cached = await getCachedPath(meta.id)
-      if (cached) return setPath(cached)
+      if (cached) return store.getState().setPath(cached)
 
       // An encrypted log with no baked keychain is a legitimate resting
       // state, not a failure: FramePanel renders the summary and FRAMES
       // LOCKED from metadata alone.
       if (meta.encrypted && !meta.hasKeychain) {
-        setLoading(false)
+        store.getState().setLoading(false)
         return
       }
 
-      setLoading(true)
+      store.getState().setLoading(true)
       try {
         const bytes = await fetchBytes(`${BASE}flights/${meta.file}`)
         const keychains = meta.encrypted
           ? await fetchKeychains(`${BASE}flights/${meta.id}.keychain.json`)
           : null
         const path = await decodeFlight(bytes, keychains, meta)
-        setPath(path)
+        store.getState().setPath(path)
         void putCachedPath(path)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'could not open flight')
+        store.getState().setError(err instanceof Error ? err.message : 'could not open flight')
       }
     },
     [store],
@@ -4170,18 +4390,18 @@ export function useFlightLoader() {
       const meta = provisionalMeta(file)
       addSessionFlight(meta)
       select(meta.id)
-      setLoading(true)
+      store.getState().setLoading(true)
       try {
         const bytes = new Uint8Array(await file.arrayBuffer())
         // A dropped log carries no keychain. Pre-v13 logs decode anyway;
         // v13+ ones fail here and surface as an error, which is the honest
         // outcome given DJI's endpoint cannot be reached from the browser.
         const path = await decodeFlight(bytes, null, meta)
-        setPath(path)
+        store.getState().setPath(path)
         void putCachedPath(path)
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err)
-        setError(`Could not read ${file.name}: ${reason}`)
+        store.getState().setError(`Could not read ${file.name}: ${reason}`)
       }
     },
     [store],
@@ -4341,8 +4561,10 @@ export function usePlayback(): void {
       last.current = now
       if (prev !== null) {
         const deltaS = ((now - prev) / 1000) * rate
-        const { cursorT, setCursor } = useTelemetryStore.getState()
-        setCursor(cursorT + deltaS)
+        // Read state and call the action as separate statements: destructuring
+        // the action off getState() trips unbound-method (conventions section).
+        const cursorT = useTelemetryStore.getState().cursorT
+        useTelemetryStore.getState().setCursor(cursorT + deltaS)
       }
       // setCursor clears `playing` on reaching the end; re-reading it here
       // stops the loop on the same frame instead of one frame late.
@@ -4521,19 +4743,19 @@ function TelemetryShell() {
 
 export default function Telemetry() {
   const [style] = useState(buildTelemetryStyle)
-  const setCatalog = useTelemetryStore((s) => s.setCatalog)
+  // Action via getState(), not a selector -- see the conventions section.
   const { openFlight, openDroppedFile } = useFlightLoader()
   usePlayback()
 
   useEffect(() => {
     let alive = true
     void fetchCatalog(import.meta.env.BASE_URL).then((catalog) => {
-      if (alive) setCatalog(catalog.flights)
+      if (alive) useTelemetryStore.getState().setCatalog(catalog.flights)
     })
     return () => {
       alive = false
     }
-  }, [setCatalog])
+  }, [])
 
   return (
     <main className="tm-root">
@@ -4626,13 +4848,16 @@ const rawCatalog = {
       id: 'm400-2026-02-17-0627', file: 'm400-2026-02-17-0627.txt', version: 14,
       encrypted: true, hasKeychain: true, aircraftName: 'Matrice 400',
       aircraftSn: '1581F8DBW258U00A', startTime: '2026-02-17T06:27:04.690Z',
-      durationS: 2722.9, distanceKm: 22.07, maxHeightM: 50, maxSpeedMs: 17.04,
+      // maxHeightM is 104, NOT 50: a sample height of 49.9 also renders '50 m',
+  // and getByText then matches two elements. The point of this test is that the
+  // summary and the readouts show different numbers from different sources.
+  durationS: 2722.9, distanceKm: 22.07, maxHeightM: 104, maxSpeedMs: 17.04,
       recordCount: 27229, home: { lon: 48.004, lat: 28.782 },
     },
     {
       id: 'm400-2026-02-17-0846', file: 'm400-2026-02-17-0846.txt', version: 14,
       encrypted: true, hasKeychain: true, aircraftName: 'Matrice 400',
-      aircraftSn: '1581F8DBW259400A', startTime: '2026-02-17T08:46:26.746Z',
+      aircraftSn: '1581F5FKC257P00D', startTime: '2026-02-17T08:46:26.746Z',
       durationS: 1009.6, distanceKm: 6.01, maxHeightM: 50, maxSpeedMs: 15.13,
       recordCount: 5050, home: { lon: 48.004, lat: 28.782 },
     },
@@ -4663,7 +4888,7 @@ describe('telemetry end to end', () => {
     expect(catalog?.flights).toHaveLength(2)
 
     useTelemetryStore.getState().setCatalog(catalog!.flights)
-    useTelemetryStore.getState().setFilters({ ...NO_FILTERS, aircraftSn: '1581F8DBW259400A' })
+    useTelemetryStore.getState().setFilters({ ...NO_FILTERS, aircraftSn: '1581F5FKC257P00D' })
     const visible = selectVisibleFlights(useTelemetryStore.getState())
     expect(visible.map((f) => f.id)).toEqual(['m400-2026-02-17-0846'])
   })
@@ -4697,7 +4922,7 @@ describe('telemetry end to end', () => {
     expect(pathFeature(path).features).toHaveLength(1)
     // Two of three samples are behind a 15s cursor.
     const traversed = traversedFeature(path, 15).features[0].geometry
-    expect((traversed as GeoJSON.LineString).coordinates).toHaveLength(2)
+    expect(traversed.coordinates).toHaveLength(2)
   })
 
   it('stops playback when the cursor is driven past the end', () => {
@@ -4754,7 +4979,7 @@ Open `http://localhost:4173/e-Sentinel/telemetry`.
 
 Confirm each, and capture a screenshot of the opened flight:
 
-1. The library lists three flights in two aircraft groups.
+1. The library lists three flights in THREE aircraft groups (the logs come from three distinct serials). This requires having run the bake tool locally first, since the logs are gitignored. If the library is empty, run `node tools/bake-flights.mjs` and reload.
 2. Opening `m400-2026-02-17-0846` (the smallest log, fastest decode) draws a dense lawnmower survey grid and fits the camera to it.
 3. The frame panel shows live readouts; scrubbing changes them.
 4. Play at 16× replays the flight and stops at the end.
@@ -4839,6 +5064,12 @@ node tools/bake-flights.mjs --dry-run  # catalog only, no network, no key
 This writes `index.json` and one `<id>.keychain.json` per log. The browser
 then decodes the logs fully offline. See `.env.example` for the key, which is
 never exposed to the client bundle.
+
+The logs, their keychains and the catalog are gitignored. This repository is
+public and the Pages workflow publishes `app/public/`, so real flight
+coordinates, aircraft serials and decryption keys stay local. A fresh clone
+loads `/telemetry` with an empty library and a working drop-in path; see
+`app/public/flights/README.md`.
 ```
 
 - [ ] **Step 4: Full verification**
@@ -4867,7 +5098,32 @@ git commit -m "feat(telemetry): take module 03 online"
 
 Spec section 8.1. The console and planner both put `LAYERS` in the same topbar slot; telemetry must too, so the control lives in one place in the user's memory across all three modules. Identified during plan self-review — run before Task 26.
 
-- [ ] **Step 1: Determine whether the planner's menu and basemap hook are reusable**
+> **Assessment already done** (by Task 20's implementer, 2026-07-27). Recorded here
+> so Step 1 confirms rather than rediscovers it:
+>
+> **`PlannerLayersMenu` — copy, do not import.** Its DATA dependency is already
+> module-agnostic: it reads `layer`/`setLayer` straight off the shared
+> `useAppStore`, not from planner state. What couples it is STYLING — it renders
+> `pl-btn` / `pl-menu` / `pl-menu-item` / `pl-menu-radio` / `pl-menu-check`
+> classes that only `planner.css` defines, so dropping it into the telemetry
+> topbar yields an unstyled dropdown. Copy to `TelemetryLayersMenu.tsx` with
+> `tm-*` classes, reusing the same `LAYER_ORDER` / `LAYER_LABELS` /
+> `layerButtonLabel` imports from `console/map/basemap.ts`. Duplicate the JSX and
+> class names only, never the label/order data.
+>
+> **`usePlannerBasemap` — write an analogue, do not import.** It is coupled to
+> BEHAVIOUR, not just style. It hard-codes `eff = offline ? null : layer`,
+> deliberately skipping `effectiveLayer(scene, layer)` because the planner has no
+> globe scene, and it deliberately omits `setOperationalLayersVisible` — safe only
+> because the planner's `buildBaseStyle` lacks the console's operational layers
+> while still carrying UAE cartography that must stay visible. Whether telemetry's
+> style has the same shape is unverified. Write `useTelemetryBasemap` calling the
+> same shared appliers (`applyRasterVisibility`, `applyPlaceLabelTheme` from
+> `console/map/basemap.ts`), re-deriving the layer handling against telemetry's
+> actual style — the same way the planner hook itself diverged from the console's
+> `useBasemap`.
+
+- [ ] **Step 1: Confirm the assessment above still holds**
 
 ```bash
 cd app && cat src/modules/planner/ui/PlannerLayersMenu.tsx

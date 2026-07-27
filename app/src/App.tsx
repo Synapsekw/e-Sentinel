@@ -18,6 +18,7 @@ import EngineProvider from './modules/console/engine/EngineProvider'
 // would only add a Suspense round-trip for no bundle-size benefit.
 const Console = lazy(() => import('./modules/console/Console'))
 const Planner = lazy(() => import('./modules/planner/ui/Planner'))
+const Telemetry = lazy(() => import('./modules/telemetry/ui/Telemetry'))
 
 // EngineProvider is mounted ABOVE <Routes> (Phase 1C / Task 3 controller
 // decision — see EngineProvider.tsx) so the sim engine is a page-lifetime
@@ -46,7 +47,7 @@ export default function App() {
               <Route path="/" element={<Landing />} />
               <Route path="/console" element={<Console />} />
               <Route path="/planner" element={<Planner />} />
-              <Route path="/telemetry" element={<ModulePlaceholder />} />
+              <Route path="/telemetry" element={<Telemetry />} />
               <Route path="/compliance" element={<ModulePlaceholder />} />
             </Routes>
           </Suspense>

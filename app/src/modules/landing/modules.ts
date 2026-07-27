@@ -47,10 +47,16 @@ export const MODULES: ModuleCard[] = [
     num: '03',
     slug: 'telemetry',
     title: 'Telemetry',
-    blurb: 'Flight history, track replay, and fleet performance analytics.',
-    status: 'planned',
-    statusLabel: 'PLANNED',
-    enabled: false,
+    // The old blurb promised "fleet performance analytics", which this module
+    // does not do, and used "track replay" -- a word that means detected
+    // ground targets everywhere else in this codebase (console/panels/
+    // TrackPanel.tsx). Both corrected on the same principle recorded on the
+    // planner card above: this page is shown to government clients and
+    // partners, so every card claims only what the module actually does.
+    blurb: 'Replay real DJI flight logs: path, altitude, battery and flight mode, frame by frame.',
+    status: 'online',
+    statusLabel: 'ONLINE',
+    enabled: true,
   },
   {
     num: '04',
