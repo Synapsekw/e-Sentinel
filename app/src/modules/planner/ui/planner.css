@@ -95,12 +95,6 @@
   border-color: var(--amber);
   color: var(--amber);
 }
-.pl-btn-ghost {
-  border-style: dashed;
-  color: var(--dim);
-  font-size: 10px;
-  padding: 6px 11px;
-}
 
 /* Offline indicator, the planner's counterpart to chrome.css's .chip.warn.
    Amber, not red: offline is a degraded state, not an alert, and red stays
@@ -767,8 +761,16 @@ body.rpanel-collapsed .planner-summary {
 }
 
 /* ---------- PLANS menu (plan library) ---------- */
+/* Right-aligned, unlike .pl-menu's default `left: 0`. PLANS is the last
+   dropdown on the row and the widest menu, so anchoring its left edge to the
+   trigger ran it off the right of the screen -- at 1600px the dock counts were
+   clipped mid-word. DRAW and LAYERS sit far enough left that they still fit
+   left-anchored, so this overrides only here. Caught in browser verification;
+   no unit test can see a menu leaving the viewport. */
 .pl-plans-menu {
   min-width: 320px;
+  left: auto;
+  right: 0;
 }
 /* The list scrolls while the fixed save/import/export items stay put, so a
    library of thirty plans cannot push EXPORT LIBRARY off the bottom of the
