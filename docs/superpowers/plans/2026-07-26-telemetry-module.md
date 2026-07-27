@@ -3069,13 +3069,22 @@ One coherent grid written up front so every component task below has its classes
 }
 ```
 
-- [ ] **Step 2: Verify the custom properties referenced here all exist**
+> **`--hot` DOES NOT EXIST.** This section originally specified a `--hot` token
+> for the selected row, the drop-in tag and the error state. `src/shared/tokens.css`
+> has no such token; the brand hot red is `--red` (#ff5a5a). More importantly,
+> only the error state should be red at all: PRODUCT.md says "Status colors must
+> NOT overload brand red: red is brand + alert only", and neither a selected row
+> nor a locally-loaded file is an alert. `planner.css` settles the convention —
+> `--amber` for active state (`.pl-btn.active`), `--red` for genuine alerts. The
+> CSS above already reflects this.
+
+- [ ] **Step 2: Verify every custom property used actually exists**
 
 ```bash
-cd app && grep -oE "\-\-(chrome|chrome-blur|line|txt|hot)\b" src/shared/tokens.css | sort -u
+cd app && for t in $(grep -oE "var\(--[a-z-]+\)" src/modules/telemetry/ui/telemetry.css | sed 's/var(--\(.*\))/\1/' | sort -u); do printf "  --%-14s " "$t"; grep -qE "^\s*--$t:" src/shared/tokens.css && echo ok || echo MISSING; done
 ```
 
-Expected: all five of `--chrome`, `--chrome-blur`, `--line`, `--txt`, `--hot` appear. If any is missing, find its real name in `src/shared/tokens.css` and correct the CSS above before continuing — a missing custom property fails silently at runtime.
+Expected: every line reads `ok`. A missing custom property fails silently at runtime, so do not skip this.
 
 - [ ] **Step 3: Commit**
 
