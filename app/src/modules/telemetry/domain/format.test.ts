@@ -7,6 +7,7 @@ import {
   fmtMeters,
   fmtSpeed,
   fmtHeading,
+  fmtPitch,
 } from './format'
 
 describe('fmtFlightClock', () => {
@@ -66,5 +67,22 @@ describe('numeric formatters', () => {
   // DJI yaw is signed, -180..180; compass headings are 0..359.
   it('normalises negative headings into 0..359', () => {
     expect(fmtHeading(-90)).toBe('270°')
+  })
+})
+
+describe('fmtPitch', () => {
+  // Regression: gimbal pitch used to render through fmtHeading, so a camera
+  // looking straight down showed "270°" instead of "-90°".
+  it('keeps a downward pitch negative rather than wrapping it', () => {
+    expect(fmtPitch(-90)).toBe('-90°')
+  })
+
+  it('renders level and upward pitch', () => {
+    expect(fmtPitch(0)).toBe('0°')
+    expect(fmtPitch(28.4)).toBe('28°')
+  })
+
+  it('does not normalise into a compass range', () => {
+    expect(fmtPitch(-30)).not.toBe(fmtHeading(-30))
   })
 })

@@ -52,3 +52,12 @@ export function fmtHeading(deg: number): string {
   const norm = ((Math.round(deg) % 360) + 360) % 360
   return `${String(norm).padStart(3, '0')}°`
 }
+
+// Gimbal pitch is a SIGNED angle, not a compass bearing, so it must not go
+// through fmtHeading. A survey camera looking straight down sits at -90; wrap
+// that into 0..359 and it reads "270°", which is meaningless for a pitch and
+// was on screen until visual verification caught it. DJI reports gimbal pitch
+// roughly in -90..+30.
+export function fmtPitch(deg: number): string {
+  return `${Math.round(deg)}°`
+}

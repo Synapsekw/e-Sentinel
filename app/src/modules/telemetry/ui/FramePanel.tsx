@@ -5,7 +5,15 @@
 
 import { useTelemetryStore } from '../store/telemetryStore'
 import { distanceFromHomeM, sampleAt } from '../domain/flightPath'
-import { fmtDate, fmtDuration, fmtHeading, fmtKm, fmtMeters, fmtSpeed } from '../domain/format'
+import {
+  fmtDate,
+  fmtDuration,
+  fmtHeading,
+  fmtKm,
+  fmtMeters,
+  fmtPitch,
+  fmtSpeed,
+} from '../domain/format'
 import type { FlightMeta } from '../domain/types'
 import './telemetry.css'
 
@@ -88,7 +96,7 @@ export default function FramePanel() {
           <Readout label="GROUND SPD" value={fmtSpeed(sample.speedH)} />
           <Readout label="VERT SPD" value={fmtSpeed(sample.speedV)} />
           <Readout label="HEADING" value={fmtHeading(sample.heading)} />
-          <Readout label="GIMBAL" value={fmtHeading(sample.gimbalPitch)} />
+          <Readout label="GIMBAL" value={fmtPitch(sample.gimbalPitch)} />
           <Readout label="BATTERY" value={`${Math.round(sample.battery)}%`} />
           <Readout label="VOLTAGE" value={`${sample.voltage.toFixed(1)} V`} />
           <Readout label="SATS" value={String(Math.round(sample.sats))} />
