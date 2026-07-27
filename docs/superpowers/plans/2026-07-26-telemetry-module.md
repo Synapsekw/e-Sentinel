@@ -1654,7 +1654,10 @@ self.onmessage = (event: MessageEvent<DecodeRequest>) => {
 - [ ] **Step 2: Write the failing test for the client**
 
 ```ts
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+// `vi` is deliberately NOT imported here: this test drives a hand-written
+// FakeWorker rather than a vitest mock, and tsconfig sets noUnusedLocals, which
+// makes an unused import a hard TS6133 error rather than a warning.
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { decodeFlight, __setWorkerFactory, __resetWorkerFactory } from './parseFlight'
 import type { FlightMeta } from '../domain/types'
 
