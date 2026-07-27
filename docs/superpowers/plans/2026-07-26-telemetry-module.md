@@ -48,7 +48,11 @@ Read these before Task 1; they are not obvious from the file tree.
 - **Map hooks must guard with `isMapUsable`** from `@/modules/console/map/mapLifecycle` before touching sources. Route unmount removes the map parent-first, so an unguarded `getSource` throws.
 - **No em dashes in user-facing copy** (house convention, see `modules/landing/modules.ts`).
 - **Vocabulary:** *flight*, *flight path*, *frame*. Never *track* — that word means detected ground targets in `modules/console`.
-- **Never select a store ACTION through a zustand selector.** `const setFoo = useTelemetryStore((s) => s.setFoo)` trips `@typescript-eslint/unbound-method`, which is an error here (`--max-warnings 0`). Call actions in place: `useTelemetryStore.getState().setFoo(x)`. Select only STATE through the hook, since state is what must trigger a re-render — actions are stable and do not. `planner/ui/Planner.tsx` uses the same split. This bit Tasks 12, 14 and 16 before it was written down; the component code blocks below have been corrected, but check any you add.
+- **Never detach a store ACTION from the store object.** `@typescript-eslint/unbound-method` is an error here (`--max-warnings 0`), and `TelemetryState` declares actions as method-shorthand signatures, so BOTH of these trip it:
+  - `const setFoo = useTelemetryStore((s) => s.setFoo)` — selecting an action
+  - `const { setFoo } = useTelemetryStore.getState()` — destructuring one
+
+  Call actions inline, always keeping the object on the left: `useTelemetryStore.getState().setFoo(x)`. Select only STATE through the hook, since state is what must trigger a re-render — actions are stable and do not. This bit Tasks 12, 14, 16 and 21 as four separate rediscoveries; the code blocks below are corrected, but check any you add.
 - **Pre-commit hook runs `eslint . --max-warnings 0` and `prettier --check .` from `app/`.** Files under the repo-root `tools/` are outside `app/` and therefore outside both. Keep that file plain and simple.
 
 ---
@@ -4278,31 +4282,30 @@ export function useFlightLoader() {
 
   const openFlight = useCallback(
     async (meta: FlightMeta) => {
-      const { select, setLoading, setPath, setError } = store.getState()
-      select(meta.id)
+      store.getState().select(meta.id)
 
       const cached = await getCachedPath(meta.id)
-      if (cached) return setPath(cached)
+      if (cached) return store.getState().setPath(cached)
 
       // An encrypted log with no baked keychain is a legitimate resting
       // state, not a failure: FramePanel renders the summary and FRAMES
       // LOCKED from metadata alone.
       if (meta.encrypted && !meta.hasKeychain) {
-        setLoading(false)
+        store.getState().setLoading(false)
         return
       }
 
-      setLoading(true)
+      store.getState().setLoading(true)
       try {
         const bytes = await fetchBytes(`${BASE}flights/${meta.file}`)
         const keychains = meta.encrypted
           ? await fetchKeychains(`${BASE}flights/${meta.id}.keychain.json`)
           : null
         const path = await decodeFlight(bytes, keychains, meta)
-        setPath(path)
+        store.getState().setPath(path)
         void putCachedPath(path)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'could not open flight')
+        store.getState().setError(err instanceof Error ? err.message : 'could not open flight')
       }
     },
     [store],
@@ -4314,18 +4317,18 @@ export function useFlightLoader() {
       const meta = provisionalMeta(file)
       addSessionFlight(meta)
       select(meta.id)
-      setLoading(true)
+      store.getState().setLoading(true)
       try {
         const bytes = new Uint8Array(await file.arrayBuffer())
         // A dropped log carries no keychain. Pre-v13 logs decode anyway;
         // v13+ ones fail here and surface as an error, which is the honest
         // outcome given DJI's endpoint cannot be reached from the browser.
         const path = await decodeFlight(bytes, null, meta)
-        setPath(path)
+        store.getState().setPath(path)
         void putCachedPath(path)
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err)
-        setError(`Could not read ${file.name}: ${reason}`)
+        store.getState().setError(`Could not read ${file.name}: ${reason}`)
       }
     },
     [store],
