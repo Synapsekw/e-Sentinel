@@ -3723,7 +3723,7 @@ git commit -m "feat(telemetry): filter the flight library"
 ```tsx
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import FlightLibrary from './FlightLibrary'
 import { useTelemetryStore } from '../store/telemetryStore'
@@ -3757,13 +3757,18 @@ describe('FlightLibrary', () => {
     expect(screen.getByText(/22\.1 km/)).toBeInTheDocument()
   })
 
+  // Scoped to .tm-list. FlightLibrary renders LibraryFilters, whose aircraft
+  // <select> formats its options exactly as the group headings do
+  // (`${name} · ${sn.slice(-6)}`), so an unscoped query matches 4 elements:
+  // two options and two headings.
   it('groups rows under an aircraft heading', () => {
     useTelemetryStore.getState().setCatalog([
       flight({ id: 'a', aircraftSn: 'SN1' }),
       flight({ id: 'b', aircraftSn: 'SN2' }),
     ])
-    render(<FlightLibrary onOpen={vi.fn()} />)
-    expect(screen.getAllByText(/Matrice 400/)).toHaveLength(2)
+    const { container } = render(<FlightLibrary onOpen={vi.fn()} />)
+    const list = container.querySelector('.tm-list') as HTMLElement
+    expect(within(list).getAllByText(/Matrice 400/)).toHaveLength(2)
   })
 
   it('calls onOpen with the flight when a row is clicked', () => {
