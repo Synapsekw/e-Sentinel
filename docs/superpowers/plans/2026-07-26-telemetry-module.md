@@ -14,9 +14,19 @@
 
 - [x] **Task 1** — deps + `.env.example` (`3a1719f`)
 - [x] **Task 2** — logs staged locally, NOT committed (gitignored; no commit by design)
-- [x] **Task 3** — bake tool + keychains generated locally (`5b1afc0`)
+- [x] **Task 3** — bake tool + keychains generated locally (`5b1afc0`, fixed in `22fb60e`)
 - [x] **Task 4** — domain types (`795aa3a`)
-- [ ] Task 5 onward
+- [x] **Task 5** — flight path queries (`8600ee2`)
+- [x] **Task 6** — catalog filters and sorting (`ba58088`)
+- [x] **Task 7** — telemetry formatting (`20cab87`)
+- [x] **Task 8** — catalog loading and validation (`7832078`)
+- [x] **Task 9** — frame normalization (`a590305`, corrupt-clock fix in `14b1960`)
+- [x] **Task 10** — decode worker and client (`e97b2896`)
+- [x] **Task 11** — decoded path cache
+- [ ] Task 12 onward — store, map, UI
+
+The whole `io/` layer is done. Everything above this line is pure logic plus the
+build tool; nothing renders yet.
 
 **Decision recorded 2026-07-27, after Task 4:** the flight logs, keychains and `index.json
 are gitignored rather than committed, because this repo is public and the Pages workflow
