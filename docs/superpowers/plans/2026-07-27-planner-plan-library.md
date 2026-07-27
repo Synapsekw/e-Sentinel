@@ -12,6 +12,28 @@
 
 ---
 
+## Amendment (during execution): the saved revision is paired with its plan id
+
+Tasks 4-7 below are written against a bare `savedRev: number | null`. **Review of Task 4 found that model unsound and it was replaced.** Everything below that says `savedRev` should be read as the paired form:
+
+```ts
+saved: { planId: string; rev: number } | null
+setSaved(saved: { planId: string; rev: number } | null): void
+loadPlan(next: DeploymentPlan, saved: { planId: string; rev: number } | null): void
+
+export function isDirty(plan: DeploymentPlan, saved: { planId: string; rev: number } | null): boolean {
+  return saved === null || saved.planId !== plan.id || saved.rev !== plan.rev
+}
+```
+
+**Why.** `dirty = plan.rev !== savedRev` is only meaningful if that revision was captured for the plan currently loaded, and nothing enforced it. `createPlan()` starts every plan at `rev: 0` and `rev` is a small monotonic counter, so two different plans routinely share a value. `Planner.tsx`'s `handleImportPlanFile` swaps the whole plan through `setPlan` without touching the saved state — so importing a plan whose `rev` matched would report it as saved when it was not in the library at all. On a tool driven live in front of clients, "I thought it was saved" is the worst failure this feature can have.
+
+Pairing the revision with the plan id makes the stale comparison unrepresentable rather than a rule callers must remember, and fixes the import path for free: after a swap the ids differ, so it reads dirty with no extra code anywhere.
+
+The scratch key payload (Task 7) carries `{ plan, saved }` accordingly.
+
+---
+
 ## File Structure
 
 | File | Responsibility |
