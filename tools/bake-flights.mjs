@@ -12,13 +12,15 @@
 // tool, not app source: app/tsconfig.json includes only src/, and app's
 // eslint/prettier run from app/. Precedent: the removed tools/bake-geo.mjs.
 
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { DJILog } from '../app/node_modules/dji-log-parser-js/dji_log_parser_js.mjs'
 
 const FLIGHTS_DIR = join(import.meta.dirname, '..', 'app', 'public', 'flights')
 const ENDPOINT = 'https://dev.dji.com/openapi/v1/flight-records/keychains'
 const dryRun = process.argv.includes('--dry-run')
+// Refetch keychains even when a <id>.keychain.json is already on disk.
+const force = process.argv.includes('--force')
 
 function apiKey() {
   if (process.env.DJI_API_KEY) return process.env.DJI_API_KEY
@@ -79,27 +81,55 @@ for (const file of logs) {
   const version = parser.version
   const details = parser.details
 
-  let hasKeychain = false
+  const keychainPath = join(FLIGHTS_DIR, `${id}.keychain.json`)
+
   if (!dryRun && version >= 13) {
-    try {
-      const keychains = await fetchKeychains(parser, key)
-      writeFileSync(join(FLIGHTS_DIR, `${id}.keychain.json`), JSON.stringify(keychains))
-      hasKeychain = true
-      console.log(`  ok   ${id}  v${version}  keychain baked`)
-    } catch (err) {
-      failures++
-      console.error(`  FAIL ${id}  v${version}  ${err.message}`)
+    // Skip logs whose keychain is already on disk. DJI's endpoint is a remote
+    // dependency and the keys do not change; re-running the tool to pick up
+    // one new log should not re-request keys for every old one. Use --force to
+    // refetch anyway.
+    if (existsSync(keychainPath) && !force) {
+      console.log(`  skip ${id}  v${version}  keychain already present`)
+    } else {
+      try {
+        const keychains = await fetchKeychains(parser, key)
+        writeFileSync(keychainPath, JSON.stringify(keychains))
+        console.log(`  ok   ${id}  v${version}  keychain baked`)
+      } catch (err) {
+        failures++
+        console.error(`  FAIL ${id}  v${version}  ${err.message}`)
+      }
     }
   } else {
-    hasKeychain = version < 13
-    console.log(`  ${dryRun ? 'dry ' : 'ok  '} ${id}  v${version}  ${dryRun ? 'catalog only' : 'no keychain needed'}`)
+    console.log(
+      `  ${dryRun ? 'dry ' : 'ok  '} ${id}  v${version}  ${dryRun ? 'catalog only' : 'no keychain needed'}`,
+    )
   }
+
+  // Derived from what is actually on disk, NOT from what this run happened to
+  // do. Deriving it from the run made --dry-run rewrite a good catalog with
+  // hasKeychain:false while the keychain files sat right there, so every
+  // flight rendered as FRAMES LOCKED despite being fully decodable.
+  const hasKeychain = version < 13 || existsSync(keychainPath)
 
   flights.push(catalogEntry(id, file, version, details, hasKeychain))
 }
 
-writeFileSync(join(FLIGHTS_DIR, 'index.json'), JSON.stringify({ version: 1, flights }, null, 2) + '\n')
-console.log(`\nwrote index.json with ${flights.length} flight(s)`)
+// A dry run must not write. It exists to show what WOULD be produced without
+// touching the network or a key; writing index.json made it destructive, which
+// is the opposite of what the name promises.
+if (dryRun) {
+  console.log(`\n--dry-run: index.json NOT written. Would contain ${flights.length} flight(s):`)
+  for (const f of flights) {
+    console.log(`  ${f.id}  ${f.aircraftSn}  ${f.durationS}s  keychain:${f.hasKeychain}`)
+  }
+} else {
+  writeFileSync(
+    join(FLIGHTS_DIR, 'index.json'),
+    JSON.stringify({ version: 1, flights }, null, 2) + '\n',
+  )
+  console.log(`\nwrote index.json with ${flights.length} flight(s)`)
+}
 
 if (failures > 0) {
   console.error(`${failures} keychain fetch(es) failed; those flights show metadata only`)
