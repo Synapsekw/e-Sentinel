@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import MapView from '@/modules/console/map/MapView'
 import { useMap } from '@/modules/console/map/MapContext'
 import { useFlightLayers } from '../map/useFlightLayers'
+import { useTelemetryBasemap } from '../map/useTelemetryBasemap'
 import { buildTelemetryStyle } from '../map/telemetryStyle'
 import { fetchCatalog } from '../io/catalogIo'
 import { pathBounds } from '../domain/flightPath'
@@ -31,6 +32,12 @@ function TelemetryShell() {
   const cursorT = useTelemetryStore((s) => s.cursorT)
 
   useFlightLayers(mapRef, ready, path, cursorT)
+  // MapView is mounted with manageBasemap={false} (like the planner), so
+  // telemetry drives its own basemap here -- a map-bound hook, wired inside
+  // TelemetryShell (a child of MapView) rather than in Telemetry() itself,
+  // for the same reason useFlightLayers is: MapView renders children only
+  // once the map's `load` event fires.
+  useTelemetryBasemap(mapRef, ready)
 
   // Fit to the opened flight. These are 790x710m survey boxes, so the fit
   // lands near z16 -- a regional camera would show a dot.

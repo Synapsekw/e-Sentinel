@@ -1,16 +1,12 @@
 // Telemetry chrome. Same arrangement as PlannerTopbar: brand home link and
-// offline chip, spacer, then the action row. Only LOAD LOG lives here for
-// now -- the basemap LAYERS control that PlannerTopbar and the console both
-// place in this slot is Task 27 (see TelemetryTopbar.test.tsx's sibling
-// task notes): PlannerLayersMenu reads its layer/setLayer straight off the
-// shared useAppStore, so it is not bound to planner *data*, but it renders
-// with the pl-btn/pl-menu/pl-menu-item classes that only planner.css
-// defines, so it cannot be dropped in here unstyled -- Task 27 needs its
-// own tm-* rendering, whether that ends up as a direct copy or a thin
-// adapter.
+// offline chip, spacer, then the action row led by the basemap LAYERS
+// control -- the same slot the console and planner both use, so the control
+// lives in one place in the user's memory across all three modules. Then
+// LOAD LOG.
 import type { ChangeEvent } from 'react'
 import { Link } from 'react-router-dom'
 import OfflineChip from '@/modules/console/OfflineChip'
+import TelemetryLayersMenu from './TelemetryLayersMenu'
 import './telemetry.css'
 
 export interface TelemetryTopbarProps {
@@ -33,6 +29,7 @@ export default function TelemetryTopbar({ onLoadFile }: TelemetryTopbarProps) {
       </Link>
       <OfflineChip />
       <div className="tm-sp" />
+      <TelemetryLayersMenu />
       <label className="tm-btn" htmlFor="tm-load">
         LOAD LOG
       </label>

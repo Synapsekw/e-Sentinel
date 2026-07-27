@@ -40,4 +40,15 @@ describe('TelemetryTopbar', () => {
     fireEvent.change(screen.getByLabelText(/load log/i), { target: { files: [] } })
     expect(onLoad).not.toHaveBeenCalled()
   })
+
+  it('offers the basemap layers control', () => {
+    renderBar()
+    expect(screen.getByRole('button', { name: /layers/i })).toBeInTheDocument()
+  })
+
+  it('opens the layers menu on click', () => {
+    renderBar()
+    fireEvent.click(screen.getByRole('button', { name: /layers/i }))
+    expect(screen.getByRole('button', { name: /satellite/i })).toBeInTheDocument()
+  })
 })
