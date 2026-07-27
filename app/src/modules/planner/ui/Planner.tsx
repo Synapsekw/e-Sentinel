@@ -35,7 +35,7 @@ import { suggestLayout } from '@/modules/planner/domain/autoPlace'
 import { serializePlan, parsePlan } from '@/modules/planner/domain/planIo'
 import { isValidAoiGeometry } from '@/modules/planner/domain/geometry'
 import { importAoiFile } from '@/modules/planner/io/kml'
-import type { Aoi, DeploymentPlan } from '@/modules/planner/domain/types'
+import type { Aoi } from '@/modules/planner/domain/types'
 import { useAppStore } from '@/shared/store'
 import PlannerTopbar from './PlannerTopbar'
 import PlannerPanelToggle from './PlannerPanelToggle'
@@ -45,6 +45,7 @@ import SummaryStrip from './SummaryStrip'
 import { describeSuggestOutcome, isLayoutStatusCurrent } from './suggestOutcome'
 import { plural } from './pluralize'
 import type { SuggestOutcome } from './suggestOutcome'
+import { SCRATCH_KEY, loadScratch } from './scratch'
 import './planner.css'
 
 // Working camera for the planner: the whole UAE in frame at a zoom you can
@@ -52,33 +53,7 @@ import './planner.css'
 const PLANNER_CENTER: [number, number] = [54.6, 24.3]
 const PLANNER_ZOOM = 6.4
 
-// Debounced localStorage autosave for convenience; plan JSON export/import
-// (planIo.ts, wired below via EXPORT PLAN / IMPORT PLAN) is the source of
-// truth -- see the design doc's data-flow section. A corrupted or
-// version-mismatched autosave is treated the same as "nothing saved yet"
-// (falls back to the default blank plan) rather than surfaced as an error:
-// unlike a user-initiated import, this runs silently on every mount and a
-// stale localStorage entry from an old build must never block the app from
-// loading.
-const AUTOSAVE_KEY = 'planner.autosave.v1'
 const AUTOSAVE_DEBOUNCE_MS = 500
-
-function loadAutosave(): DeploymentPlan | null {
-  try {
-    const raw = localStorage.getItem(AUTOSAVE_KEY)
-    if (!raw) return null
-    const result = parsePlan(raw)
-    if (!result.ok) return null
-    // This plan's ids were minted by a counter from a prior process; adopt
-    // them into this session's counter before anything else mints an id,
-    // or a restored aoi-1/aoi-2 collides with the next freshly drawn AOI.
-    adoptIdsFrom(result.plan)
-    return result.plan
-  } catch (err) {
-    console.error('[planner] could not read autosave', err)
-    return null
-  }
-}
 
 type ImportMessage = { level: 'error' | 'info'; text: string } | null
 
@@ -265,7 +240,7 @@ export function PlannerShell() {
       setImportMessage({ level: 'error', text: result.message })
       return
     }
-    // Same reasoning as loadAutosave: this plan's ids came from some other
+    // Same reasoning as loadScratch: this plan's ids came from some other
     // session's counter (or were hand-edited), so adopt them before this
     // session mints anything new against the imported plan.
     adoptIdsFrom(result.plan)
@@ -395,26 +370,26 @@ export function PlannerShell() {
 
 export default function Planner() {
   const plan = usePlanStore((s) => s.plan)
+  const saved = usePlanStore((s) => s.saved)
 
   useEffect(() => {
-    const loaded = loadAutosave()
-    if (loaded) usePlanStore.getState().setPlan(loaded)
-    // Runs once on mount only, to restore the last autosaved plan before the
-    // user starts editing. Re-running on every `plan` change would fight the
-    // autosave effect below (load, then immediately overwrite the fresh
-    // load right back with itself).
+    const loaded = loadScratch()
+    if (loaded) usePlanStore.getState().loadPlan(loaded.plan, loaded.saved)
+    // Mount-only, to restore the last scratch copy before the user starts
+    // editing. Re-running on every `plan` change would fight the write effect
+    // below (load, then immediately overwrite the fresh load with itself).
   }, [])
 
   useEffect(() => {
     const t = setTimeout(() => {
       try {
-        localStorage.setItem(AUTOSAVE_KEY, serializePlan(plan))
+        localStorage.setItem(SCRATCH_KEY, JSON.stringify({ plan, saved }))
       } catch (err) {
-        console.error('[planner] could not write autosave', err)
+        console.error('[planner] could not write scratch', err)
       }
     }, AUTOSAVE_DEBOUNCE_MS)
     return () => clearTimeout(t)
-  }, [plan])
+  }, [plan, saved])
 
   return (
     <div className="planner-root">
