@@ -41,9 +41,30 @@
 - [x] **Task 27** — basemap LAYERS control (`3a5d75d`)
 - [x] **Task 28** — scrubber keyboard shortcuts (`e615335`)
 
-**ALL 28 TASKS COMPLETE**, 2026-07-27. `npm run verify` passes: 90 test files,
-702 tests, clean lint and typecheck, successful build. Verified end to end in
-real Chromium against the production build with all three real flight logs.
+**ALL 28 TASKS COMPLETE**, 2026-07-27. Verified end to end in real Chromium
+against the production build with all three real flight logs.
+
+### Fixes after the 28 tasks, 2026-07-27
+
+Both came from using the module, not from the tests, which stayed green through
+each of them.
+
+- **`ff1f871`** — a dropped file surfaced `dji-log-parser`'s raw Rust backtrace
+  (`no variants matched at 0x0: Info: bad magic at 0x0: 102`) verbatim in the
+  panel. Errors are now classified into messages a reader can act on, with the
+  backtrace kept on the error's `cause` for the console. Behind it was a second
+  defect against spec section 9: a dropped v13+ log was treated as an error at
+  all. The worker now reads the unencrypted `details` block **before** attempting
+  decryption (`io/djiLogMeta.ts`), so a drop-in with no keychain shows its real
+  aircraft, duration, distance and max altitude under `FRAMES LOCKED` — the same
+  degradation the catalog path already gave — instead of the `DROPPED LOG`
+  placeholder the loader used to guess.
+- **`6171f01`** — a file that would not parse left its optimistic session row
+  behind in the library, and the panel rendered a placeholder summary of invented
+  zeroes beside the error. The row is now removed on failure, which fixes both.
+
+Final state: `npm run verify` passes from `app/` — **91 test files, 717 tests**,
+clean lint and typecheck, successful build.
 
 ### Task 25 verification results, 2026-07-27
 
