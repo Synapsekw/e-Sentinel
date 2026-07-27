@@ -103,4 +103,51 @@ describe('Scrubber', () => {
     fireEvent.click(screen.getByRole('button', { name: '1×' }))
     expect(useTelemetryStore.getState().rate).toBe(4)
   })
+
+  it('toggles playback on space', () => {
+    useTelemetryStore.getState().setPath(path)
+    render(<Scrubber />)
+    fireEvent.keyDown(window, { key: ' ' })
+    expect(useTelemetryStore.getState().playing).toBe(true)
+  })
+
+  it('steps the cursor forward and back with the arrow keys', () => {
+    useTelemetryStore.getState().setPath(path)
+    useTelemetryStore.getState().setCursor(10)
+    render(<Scrubber />)
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    expect(useTelemetryStore.getState().cursorT).toBeCloseTo(11)
+    fireEvent.keyDown(window, { key: 'ArrowLeft' })
+    expect(useTelemetryStore.getState().cursorT).toBeCloseTo(10)
+  })
+
+  it('takes a larger step with shift held', () => {
+    useTelemetryStore.getState().setPath(path)
+    useTelemetryStore.getState().setCursor(30)
+    render(<Scrubber />)
+    fireEvent.keyDown(window, { key: 'ArrowRight', shiftKey: true })
+    expect(useTelemetryStore.getState().cursorT).toBeCloseTo(40)
+  })
+
+  // Space is also "activate" for a focused button, and the topbar's search
+  // box needs its space bar to type. Shortcuts must stand down for both.
+  it('ignores keys while a text field has focus', () => {
+    useTelemetryStore.getState().setPath(path)
+    render(
+      <>
+        <input aria-label="search" />
+        <Scrubber />
+      </>,
+    )
+    const input = screen.getByLabelText('search')
+    input.focus()
+    fireEvent.keyDown(input, { key: ' ' })
+    expect(useTelemetryStore.getState().playing).toBe(false)
+  })
+
+  it('does nothing with no flight loaded', () => {
+    render(<Scrubber />)
+    fireEvent.keyDown(window, { key: ' ' })
+    expect(useTelemetryStore.getState().playing).toBe(false)
+  })
 })
