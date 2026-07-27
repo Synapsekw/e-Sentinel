@@ -35,6 +35,19 @@ export function fmtSpeed(ms: number): string {
 }
 
 // DJI reports yaw signed in -180..180; a compass readout wants 0..359.
+//
+// DELIBERATELY NOT delegating to console/chrome/format.ts's padHeading, which
+// looks like the same function and is not. It rounds AFTER the modulo:
+//
+//   padHeading(359.6) -> '360'      <- not a compass bearing
+//   fmtHeading(359.6) -> '000°'
+//
+// Anything in [359.5, 360) renders as 360. Rounding BEFORE the modulo, as
+// here, folds that back to zero. DJI yaw is fractional, so this range is
+// reachable in real data rather than theoretical.
+//
+// Consolidating the two would mean importing that behaviour. If padHeading is
+// ever fixed, this can delegate to it and append the degree glyph.
 export function fmtHeading(deg: number): string {
   const norm = ((Math.round(deg) % 360) + 360) % 360
   return `${String(norm).padStart(3, '0')}°`
