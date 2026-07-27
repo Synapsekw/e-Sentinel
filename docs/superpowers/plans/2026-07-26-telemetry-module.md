@@ -4488,8 +4488,10 @@ export function usePlayback(): void {
       last.current = now
       if (prev !== null) {
         const deltaS = ((now - prev) / 1000) * rate
-        const { cursorT, setCursor } = useTelemetryStore.getState()
-        setCursor(cursorT + deltaS)
+        // Read state and call the action as separate statements: destructuring
+        // the action off getState() trips unbound-method (conventions section).
+        const cursorT = useTelemetryStore.getState().cursorT
+        useTelemetryStore.getState().setCursor(cursorT + deltaS)
       }
       // setCursor clears `playing` on reaching the end; re-reading it here
       // stops the loop on the same frame instead of one frame late.
