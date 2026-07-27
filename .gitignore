@@ -7,8 +7,15 @@ _frames/
 # React app (Phase 0+) build + local env
 app/dist/
 dist/
+# Broad on purpose: the DJI_API_KEY that tools/bake-flights.mjs reads lives in
+# one of these, and a near-miss filename (local.env, .env.production) is one
+# `git add .` away from publishing a live credential. Match anything env-ish.
 .env
-.env.local
+.env.*
+*.env
+# ...except the committed template, which carries no value. Must stay after
+# the patterns above: in .gitignore, the last matching rule wins.
+!.env.example
 
 # Machine-local npm script-shell pin (absolute Windows Git-Bash path).
 # Needed only on checkouts whose path contains "&" (breaks cmd.exe).

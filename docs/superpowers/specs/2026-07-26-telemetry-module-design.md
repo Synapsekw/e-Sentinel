@@ -274,9 +274,14 @@ app/src/modules/telemetry/
     FramePanel.tsx  Scrubber.tsx  telemetry.css
 ```
 
-`vite.config.ts` gains one `manualChunks` line pinning `dji-log-parser-js` to its own
-chunk, so 703 KB never reaches the entry bundle. `App.tsx` swaps `ModulePlaceholder` for
-a `lazy()` `Telemetry`, matching how `/console` and `/planner` are loaded.
+`App.tsx` swaps `ModulePlaceholder` for a `lazy()` `Telemetry`, matching how `/console`
+and `/planner` are loaded.
+
+`vite.config.ts` needs **no** `manualChunks` entry for the parser, contrary to an earlier
+draft of this section. `djiLog.worker.ts` is the only importer of `dji-log-parser-js`, and
+Vite compiles a `?worker` import as its own separate bundle — so the 703 KB never enters
+the main module graph in the first place. A `manualChunks` rule would match nothing. The
+implementation plan asserts this against real build output rather than assuming it.
 
 ## 8. UI surface
 
