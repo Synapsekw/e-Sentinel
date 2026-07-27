@@ -194,6 +194,14 @@ describe('plan mutations', () => {
 
       expect(minted).not.toBe('aoi-2')
     })
+
+    it("adopts the plan's own id, not just aoi and dock ids", () => {
+      resetIdsForTest()
+      // A plan restored from the library: its own id is the highest number in
+      // it, and it has no aois or docks at all to carry that number.
+      adoptIdsFrom({ id: 'plan-7', aois: [], docks: [] })
+      expect(nextId('plan')).toBe('plan-8')
+    })
   })
 })
 

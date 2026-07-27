@@ -31,8 +31,13 @@ function highestSuffix(id: string): number {
   return Number.isSafeInteger(n) ? n : -1
 }
 
-export function adoptIdsFrom(plan: Pick<DeploymentPlan, 'aois' | 'docks'>): void {
-  let maxSeen = -1
+export function adoptIdsFrom(plan: Pick<DeploymentPlan, 'aois' | 'docks' | 'id'>): void {
+  // The plan's OWN id counts too, and is required here rather than scanned
+  // optionally: createPlan mints it with nextId('plan'), so a library plan
+  // carrying `plan-7` must move the counter exactly as an `aoi-7` inside it
+  // would. A caller that forgot to pass it could mint an id that is already
+  // a key in the library and silently overwrite an unrelated entry.
+  let maxSeen = highestSuffix(plan.id)
   for (const aoi of plan.aois) maxSeen = Math.max(maxSeen, highestSuffix(aoi.id))
   for (const dock of plan.docks) maxSeen = Math.max(maxSeen, highestSuffix(dock.id))
   seq = Math.max(seq, maxSeen)
