@@ -10,6 +10,26 @@ cd app && npm install && npm run dev
 
 Then open `http://localhost:5173/` for the module landing page, or go straight to `http://localhost:5173/console`. Note the dev server serves from `/`, while the production build (and `npm run preview`, port 4173) serves under `/e-Sentinel/` to match the GitHub Pages project path.
 
+## Flight logs
+
+`/telemetry` reads real DJI TXT flight records from `app/public/flights/`. DJI
+encrypts records from log version 13 onward, and DJI's keychain endpoint sends
+no CORS headers, so the keys are fetched offline rather than by the browser:
+
+```bash
+node tools/bake-flights.mjs            # needs DJI_API_KEY in .env
+node tools/bake-flights.mjs --dry-run  # catalog only, no network, no key
+```
+
+This writes `index.json` and one `<id>.keychain.json` per log. The browser then
+decodes them fully offline in a Web Worker.
+
+The logs, their keychains and the catalog are **gitignored**. This repository is
+public and the Pages workflow publishes `app/public/`, so real flight
+coordinates, aircraft serials and frame decryption keys stay local. A fresh
+clone loads `/telemetry` with an empty library and a working drop-in path; see
+`app/public/flights/README.md`.
+
 Internet enables the map raster layers (dark, light, satellite, terrain); without it the console falls back to an embedded vector map automatically.
 
 ## Structure
@@ -17,6 +37,7 @@ Internet enables the map raster layers (dark, light, satellite, terrain); withou
 The app is a React + TypeScript SPA under `app/`:
 
 - `app/src/modules/landing/` module landing page (Simulation, Deployment Planner, Telemetry, Compliance)
+- `app/src/modules/telemetry/` flight log review: decodes real DJI TXT flight records in a Web Worker, replays the path on the map with a scrubber and live telemetry readouts
 - `app/src/modules/console/domain/` framework-free simulation core (router, engine, docks, sites, geo, mission types, video manifest) — pure TypeScript, unit-tested
 - `app/src/modules/console/map/` MapLibre style, layers, live feature builders, basemap and offline handling
 - `app/src/modules/console/globe/` orbital globe entry scene
