@@ -1164,7 +1164,10 @@ const validFlight = {
   id: 'a', file: 'a.txt', version: 14, encrypted: true, hasKeychain: true,
   aircraftName: 'Matrice 400', aircraftSn: 'SN1',
   startTime: '2026-02-17T06:27:04.690Z',
-  durationS: 2722.9, distanceKm: 22.07, maxHeightM: 50, maxSpeedMs: 17.04,
+  // maxHeightM is 104, NOT 50: a sample height of 49.9 also renders '50 m',
+  // and getByText then matches two elements. The point of this test is that the
+  // summary and the readouts show different numbers from different sources.
+  durationS: 2722.9, distanceKm: 22.07, maxHeightM: 104, maxSpeedMs: 17.04,
   recordCount: 27229, home: { lon: 48.004, lat: 28.782 },
 }
 
@@ -3278,7 +3281,10 @@ const meta: FlightMeta = {
   id: 'a', file: 'a.txt', version: 14, encrypted: true, hasKeychain: true,
   aircraftName: 'Matrice 400', aircraftSn: '1581F8DBW258U00A',
   startTime: '2026-02-17T06:27:04.690Z',
-  durationS: 2722.9, distanceKm: 22.07, maxHeightM: 50, maxSpeedMs: 17.04,
+  // maxHeightM is 104, NOT 50: a sample height of 49.9 also renders '50 m',
+  // and getByText then matches two elements. The point of this test is that the
+  // summary and the readouts show different numbers from different sources.
+  durationS: 2722.9, distanceKm: 22.07, maxHeightM: 104, maxSpeedMs: 17.04,
   recordCount: 27229, home: { lon: 48.004, lat: 28.782 },
 }
 
@@ -3406,11 +3412,13 @@ export default function FramePanel() {
   const sessionFlights = useTelemetryStore((s) => s.sessionFlights)
 
   const selectedMeta =
-    path?.meta ??
-    [...sessionFlights, ...catalog].find((f) => f.id === selectedId) ??
-    null
+    path?.meta ?? [...sessionFlights, ...catalog].find((f) => f.id === selectedId) ?? null
 
-  if (!selectedMeta) {
+  // Nothing to show at all: no selection, no in-flight decode, no error.
+  // Loading/error can legitimately fire before a matching FlightMeta is
+  // resolvable (e.g. a decode kicked off for an id not yet in the catalog),
+  // so those must be able to render even when selectedMeta is still null.
+  if (!selectedId && !path && !loading && !error) {
     return (
       <aside className="tm-panel">
         <div className="tm-empty lbl">SELECT A FLIGHT</div>
@@ -3422,23 +3430,22 @@ export default function FramePanel() {
 
   return (
     <aside className="tm-panel">
-      <Summary meta={selectedMeta} />
+      {selectedMeta && <Summary meta={selectedMeta} />}
 
       {loading && <div className="lbl">DECODING FLIGHT…</div>}
       {error && <div className="tm-error lbl">{error}</div>}
 
-      {!loading && !error && !path && (
+      {!loading && !error && !path && selectedMeta && (
         <div className="tm-locked">
           <div className="lbl">FRAMES LOCKED</div>
           <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-            No keychain baked for this log, so the recorded track cannot be
-            decrypted. Everything above reads from the log's unencrypted
-            details block.
+            No keychain baked for this log, so the recorded track cannot be decrypted. Everything
+            above reads from the log&apos;s unencrypted details block.
           </div>
         </div>
       )}
 
-      {sample && (
+      {path && sample && (
         <div className="tm-readouts">
           <Readout label="ALT AGL" value={fmtMeters(sample.height)} />
           <Readout label="ALT ASL" value={fmtMeters(sample.alt)} />
@@ -3450,10 +3457,7 @@ export default function FramePanel() {
           <Readout label="VOLTAGE" value={`${sample.voltage.toFixed(1)} V`} />
           <Readout label="SATS" value={String(Math.round(sample.sats))} />
           <Readout label="MODE" value={sample.mode} />
-          <Readout
-            label="FROM HOME"
-            value={fmtMeters(distanceFromHomeM(sample, selectedMeta.home))}
-          />
+          <Readout label="FROM HOME" value={fmtMeters(distanceFromHomeM(sample, path.meta.home))} />
         </div>
       )}
     </aside>
@@ -4757,7 +4761,10 @@ const rawCatalog = {
       id: 'm400-2026-02-17-0627', file: 'm400-2026-02-17-0627.txt', version: 14,
       encrypted: true, hasKeychain: true, aircraftName: 'Matrice 400',
       aircraftSn: '1581F8DBW258U00A', startTime: '2026-02-17T06:27:04.690Z',
-      durationS: 2722.9, distanceKm: 22.07, maxHeightM: 50, maxSpeedMs: 17.04,
+      // maxHeightM is 104, NOT 50: a sample height of 49.9 also renders '50 m',
+  // and getByText then matches two elements. The point of this test is that the
+  // summary and the readouts show different numbers from different sources.
+  durationS: 2722.9, distanceKm: 22.07, maxHeightM: 104, maxSpeedMs: 17.04,
       recordCount: 27229, home: { lon: 48.004, lat: 28.782 },
     },
     {
