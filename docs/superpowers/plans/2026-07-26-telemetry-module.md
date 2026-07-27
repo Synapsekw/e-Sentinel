@@ -48,6 +48,7 @@ Read these before Task 1; they are not obvious from the file tree.
 - **Map hooks must guard with `isMapUsable`** from `@/modules/console/map/mapLifecycle` before touching sources. Route unmount removes the map parent-first, so an unguarded `getSource` throws.
 - **No em dashes in user-facing copy** (house convention, see `modules/landing/modules.ts`).
 - **Vocabulary:** *flight*, *flight path*, *frame*. Never *track* — that word means detected ground targets in `modules/console`.
+- **Never select a store ACTION through a zustand selector.** `const setFoo = useTelemetryStore((s) => s.setFoo)` trips `@typescript-eslint/unbound-method`, which is an error here (`--max-warnings 0`). Call actions in place: `useTelemetryStore.getState().setFoo(x)`. Select only STATE through the hook, since state is what must trigger a re-render — actions are stable and do not. `planner/ui/Planner.tsx` uses the same split. This bit Tasks 12, 14 and 16 before it was written down; the component code blocks below have been corrected, but check any you add.
 - **Pre-commit hook runs `eslint . --max-warnings 0` and `prettier --check .` from `app/`.** Files under the repo-root `tools/` are outside `app/` and therefore outside both. Keep that file plain and simple.
 
 ---
@@ -3200,9 +3201,9 @@ export default function Scrubber() {
   const cursorT = useTelemetryStore((s) => s.cursorT)
   const playing = useTelemetryStore((s) => s.playing)
   const rate = useTelemetryStore((s) => s.rate)
-  const setCursor = useTelemetryStore((s) => s.setCursor)
-  const togglePlay = useTelemetryStore((s) => s.togglePlay)
-  const cycleRate = useTelemetryStore((s) => s.cycleRate)
+  // Actions are called through getState(), never selected: selecting one
+  // trips @typescript-eslint/unbound-method. Only state is selected below.
+  const store = useTelemetryStore
 
   const total = pathDuration(path)
   const disabled = total === 0
@@ -3211,13 +3212,13 @@ export default function Scrubber() {
     <div className="tm-scrubber">
       <button
         className="tm-btn"
-        onClick={togglePlay}
+        onClick={() => store.getState().togglePlay()}
         disabled={disabled}
         aria-label={playing ? 'Pause' : 'Play'}
       >
         {playing ? '❚❚' : '▶'}
       </button>
-      <button className="tm-btn" onClick={cycleRate} disabled={disabled}>
+      <button className="tm-btn" onClick={() => store.getState().cycleRate()} disabled={disabled}>
         {rate}×
       </button>
       <input
@@ -3229,7 +3230,7 @@ export default function Scrubber() {
         value={cursorT}
         disabled={disabled}
         aria-label="Flight position"
-        onChange={(e) => setCursor(Number(e.target.value))}
+        onChange={(e) => store.getState().setCursor(Number(e.target.value))}
       />
       <div className="tm-clock lbl">
         {fmtFlightClock(cursorT)} / {fmtMMSS(total)}
@@ -3597,8 +3598,8 @@ export default function LibraryFilters() {
   const sessionFlights = useTelemetryStore((s) => s.sessionFlights)
   const filters = useTelemetryStore((s) => s.filters)
   const sort = useTelemetryStore((s) => s.sort)
-  const setFilters = useTelemetryStore((s) => s.setFilters)
-  const setSort = useTelemetryStore((s) => s.setSort)
+  // Actions via getState(), not selectors -- see the conventions section.
+  const store = useTelemetryStore
 
   const ids = useId()
   const aircraft = aircraftOptions([...sessionFlights, ...catalog])
@@ -3612,7 +3613,7 @@ export default function LibraryFilters() {
           type="search"
           placeholder="aircraft, serial, file"
           value={filters.text}
-          onChange={(e) => setFilters({ ...filters, text: e.target.value })}
+          onChange={(e) => store.getState().setFilters({ ...filters, text: e.target.value })}
         />
       </div>
 
@@ -3621,7 +3622,7 @@ export default function LibraryFilters() {
         <select
           id={`${ids}-aircraft`}
           value={filters.aircraftSn ?? ''}
-          onChange={(e) => setFilters({ ...filters, aircraftSn: e.target.value || null })}
+          onChange={(e) => store.getState().setFilters({ ...filters, aircraftSn: e.target.value || null })}
         >
           <option value="">ALL AIRCRAFT</option>
           {aircraft.map((a) => (
@@ -3639,7 +3640,7 @@ export default function LibraryFilters() {
             id={`${ids}-from`}
             type="date"
             value={filters.from ?? ''}
-            onChange={(e) => setFilters({ ...filters, from: e.target.value || null })}
+            onChange={(e) => store.getState().setFilters({ ...filters, from: e.target.value || null })}
           />
         </div>
         <div style={{ flex: 1 }}>
@@ -3648,7 +3649,7 @@ export default function LibraryFilters() {
             id={`${ids}-to`}
             type="date"
             value={filters.to ?? ''}
-            onChange={(e) => setFilters({ ...filters, to: e.target.value || null })}
+            onChange={(e) => store.getState().setFilters({ ...filters, to: e.target.value || null })}
           />
         </div>
       </div>
@@ -3664,7 +3665,7 @@ export default function LibraryFilters() {
             min={0}
             value={filters.minDurationS === 0 ? '' : Math.round(filters.minDurationS / 60)}
             onChange={(e) =>
-              setFilters({ ...filters, minDurationS: Math.max(0, Number(e.target.value) || 0) * 60 })
+              store.getState().setFilters({ ...filters, minDurationS: Math.max(0, Number(e.target.value) || 0) * 60 })
             }
           />
         </div>
@@ -3673,7 +3674,7 @@ export default function LibraryFilters() {
           <select
             id={`${ids}-sort`}
             value={sort}
-            onChange={(e) => setSort(e.target.value as CatalogSort)}
+            onChange={(e) => store.getState().setSort(e.target.value as CatalogSort)}
           >
             {SORTS.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>
@@ -3845,7 +3846,7 @@ export default function FlightLibrary({ onOpen }: FlightLibraryProps) {
   const filters = useTelemetryStore((s) => s.filters)
   const sort = useTelemetryStore((s) => s.sort)
   const selectedId = useTelemetryStore((s) => s.selectedId)
-  const clearSessionFlights = useTelemetryStore((s) => s.clearSessionFlights)
+  // Action via getState(), not a selector -- see the conventions section.
 
   const visible = useMemo(
     () => selectVisibleFlights({ catalog, sessionFlights, filters, sort }),
@@ -3858,7 +3859,7 @@ export default function FlightLibrary({ onOpen }: FlightLibraryProps) {
     <aside className="tm-library">
       <LibraryFilters />
       {sessionFlights.length > 0 && (
-        <button className="tm-btn" style={{ margin: '0 12px 8px' }} onClick={clearSessionFlights}>
+        <button className="tm-btn" style={{ margin: '0 12px 8px' }} onClick={() => useTelemetryStore.getState().clearSessionFlights()}>
           CLEAR {sessionFlights.length} DROPPED
         </button>
       )}
@@ -4651,19 +4652,19 @@ function TelemetryShell() {
 
 export default function Telemetry() {
   const [style] = useState(buildTelemetryStyle)
-  const setCatalog = useTelemetryStore((s) => s.setCatalog)
+  // Action via getState(), not a selector -- see the conventions section.
   const { openFlight, openDroppedFile } = useFlightLoader()
   usePlayback()
 
   useEffect(() => {
     let alive = true
     void fetchCatalog(import.meta.env.BASE_URL).then((catalog) => {
-      if (alive) setCatalog(catalog.flights)
+      if (alive) useTelemetryStore.getState().setCatalog(catalog.flights)
     })
     return () => {
       alive = false
     }
-  }, [setCatalog])
+  }, [])
 
   return (
     <main className="tm-root">
