@@ -17,6 +17,24 @@ dist/
 # the patterns above: in .gitignore, the last matching rule wins.
 !.env.example
 
+# Real DJI flight logs, the AES keychains that decrypt them, and the catalog
+# derived from both. Staged and generated LOCALLY by tools/bake-flights.mjs,
+# deliberately never committed.
+#
+# This repository is public, and .github/workflows/deploy.yml copies
+# app/dist/. (which includes everything under app/public/) to GitHub Pages.
+# Committing these would publish real survey flight coordinates, timestamps,
+# aircraft serial numbers and the keys to decrypt every frame, to a public
+# website and to permanent git history. The rest of SENTINEL is synthetic by
+# design; this data is not.
+#
+# A fresh clone therefore has no bundled flights. That is handled, not broken:
+# io/catalogIo.ts treats a missing index.json as an empty catalog, so the
+# module loads with an empty library and a working drop-in path. Run
+# `node tools/bake-flights.mjs` locally to populate it.
+app/public/flights/*
+!app/public/flights/README.md
+
 # Machine-local npm script-shell pin (absolute Windows Git-Bash path).
 # Needed only on checkouts whose path contains "&" (breaks cmd.exe).
 # Never commit: the absolute path would break Linux CI.
