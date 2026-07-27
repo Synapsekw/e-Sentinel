@@ -77,11 +77,16 @@ export function useFlightLoader() {
         const keychains = meta.encrypted
           ? await fetchKeychains(`${BASE}flights/${meta.id}.keychain.json`)
           : null
-        const path = await decodeFlight(bytes, keychains, meta)
-        store.getState().setPath(path)
-        void putCachedPath(path)
+        const result = await decodeFlight(bytes, keychains, meta)
+        if (!result.path) {
+          // Parsed, but the frames are locked. Keep the metadata on screen.
+          store.getState().setLoading(false)
+          return
+        }
+        store.getState().setPath(result.path)
+        void putCachedPath(result.path)
       } catch (err) {
-        store.getState().setError(err instanceof Error ? err.message : 'could not open flight')
+        store.getState().setError(err instanceof Error ? err.message : 'Could not open flight.')
       }
     },
     [store],
@@ -95,15 +100,28 @@ export function useFlightLoader() {
       store.getState().setLoading(true)
       try {
         const bytes = new Uint8Array(await file.arrayBuffer())
-        // A dropped log carries no keychain. Pre-v13 logs decode anyway;
-        // v13+ ones fail here and surface as an error, which is the honest
-        // outcome given DJI's endpoint cannot be reached from the browser.
-        const path = await decodeFlight(bytes, null, meta)
-        store.getState().setPath(path)
-        void putCachedPath(path)
+        // A dropped log carries no keychain, so a v13+ one cannot have its
+        // frames decrypted here -- DJI's endpoint has no CORS. But its details
+        // block is NOT encrypted, so the decode still returns real metadata and
+        // the panel shows the summary over FRAMES LOCKED. That is spec section
+        // 9's contract, and it is why this is not an error path.
+        const result = await decodeFlight(bytes, null, meta)
+        // Replace the guessed placeholder with what the log says about itself.
+        // The id stays the loader's own `dropped:<filename>` rather than
+        // anything from the log: it is how the session list dedupes, so
+        // letting the decoder choose it would risk a duplicate row.
+        const resolved = { ...result.meta, id: meta.id }
+        store.getState().addSessionFlight(resolved)
+        store.getState().select(resolved.id)
+        if (!result.path) {
+          store.getState().setLoading(false)
+          return
+        }
+        store.getState().setPath(result.path)
+        void putCachedPath(result.path)
       } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err)
-        store.getState().setError(`Could not read ${file.name}: ${reason}`)
+        const reason = err instanceof Error ? err.message : 'Could not read this file.'
+        store.getState().setError(`${file.name}: ${reason}`)
       }
     },
     [store],

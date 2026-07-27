@@ -33,7 +33,7 @@ beforeEach(() => {
   vi.restoreAllMocks()
   vi.spyOn(cache, 'getCachedPath').mockResolvedValue(null)
   vi.spyOn(cache, 'putCachedPath').mockResolvedValue()
-  vi.spyOn(parse, 'decodeFlight').mockResolvedValue(path)
+  vi.spyOn(parse, 'decodeFlight').mockResolvedValue({ meta, path, locked: false })
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({
