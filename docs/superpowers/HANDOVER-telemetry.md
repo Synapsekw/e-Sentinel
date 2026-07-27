@@ -19,10 +19,15 @@ The **Telemetry module (module 03)** is built and complete. I need you to pick u
 
 ## Current state
 
-- Branch **`feat/telemetry-module`**, 50 commits ahead of `master`, working tree clean.
-- **Nothing is pushed.** The GitHub remote had issues, so this is local-only by decision.
-- `npm run verify` passes from `app/`: **91 test files, 717 tests**, clean lint and typecheck,
-  successful build. 208 of those tests are the telemetry module across 22 files.
+- **Merged to `master` on 2026-07-27** (`1500485`). The branch `feat/telemetry-module` is kept
+  as the anchor for its 52 commits; master carries them plus 13 commits of planner
+  plan-library work that a concurrent session landed in parallel.
+- The merge had one conflict, both sides having independently added
+  `docs/superpowers/plans/2026-07-27-planner-plan-library.md`. The two copies were the same
+  blob; master's had two later amendments and won.
+- `npm run verify` passes from `app/` on merged master: **96 test files, 780 tests**, clean
+  lint and typecheck, successful build. 208 of those tests are the telemetry module across
+  22 files; before the merge the branch alone was 91 files and 717 tests.
 - The module is live at `/telemetry` and the landing card is ONLINE.
 - Verified end to end in a real browser against the production build.
 
@@ -92,10 +97,17 @@ has never heard of DJI. Decoded paths cache in IndexedDB.
 
 **Repo hygiene:**
 
-- Commit `04be1c9` ("plan: implementation plan for the planner plan library") is a **planner**
-  document that another session committed onto this telemetry branch. Worth relocating before
-  this merges.
-- The branch is unmerged and unpushed. Merging to `master` is untouched by me — the user's call.
+- ~~Commit `04be1c9` is a planner document another session committed onto this branch.~~
+  **Resolved in the merge.** It turned out to be the same blob master already had as
+  `d5de2a3`; master's amended copy won the conflict, so no history rewrite was needed.
+- ~~The branch is unmerged.~~ **Merged 2026-07-27.**
+- **Still unpushed.** `origin/master` is 70 commits behind local `master`. The remote is
+  reachable again (`git fetch origin` succeeds), so the original blocker looks gone, but
+  pushing is the user's call — this repo is public, so read constraint 2 above first.
+- The redundant `local.env` is **still on disk**; deleting it was blocked by a permission
+  classifier rather than declined on the merits. `tools/bake-flights.mjs` reads repo-root
+  `.env` only (`tools/bake-flights.mjs:27`), and nothing reads `local.env`, so `rm local.env`
+  is safe whenever someone wants it gone.
 
 ## How to run and verify
 
