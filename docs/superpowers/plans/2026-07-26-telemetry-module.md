@@ -3493,7 +3493,7 @@ git commit -m "feat(telemetry): read telemetry at the cursor"
 ```tsx
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import LibraryFilters from './LibraryFilters'
 import { useTelemetryStore } from '../store/telemetryStore'
@@ -3520,9 +3520,13 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('LibraryFilters', () => {
+  // Scoped with within(): the component also renders a SORT select, so an
+  // unscoped getAllByRole('option') collects all 7 options across both
+  // selects, not the 3 belonging to the aircraft one.
   it('lists every distinct aircraft plus an all option', () => {
     render(<LibraryFilters />)
-    const options = screen.getAllByRole('option').map((o) => o.textContent)
+    const select = screen.getByLabelText(/aircraft/i)
+    const options = within(select).getAllByRole('option').map((o) => o.textContent)
     expect(options[0]).toMatch(/all aircraft/i)
     expect(options).toHaveLength(3)
   })
