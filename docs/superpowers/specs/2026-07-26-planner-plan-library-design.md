@@ -77,10 +77,29 @@ One `localStorage` key per plan:
 planner.library.v1.<planId>   →  serializePlan(plan)
 ```
 
-Listing is a prefix scan over `Object.keys(localStorage)`. **There is deliberately no
-index key.** An index listing plan ids alongside the entries themselves is two sources of
-truth that drift the moment a write half-fails, and the prefix scan makes the entries
-their own index.
+Listing is a prefix scan over the standard `Storage` API — `storage.key(i)` for
+`i < storage.length` — **not** `Object.keys(localStorage)`. The index form is what the
+injected-`Storage` test fake can implement, and it is the only form guaranteed by the spec;
+`Object.keys` happens to work on the real `localStorage` only because of its exotic
+named-property behaviour. Keys are collected before any read or delete, so removing an
+entry cannot shift the indices out from under the loop.
+
+**There is deliberately no index key.** An index listing plan ids alongside the entries
+themselves is two sources of truth that drift the moment a write half-fails, and the prefix
+scan makes the entries their own index.
+
+### Prerequisite: `adoptIdsFrom` must adopt the plan's own id
+
+`domain/plan.ts`'s `adoptIdsFrom` takes `Pick<DeploymentPlan, 'aois' | 'docks'>` and scans
+only AOI and dock ids. Plan ids come off the same `nextId` counter (`createPlan` calls
+`nextId('plan')`), so loading a library plan with id `plan-7` leaves the counter untouched,
+and the next `SAVE AS NEW` can mint `plan-3` — overwriting a different library entry.
+
+This is a latent bug today (its own comment already states the rule as "the highest N used
+by ANY id already in the plan, regardless of its prefix"); the library is what makes it
+reachable. Task 1 of the implementation plan widens the parameter to
+`Pick<DeploymentPlan, 'aois' | 'docks'> & { id?: string }` and folds the plan id into the
+scan. Both existing callers pass a whole `DeploymentPlan`, so nothing else changes.
 
 Per-plan keys rather than one array under a single key, because:
 
