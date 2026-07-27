@@ -765,3 +765,127 @@ body.rpanel-collapsed .planner-summary {
     display: none;
   }
 }
+
+/* ---------- PLANS menu (plan library) ---------- */
+.pl-plans-menu {
+  min-width: 320px;
+}
+/* The list scrolls while the fixed save/import/export items stay put, so a
+   library of thirty plans cannot push EXPORT LIBRARY off the bottom of the
+   screen. 65vh matches the console's .docks-menu, which solves the same
+   problem for the dock network. */
+.pl-menu-scroll {
+  max-height: 65vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pl-menu-sep {
+  height: 1px;
+  background: var(--line);
+  margin: 6px 2px;
+}
+.pl-menu-head {
+  padding: 8px 10px 6px;
+}
+.pl-menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pl-plan-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+}
+.pl-plan-row:hover {
+  background: var(--panel2);
+}
+.pl-plan-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 9px 10px;
+  color: var(--txt);
+}
+.pl-plan-name {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: #fff;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pl-plan-meta {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+}
+/* The row actions stay hidden until the row is hovered, so a list of plans
+   reads as a list of plans rather than a wall of icons. :focus-within keeps
+   them reachable by keyboard regardless. */
+.pl-icon-btn {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 13px;
+  line-height: 1;
+  padding: 6px 5px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.pl-plan-row:hover .pl-icon-btn,
+.pl-plan-row:focus-within .pl-icon-btn {
+  opacity: 1;
+}
+.pl-icon-btn:hover {
+  color: #fff;
+}
+.pl-icon-btn[aria-label^='Delete']:hover {
+  color: var(--red);
+}
+
+/* Inline confirmation, replacing the row it applies to. Amber, not red: a
+   confirm is a question, and red stays reserved for brand and alerts. */
+.pl-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+  background: rgba(251, 191, 36, 0.08);
+}
+.pl-confirm .lbl {
+  flex: 1;
+  color: var(--amber);
+}
+.pl-confirm button {
+  flex: none;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--txt);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 5px 8px;
+}
+.pl-confirm button:hover {
+  border-color: var(--amber);
+  color: #fff;
+}
