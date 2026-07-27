@@ -22,7 +22,7 @@ In scope:
 
 1. An offline bake tool that fetches DJI keychains and builds a flight catalog.
 2. A Web Worker that decodes DJI TXT logs to a normalized `FlightPath`.
-3. A flight library with filters, backed by a committed catalog plus session drop-ins.
+3. A flight library with filters, backed by a locally baked catalog plus session drop-ins.
 4. A map + scrubber + frame-panel review surface.
 5. IndexedDB caching of decoded flights.
 6. Module 03 landing card to ONLINE, with an honest blurb.
@@ -190,7 +190,7 @@ tool ever runs — `m400-2026-02-17-0927.txt`, not
 trouble. The tool does not rename anything; it reads whatever `.txt` files it finds and
 uses each filename stem as the flight id.
 
-### 5.2 Asset location
+### 5.2 Asset location, and why the logs are not committed
 
 `app/public/flights/`, which Vite copies into `dist/` automatically.
 
@@ -198,7 +198,32 @@ This deliberately differs from `videos/`, which sits at the repo root behind a d
 plugin and an explicit deploy-workflow step. That arrangement exists because 241 MB would
 be duplicated into every build. The three logs total 19 MB; paying that copy on each build
 buys us no dev-server middleware, no range-request handling, and no deploy-workflow
-change. Revisit only if the catalog grows past roughly 100 MB.
+change.
+
+**The logs, their keychains and the generated `index.json` are gitignored, not committed.**
+Decided 2026-07-27, reversing this section's original instruction, after checking what
+committing them would actually do:
+
+- `github.com/Synapsekw/e-Sentinel` is a **public** repository.
+- `.github/workflows/deploy.yml` copies `app/dist/.` — which includes everything under
+  `app/public/` — to GitHub Pages.
+
+So committing them would publish real survey flight coordinates, timestamps, aircraft
+serial numbers and the AES keys to decrypt every frame, to a public website and to
+permanent git history. These are real customer flights over what appears to be pipeline
+or infrastructure survey work; every other operational figure in SENTINEL is synthetic
+(README: "all operational data is synthetic except live tower site locations"). Real
+flight data does not get the same treatment as invented dock positions.
+
+The consequence is that **a fresh clone has an empty flight library**, and so does the
+deployed Pages build. That is a supported state, not a broken one: section 9 already
+requires a missing or malformed `index.json` to degrade to an empty library with a working
+drop-in path, so no code changes to accommodate it. The presenter's own machine keeps the
+full three-flight library by running the bake tool locally. A committed
+`app/public/flights/README.md` explains how.
+
+This costs nothing architecturally. The bake tool, the catalog format, the worker and the
+whole UI are unchanged; only the question of which machine holds the data differs.
 
 ### 5.3 Online
 
