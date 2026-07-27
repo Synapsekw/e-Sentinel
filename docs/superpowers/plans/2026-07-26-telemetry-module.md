@@ -22,8 +22,56 @@
 - [x] **Task 8** — catalog loading and validation (`7832078`)
 - [x] **Task 9** — frame normalization (`a590305`, corrupt-clock fix in `14b1960`)
 - [x] **Task 10** — decode worker and client (`e97b2896`)
-- [x] **Task 11** — decoded path cache
-- [ ] Task 12 onward — store, map, UI
+- [x] **Task 11** — decoded path cache (`29b45f7`)
+- [x] **Task 12** — telemetry store (`61c15a9`)
+- [x] **Task 13** — map style + feature builders (`b8b878e`)
+- [x] **Task 14** — path/cursor bound to the map (`88c9834`)
+- [x] **Task 15** — module stylesheet (`9bd77b7`)
+- [x] **Task 16** — scrubber (`491858f`)
+- [x] **Task 17** — frame panel (`cef4a09`)
+- [x] **Task 18** — library filters (`55f87d9`)
+- [x] **Task 19** — flight library list
+- [x] **Task 20** — topbar (`cf91211`)
+- [x] **Task 21** — flight loading
+- [x] **Task 22** — playback loop (`5d3e637`)
+- [x] **Task 23** — route root, module mounted at /telemetry (`6d5c886`)
+- [x] **Task 24** — integration test (`972f3cb`)
+- [x] **Task 25** — bundle + browser verification (see below)
+- [ ] Task 26 — go-live (run LAST, after 27 and 28)
+- [ ] Task 27 — basemap LAYERS control
+- [ ] Task 28 — scrubber keyboard shortcuts
+
+### Task 25 verification results, 2026-07-27
+
+Run against the production build via `npm run preview`, in real Chromium with
+software WebGL (`--use-angle=swiftshader`), since the Chrome extension was not
+connected. All checks passed:
+
+| Check | Result |
+|---|---|
+| Bundle: WASM isolated | `djiLog.worker-*.js` 686 KB, separate chunk; `Telemetry-*.js` 18 KB; entry unchanged |
+| Library populated | 3 flights in 3 aircraft groups (`DJI AIRCRAFT · 57P00D`, `MATRICE 400 · 59400A`, `MATRICE 400 · 58U00A`) |
+| Flight opens and decodes | no FRAMES LOCKED, no error panel, readouts populated |
+| Scrubbing | `T+00:00` to `T+08:25` of `16:50`, readouts follow |
+| Playback at 16x | 3 s wall clock advanced the flight 47 s; pause freezes it |
+| IndexedDB cache | reopening a flight refetched the `.txt` 0 times |
+| Worker chunk loaded | yes; `.txt` and `.keychain.json` both fetched |
+| **WASM main-thread violations** | **0** — the worker approach is validated in a real browser |
+| Map teardown on navigate away | 0 `getSource` errors; the `isMapUsable` guard holds |
+| Console errors | none |
+
+**One bug found and fixed** (`98a4807`): the gimbal readout rendered through
+`fmtHeading`, which wraps into 0..359. A survey camera looking straight down
+sits at -90 and displayed as `270°`. Every unit test passed, because the
+formatter was doing exactly what it was asked — it was being asked the wrong
+question. Only looking at the screen caught it.
+
+**One open question for the product owner**, not fixed: the `ALT ASL` readout
+shows 101 m where `ALT AGL` shows 50 m, and reads 0 at takeoff. DJI documents
+`osd.altitude` as "above sea level", but the log's own `takeOffAltitude` is
+~431 m, so this value is clearly relative to takeoff rather than to sea level.
+The label is probably wrong. Not changed, because picking the right label
+(`ALT (BARO)`? `ALT REL`?) is a domain call, not a code call.
 
 The whole `io/` layer is done. Everything above this line is pure logic plus the
 build tool; nothing renders yet.
