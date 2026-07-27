@@ -115,3 +115,83 @@ export function savePlan(storage: Storage, plan: DeploymentPlan): SaveResult {
 export function deletePlan(storage: Storage, id: string): void {
   storage.removeItem(LIBRARY_PREFIX + id)
 }
+
+// The envelope's own version, deliberately NOT PLAN_SCHEMA_VERSION: the shape
+// of the wrapper and the shape of a plan evolve independently, and conflating
+// them would force a library-format bump every time a plan field changes. Each
+// plan inside still carries and is validated against its own schemaVersion.
+export const LIBRARY_VERSION = 1
+
+export type ImportResult =
+  { ok: true; imported: number; skipped: number } | { ok: false; message: string }
+
+export interface LibraryExport {
+  json: string
+  // Entries present in the library but unreadable, so absent from `json`. The
+  // caller MUST surface this: an export is what a user relies on before
+  // clearing their browser, and a backup that is quietly short is worse than
+  // one that fails loudly.
+  skipped: number
+}
+
+// `now` is a parameter rather than a `new Date()` read, matching domain/plan.ts's
+// setNowForTest philosophy: the export payload stays byte-assertable in tests.
+export function exportLibrary(storage: Storage, now: string): LibraryExport {
+  const listing = listPlans(storage)
+  return {
+    json: JSON.stringify(
+      {
+        libraryVersion: LIBRARY_VERSION,
+        exportedAt: now,
+        plans: listing.entries,
+      },
+      null,
+      2,
+    ),
+    skipped: listing.skipped,
+  }
+}
+
+export function importLibrary(storage: Storage, json: string): ImportResult {
+  let raw: unknown
+  try {
+    raw = JSON.parse(json)
+  } catch {
+    return { ok: false, message: 'FILE IS NOT VALID JSON' }
+  }
+  if (typeof raw !== 'object' || raw === null) {
+    return { ok: false, message: 'FILE IS NOT A PLAN LIBRARY' }
+  }
+  const envelope = raw as { libraryVersion?: unknown; plans?: unknown }
+  if (typeof envelope.libraryVersion !== 'number' || !Array.isArray(envelope.plans)) {
+    return { ok: false, message: 'FILE IS NOT A PLAN LIBRARY' }
+  }
+  if (envelope.libraryVersion > LIBRARY_VERSION) {
+    return {
+      ok: false,
+      message: `LIBRARY VERSION ${envelope.libraryVersion} IS NEWER THAN THIS BUILD`,
+    }
+  }
+
+  // Each plan is validated individually and the good ones land. This is a
+  // DELIBERATE divergence from parsePlan's all-or-nothing stance on a single
+  // plan: the elements of one plan are parts of one object, whereas a library
+  // is a bag of independent plans, and refusing fifty because one is malformed
+  // helps nobody. The skipped count is always reported, never swallowed.
+  let skipped = 0
+  // Distinct ids, not raw successes: two entries in one file sharing an id
+  // overwrite each other, so only one plan lands and the count must say one.
+  const written = new Set<string>()
+  for (const entry of envelope.plans) {
+    // Re-stringified so the one validator in the codebase does the work,
+    // rather than growing a second object-shaped copy of parsePlan here.
+    const result = parsePlan(JSON.stringify(entry))
+    if (!result.ok) {
+      skipped += 1
+      continue
+    }
+    if (savePlan(storage, result.plan).ok) written.add(result.plan.id)
+    else skipped += 1
+  }
+  return { ok: true, imported: written.size, skipped }
+}

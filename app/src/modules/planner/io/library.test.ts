@@ -1,5 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { LIBRARY_PREFIX, listPlans, readPlan, savePlan, deletePlan, hasPlan } from './library'
+import {
+  LIBRARY_PREFIX,
+  LIBRARY_VERSION,
+  listPlans,
+  readPlan,
+  savePlan,
+  deletePlan,
+  hasPlan,
+  exportLibrary,
+  importLibrary,
+} from './library'
 import { createPlan, resetIdsForTest, resetNowForTest } from '../domain/plan'
 import type { DeploymentPlan } from '../domain/types'
 
@@ -118,5 +128,133 @@ describe('plan library storage', () => {
     deletePlan(storage, a.id)
     expect(hasPlan(storage, a.id)).toBe(false)
     expect(listPlans(storage).entries.map((p) => p.name)).toEqual(['B'])
+  })
+})
+
+describe('whole-library export and import', () => {
+  beforeEach(() => {
+    resetIdsForTest()
+    resetNowForTest()
+  })
+
+  it('exports every saved plan in one envelope', () => {
+    const storage = fakeStorage()
+    savePlan(storage, createPlan({ name: 'A' }))
+    savePlan(storage, createPlan({ name: 'B' }))
+    const envelope = JSON.parse(exportLibrary(storage, '2026-07-27T00:00:00.000Z').json) as {
+      libraryVersion: number
+      exportedAt: string
+      plans: DeploymentPlan[]
+    }
+    expect(envelope.libraryVersion).toBe(LIBRARY_VERSION)
+    expect(envelope.exportedAt).toBe('2026-07-27T00:00:00.000Z')
+    expect(envelope.plans.map((p) => p.name).sort()).toEqual(['A', 'B'])
+  })
+
+  it('excludes an unreadable entry from the export and reports it as skipped', () => {
+    const storage = fakeStorage()
+    savePlan(storage, createPlan({ name: 'GOOD' }))
+    storage.setItem(`${LIBRARY_PREFIX}plan-broken`, 'not json')
+    const result = exportLibrary(storage, '2026-07-27T00:00:00.000Z')
+    const envelope = JSON.parse(result.json) as { plans: DeploymentPlan[] }
+    expect(envelope.plans.map((p) => p.name)).toEqual(['GOOD'])
+    expect(result.skipped).toBe(1)
+  })
+
+  it('exports a well-formed empty envelope for an empty library', () => {
+    const storage = fakeStorage()
+    const result = exportLibrary(storage, '2026-07-27T00:00:00.000Z')
+    const envelope = JSON.parse(result.json) as {
+      libraryVersion: number
+      exportedAt: string
+      plans: DeploymentPlan[]
+    }
+    expect(envelope.libraryVersion).toBe(LIBRARY_VERSION)
+    expect(envelope.exportedAt).toBe('2026-07-27T00:00:00.000Z')
+    expect(envelope.plans).toEqual([])
+    expect(result.skipped).toBe(0)
+  })
+
+  it('round-trips an exported library into an empty one', () => {
+    const source = fakeStorage()
+    savePlan(source, createPlan({ name: 'A' }))
+    savePlan(source, createPlan({ name: 'B' }))
+    const target = fakeStorage()
+    expect(importLibrary(target, exportLibrary(source, '2026-07-27T00:00:00.000Z').json)).toEqual({
+      ok: true,
+      imported: 2,
+      skipped: 0,
+    })
+    expect(
+      listPlans(target)
+        .entries.map((p) => p.name)
+        .sort(),
+    ).toEqual(['A', 'B'])
+  })
+
+  it('merges by plan id, overwriting an entry that is already there', () => {
+    const storage = fakeStorage()
+    const plan = createPlan({ name: 'ORIGINAL' })
+    savePlan(storage, plan)
+    const renamed = { ...plan, name: 'RENAMED' }
+    const envelope = JSON.stringify({
+      libraryVersion: LIBRARY_VERSION,
+      exportedAt: '2026-07-27T00:00:00.000Z',
+      plans: [renamed],
+    })
+    expect(importLibrary(storage, envelope)).toEqual({ ok: true, imported: 1, skipped: 0 })
+    expect(listPlans(storage).entries.map((p) => p.name)).toEqual(['RENAMED'])
+  })
+
+  it('counts one import when a single file carries the same id twice', () => {
+    const storage = fakeStorage()
+    const plan = createPlan({ name: 'FIRST' })
+    // Same id, different name -- a hand-edited file, or two exports
+    // concatenated. The second write overwrites the first, so exactly one
+    // plan lands and the count must say one, not two.
+    const envelope = JSON.stringify({
+      libraryVersion: LIBRARY_VERSION,
+      exportedAt: '2026-07-27T00:00:00.000Z',
+      plans: [plan, { ...plan, name: 'SECOND' }],
+    })
+    expect(importLibrary(storage, envelope)).toEqual({ ok: true, imported: 1, skipped: 0 })
+    expect(listPlans(storage).entries.map((p) => p.name)).toEqual(['SECOND'])
+  })
+
+  it('imports the good plans and counts the bad ones', () => {
+    const storage = fakeStorage()
+    const envelope = JSON.stringify({
+      libraryVersion: LIBRARY_VERSION,
+      exportedAt: '2026-07-27T00:00:00.000Z',
+      plans: [createPlan({ name: 'GOOD' }), { nonsense: true }, null],
+    })
+    expect(importLibrary(storage, envelope)).toEqual({ ok: true, imported: 1, skipped: 2 })
+    expect(listPlans(storage).entries.map((p) => p.name)).toEqual(['GOOD'])
+  })
+
+  it('imports an empty plans array as a no-op', () => {
+    const storage = fakeStorage()
+    const envelope = JSON.stringify({
+      libraryVersion: LIBRARY_VERSION,
+      exportedAt: '2026-07-27T00:00:00.000Z',
+      plans: [],
+    })
+    expect(importLibrary(storage, envelope)).toEqual({ ok: true, imported: 0, skipped: 0 })
+  })
+
+  it('refuses a library from a newer build rather than partially reading it', () => {
+    const storage = fakeStorage()
+    const envelope = JSON.stringify({ libraryVersion: 99, exportedAt: 'x', plans: [] })
+    const result = importLibrary(storage, envelope)
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected refusal')
+    expect(result.message).toContain('99')
+  })
+
+  it('refuses a file that is not a library at all, writing nothing', () => {
+    const storage = fakeStorage()
+    expect(importLibrary(storage, 'not json').ok).toBe(false)
+    expect(importLibrary(storage, '{"hello":true}').ok).toBe(false)
+    expect(listPlans(storage).entries).toHaveLength(0)
   })
 })
