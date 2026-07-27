@@ -471,16 +471,29 @@ export type ImportResult =
 
 // `now` is a parameter rather than a `new Date()` read, matching domain/plan.ts's
 // setNowForTest philosophy: the export payload stays byte-assertable in tests.
-export function exportLibrary(storage: Storage, now: string): string {
-  return JSON.stringify(
-    {
-      libraryVersion: LIBRARY_VERSION,
-      exportedAt: now,
-      plans: listPlans(storage).entries,
-    },
-    null,
-    2,
-  )
+export interface LibraryExport {
+  json: string
+  // Entries present in the library but unreadable, so absent from `json`. The
+  // caller MUST surface this: an export is what a user relies on before
+  // clearing their browser, and a backup that is quietly short is worse than
+  // one that fails loudly.
+  skipped: number
+}
+
+export function exportLibrary(storage: Storage, now: string): LibraryExport {
+  const listing = listPlans(storage)
+  return {
+    json: JSON.stringify(
+      {
+        libraryVersion: LIBRARY_VERSION,
+        exportedAt: now,
+        plans: listing.entries,
+      },
+      null,
+      2,
+    ),
+    skipped: listing.skipped,
+  }
 }
 
 export function importLibrary(storage: Storage, json: string): ImportResult {
@@ -1012,13 +1025,21 @@ export function usePlanLibrary(notify: Notify): PlanLibrary {
       notify(UNAVAILABLE)
       return
     }
-    const json = exportLibrary(storage, new Date().toISOString())
+    const { json, skipped } = exportLibrary(storage, new Date().toISOString())
     const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
     const a = document.createElement('a')
     a.href = url
     a.download = 'plan-library.json'
     a.click()
     URL.revokeObjectURL(url)
+    // An export is what a user relies on before clearing their browser, so a
+    // short one must say so. Silence here would be the one failure this
+    // feature exists to prevent.
+    notify(
+      skipped > 0
+        ? { level: 'error', text: `LIBRARY EXPORTED · ${skipped} COULD NOT BE READ` }
+        : { level: 'info', text: 'LIBRARY EXPORTED' },
+    )
   }, [storage, notify])
 
   const importLibraryFile = useCallback(
