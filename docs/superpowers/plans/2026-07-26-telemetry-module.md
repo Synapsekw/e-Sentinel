@@ -37,9 +37,13 @@
 - [x] **Task 23** — route root, module mounted at /telemetry (`6d5c886`)
 - [x] **Task 24** — integration test (`972f3cb`)
 - [x] **Task 25** — bundle + browser verification (see below)
-- [ ] Task 26 — go-live (run LAST, after 27 and 28)
-- [ ] Task 27 — basemap LAYERS control
-- [ ] Task 28 — scrubber keyboard shortcuts
+- [x] **Task 26** — module 03 online (`0da9c20`)
+- [x] **Task 27** — basemap LAYERS control (`3a5d75d`)
+- [x] **Task 28** — scrubber keyboard shortcuts (`e615335`)
+
+**ALL 28 TASKS COMPLETE**, 2026-07-27. `npm run verify` passes: 90 test files,
+702 tests, clean lint and typecheck, successful build. Verified end to end in
+real Chromium against the production build with all three real flight logs.
 
 ### Task 25 verification results, 2026-07-27
 
