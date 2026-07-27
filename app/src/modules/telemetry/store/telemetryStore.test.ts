@@ -164,3 +164,20 @@ describe('telemetryStore', () => {
     expect(s.selectedId).toBe('a')
   })
 })
+
+describe('removeSessionFlight', () => {
+  // A dropped file is added optimistically so the panel can show progress. If
+  // it turns out not to be a flight log, it must not be left behind.
+  it('removes one drop-in without disturbing the others', () => {
+    useTelemetryStore.getState().addSessionFlight({ ...meta, id: 'keep' })
+    useTelemetryStore.getState().addSessionFlight({ ...meta, id: 'junk' })
+    useTelemetryStore.getState().removeSessionFlight('junk')
+    expect(useTelemetryStore.getState().sessionFlights.map((f) => f.id)).toEqual(['keep'])
+  })
+
+  it('is a no-op for an id that was never added', () => {
+    useTelemetryStore.getState().addSessionFlight({ ...meta, id: 'keep' })
+    useTelemetryStore.getState().removeSessionFlight('missing')
+    expect(useTelemetryStore.getState().sessionFlights).toHaveLength(1)
+  })
+})

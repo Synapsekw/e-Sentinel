@@ -120,6 +120,10 @@ export function useFlightLoader() {
         store.getState().setPath(result.path)
         void putCachedPath(result.path)
       } catch (err) {
+        // Drop the optimistic row. A file that will not parse should not be
+        // left in the library, and with no selected meta the panel shows the
+        // error on its own rather than beside a summary of invented zeroes.
+        store.getState().removeSessionFlight(meta.id)
         const reason = err instanceof Error ? err.message : 'Could not read this file.'
         store.getState().setError(`${file.name}: ${reason}`)
       }

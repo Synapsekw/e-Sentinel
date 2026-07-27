@@ -31,6 +31,7 @@ interface TelemetryState {
 
   setCatalog(flights: FlightMeta[]): void
   addSessionFlight(meta: FlightMeta): void
+  removeSessionFlight(id: string): void
   clearSessionFlights(): void
   setFilters(filters: CatalogFilters): void
   setSort(sort: CatalogSort): void
@@ -61,6 +62,11 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
     set((s) => ({
       sessionFlights: [meta, ...s.sessionFlights.filter((f) => f.id !== meta.id)],
     })),
+  // Used when a dropped file turns out not to be a flight log at all: it is
+  // added optimistically so the panel can show progress, and must not be left
+  // behind as a ghost row when the decode rejects.
+  removeSessionFlight: (id) =>
+    set((s) => ({ sessionFlights: s.sessionFlights.filter((f) => f.id !== id) })),
   clearSessionFlights: () => set({ sessionFlights: [] }),
   setFilters: (filters) => set({ filters }),
   setSort: (sort) => set({ sort }),
