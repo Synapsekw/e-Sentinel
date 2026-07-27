@@ -2191,11 +2191,18 @@ describe('telemetryStore', () => {
     expect(useTelemetryStore.getState().playing).toBe(false)
   })
 
+  // Called through getState() rather than destructured into a local binding:
+  // destructuring a method off the store trips @typescript-eslint/unbound-method,
+  // and this repo's established fix is to call it in place (see the comments in
+  // planner/ui/PlanTree.tsx and planner/map/useDockPlacement.ts), never to
+  // disable the rule.
   it('cycles the playback rate through 1, 4 and 16', () => {
-    const { cycleRate } = useTelemetryStore.getState()
-    cycleRate(); expect(useTelemetryStore.getState().rate).toBe(4)
-    cycleRate(); expect(useTelemetryStore.getState().rate).toBe(16)
-    cycleRate(); expect(useTelemetryStore.getState().rate).toBe(1)
+    useTelemetryStore.getState().cycleRate()
+    expect(useTelemetryStore.getState().rate).toBe(4)
+    useTelemetryStore.getState().cycleRate()
+    expect(useTelemetryStore.getState().rate).toBe(16)
+    useTelemetryStore.getState().cycleRate()
+    expect(useTelemetryStore.getState().rate).toBe(1)
   })
 
   it('records a load error and clears loading', () => {
