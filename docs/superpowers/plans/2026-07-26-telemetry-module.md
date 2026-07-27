@@ -223,13 +223,15 @@ Not unit-tested — it needs both network and a secret (spec section 10). Its `-
 // tool, not app source: app/tsconfig.json includes only src/, and app's
 // eslint/prettier run from app/. Precedent: the removed tools/bake-geo.mjs.
 
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { DJILog } from '../app/node_modules/dji-log-parser-js/dji_log_parser_js.mjs'
 
 const FLIGHTS_DIR = join(import.meta.dirname, '..', 'app', 'public', 'flights')
 const ENDPOINT = 'https://dev.dji.com/openapi/v1/flight-records/keychains'
 const dryRun = process.argv.includes('--dry-run')
+// Refetch keychains even when a <id>.keychain.json is already on disk.
+const force = process.argv.includes('--force')
 
 function apiKey() {
   if (process.env.DJI_API_KEY) return process.env.DJI_API_KEY
@@ -290,27 +292,53 @@ for (const file of logs) {
   const version = parser.version
   const details = parser.details
 
-  let hasKeychain = false
+  const keychainPath = join(FLIGHTS_DIR, `${id}.keychain.json`)
+
   if (!dryRun && version >= 13) {
-    try {
-      const keychains = await fetchKeychains(parser, key)
-      writeFileSync(join(FLIGHTS_DIR, `${id}.keychain.json`), JSON.stringify(keychains))
-      hasKeychain = true
-      console.log(`  ok   ${id}  v${version}  keychain baked`)
-    } catch (err) {
-      failures++
-      console.error(`  FAIL ${id}  v${version}  ${err.message}`)
+    // Skip logs whose keychain is already on disk. DJI's endpoint is a remote
+    // dependency and the keys do not change. Use --force to refetch anyway.
+    if (existsSync(keychainPath) && !force) {
+      console.log(`  skip ${id}  v${version}  keychain already present`)
+    } else {
+      try {
+        const keychains = await fetchKeychains(parser, key)
+        writeFileSync(keychainPath, JSON.stringify(keychains))
+        console.log(`  ok   ${id}  v${version}  keychain baked`)
+      } catch (err) {
+        failures++
+        console.error(`  FAIL ${id}  v${version}  ${err.message}`)
+      }
     }
   } else {
-    hasKeychain = version < 13
-    console.log(`  ${dryRun ? 'dry ' : 'ok  '} ${id}  v${version}  ${dryRun ? 'catalog only' : 'no keychain needed'}`)
+    console.log(
+      `  ${dryRun ? 'dry ' : 'ok  '} ${id}  v${version}  ${dryRun ? 'catalog only' : 'no keychain needed'}`,
+    )
   }
+
+  // Derived from what is actually on disk, NOT from what this run happened to
+  // do. Deriving it from the run made --dry-run rewrite a good catalog with
+  // hasKeychain:false while the keychain files sat right there, so every
+  // flight rendered as FRAMES LOCKED despite being fully decodable.
+  const hasKeychain = version < 13 || existsSync(keychainPath)
 
   flights.push(catalogEntry(id, file, version, details, hasKeychain))
 }
 
-writeFileSync(join(FLIGHTS_DIR, 'index.json'), JSON.stringify({ version: 1, flights }, null, 2) + '\n')
-console.log(`\nwrote index.json with ${flights.length} flight(s)`)
+// A dry run must not write. It exists to show what WOULD be produced without
+// touching the network or a key; writing index.json made it destructive,
+// which is the opposite of what the name promises.
+if (dryRun) {
+  console.log(`\n--dry-run: index.json NOT written. Would contain ${flights.length} flight(s):`)
+  for (const f of flights) {
+    console.log(`  ${f.id}  ${f.aircraftSn}  ${f.durationS}s  keychain:${f.hasKeychain}`)
+  }
+} else {
+  writeFileSync(
+    join(FLIGHTS_DIR, 'index.json'),
+    JSON.stringify({ version: 1, flights }, null, 2) + '\n',
+  )
+  console.log(`\nwrote index.json with ${flights.length} flight(s)`)
+}
 
 if (failures > 0) {
   console.error(`${failures} keychain fetch(es) failed; those flights show metadata only`)
@@ -325,24 +353,20 @@ cd /Users/danijeljovanovic/Dev/e\&_Sentinel
 node tools/bake-flights.mjs --dry-run
 ```
 
-Expected: three `dry` lines showing `v14`, then `wrote index.json with 3 flight(s)`, exit 0.
+Expected: three `dry` lines showing `v14`, then `--dry-run: index.json NOT written.` followed by the catalog it would produce, exit 0. It must NOT write `index.json`.
 
 - [ ] **Step 3: Verify the dry-run catalog content**
 
-```bash
-cd /Users/danijeljovanovic/Dev/e\&_Sentinel
-node -e "const c=require('./app/public/flights/index.json'); console.log(c.flights.map(f=>[f.id,f.aircraftSn,f.durationS,f.recordCount].join(' ')).join('\n'))"
-```
-
-Expected exactly:
+Read it from the dry run's own stdout in Step 2 — there is no `index.json` to inspect
+yet, by design. The three catalog lines it prints must show exactly:
 
 ```
-m400-2026-02-17-0627 1581F8DBW258U00A 2722.9 27229
-m400-2026-02-17-0652 1581F8DBW259400A 2092.3 20915
-m400-2026-02-17-0846 1581F5FKC257P00D 1009.6 5050
+m400-2026-02-17-0627  1581F8DBW258U00A  2722.9s  keychain:false
+m400-2026-02-17-0652  1581F8DBW259400A  2092.3s  keychain:false
+m400-2026-02-17-0846  1581F5FKC257P00D  1009.6s  keychain:false
 ```
 
-If the serials or record counts differ, the wrong files were staged in Task 2. Stop and fix.
+`keychain:false` is correct here: none have been fetched yet. If the serials differ, the wrong files were staged in Task 2. Stop and fix.
 
 - [ ] **Step 4: Run the real bake**
 
