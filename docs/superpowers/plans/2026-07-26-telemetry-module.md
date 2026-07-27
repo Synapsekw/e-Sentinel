@@ -2453,7 +2453,9 @@ describe('traversedFeature', () => {
   it('covers the whole path at the end', () => {
     const geom = traversedFeature(path, 30).features[0].geometry
     expect(geom.type).toBe('LineString')
-    expect((geom as GeoJSON.LineString).coordinates).toHaveLength(2)
+    // No cast: traversedFeature returns FeatureCollection<LineString>, so the
+    // geometry is already narrowed and eslint flags a redundant assertion.
+    expect(geom.coordinates).toHaveLength(2)
   })
 })
 
@@ -4816,7 +4818,7 @@ describe('telemetry end to end', () => {
     expect(pathFeature(path).features).toHaveLength(1)
     // Two of three samples are behind a 15s cursor.
     const traversed = traversedFeature(path, 15).features[0].geometry
-    expect((traversed as GeoJSON.LineString).coordinates).toHaveLength(2)
+    expect(traversed.coordinates).toHaveLength(2)
   })
 
   it('stops playback when the cursor is driven past the end', () => {
