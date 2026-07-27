@@ -5020,7 +5020,32 @@ git commit -m "feat(telemetry): take module 03 online"
 
 Spec section 8.1. The console and planner both put `LAYERS` in the same topbar slot; telemetry must too, so the control lives in one place in the user's memory across all three modules. Identified during plan self-review — run before Task 26.
 
-- [ ] **Step 1: Determine whether the planner's menu and basemap hook are reusable**
+> **Assessment already done** (by Task 20's implementer, 2026-07-27). Recorded here
+> so Step 1 confirms rather than rediscovers it:
+>
+> **`PlannerLayersMenu` — copy, do not import.** Its DATA dependency is already
+> module-agnostic: it reads `layer`/`setLayer` straight off the shared
+> `useAppStore`, not from planner state. What couples it is STYLING — it renders
+> `pl-btn` / `pl-menu` / `pl-menu-item` / `pl-menu-radio` / `pl-menu-check`
+> classes that only `planner.css` defines, so dropping it into the telemetry
+> topbar yields an unstyled dropdown. Copy to `TelemetryLayersMenu.tsx` with
+> `tm-*` classes, reusing the same `LAYER_ORDER` / `LAYER_LABELS` /
+> `layerButtonLabel` imports from `console/map/basemap.ts`. Duplicate the JSX and
+> class names only, never the label/order data.
+>
+> **`usePlannerBasemap` — write an analogue, do not import.** It is coupled to
+> BEHAVIOUR, not just style. It hard-codes `eff = offline ? null : layer`,
+> deliberately skipping `effectiveLayer(scene, layer)` because the planner has no
+> globe scene, and it deliberately omits `setOperationalLayersVisible` — safe only
+> because the planner's `buildBaseStyle` lacks the console's operational layers
+> while still carrying UAE cartography that must stay visible. Whether telemetry's
+> style has the same shape is unverified. Write `useTelemetryBasemap` calling the
+> same shared appliers (`applyRasterVisibility`, `applyPlaceLabelTheme` from
+> `console/map/basemap.ts`), re-deriving the layer handling against telemetry's
+> actual style — the same way the planner hook itself diverged from the console's
+> `useBasemap`.
+
+- [ ] **Step 1: Confirm the assessment above still holds**
 
 ```bash
 cd app && cat src/modules/planner/ui/PlannerLayersMenu.tsx
