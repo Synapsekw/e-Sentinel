@@ -226,10 +226,16 @@
 }
 
 /* ---------- side / rpanel ---------- */
+/* `bottom: 0`, not `bottom: 34px`: the summary strip is inset to the two
+   panel widths (left:318/right:340), so stopping the panels 34px short left a
+   318x34 hole at the bottom-left and a 340x34 hole at the bottom-right with
+   raw map showing through under each panel. The console has always run
+   #side/#rpanel to the floor and let #ticker sit BETWEEN them
+   (chrome.css:176,198) -- same geometry here. */
 .pl-side {
   position: fixed;
   top: 56px;
-  bottom: 34px;
+  bottom: 0;
   left: 0;
   width: 318px;
   z-index: 800;
@@ -248,12 +254,11 @@
 .pl-rpanel {
   position: fixed;
   top: 56px;
-  bottom: 34px;
+  bottom: 0;
   right: 0;
   width: 340px;
   z-index: 800;
   overflow-y: auto;
-  padding: 14px;
   border-left: 1px solid var(--line);
   background: var(--panel);
   backdrop-filter: var(--chrome-blur);
@@ -261,6 +266,98 @@
   scrollbar-width: thin;
   scrollbar-color: #333 transparent;
 }
+/* The padding lives on an inner body, not on .pl-rpanel itself, so the
+   scrollbar rides the panel's edge rather than being inset by 14px -- the
+   console's #rpanel / #rpanel-body split (chrome.css:195-215). */
+.pl-rpanel-body {
+  padding: 14px;
+}
+
+/* ---------- collapsible side panels ---------- */
+/* The console's affordance, ported: each panel slides off its own edge and a
+   small glass handle tab stays pinned to the panel's inner edge, riding along
+   to the screen edge when collapsed; the summary strip (inset by the two panel
+   widths, same as #ticker) reflows to fill whatever space a collapse frees up.
+   Keyed off the SAME `body.side-collapsed` / `body.rpanel-collapsed` classes
+   and the same shared/store flags the console uses (mirrored onto <body> by
+   Planner.tsx, as ConsoleChrome.tsx does for /console) rather than a second
+   pair of booleans -- so the collapse preference is one piece of state across
+   both modules instead of two that silently disagree. */
+.pl-side,
+.pl-rpanel {
+  transition: transform 0.28s ease;
+}
+body.side-collapsed .pl-side {
+  transform: translateX(-100%);
+}
+body.rpanel-collapsed .pl-rpanel {
+  transform: translateX(100%);
+}
+
+.pl-panel-toggle {
+  position: fixed;
+  z-index: 850;
+  top: 50%;
+  width: 20px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--chrome);
+  backdrop-filter: var(--chrome-blur);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  transition:
+    left 0.28s ease,
+    right 0.28s ease,
+    color 0.15s ease;
+}
+.pl-panel-toggle:hover {
+  color: #fff;
+  border-color: var(--red);
+}
+/* Chevron drawn from two borders of a small box, rotated to point the right
+   way; it flips 180deg between the open (collapse) and collapsed (expand)
+   states. currentColor keeps it in step with the button's hover color. */
+.pl-panel-toggle i {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transition: transform 0.28s ease;
+}
+.pl-side-toggle {
+  left: 318px;
+  transform: translateY(-50%);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+}
+.pl-rpanel-toggle {
+  right: 340px;
+  transform: translateY(-50%);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+}
+.pl-side-toggle i {
+  transform: translateX(1px) rotate(135deg);
+} /* points left = collapse */
+.pl-rpanel-toggle i {
+  transform: translateX(-1px) rotate(-45deg);
+} /* points right = collapse */
+body.side-collapsed .pl-side-toggle {
+  left: 0;
+}
+body.rpanel-collapsed .pl-rpanel-toggle {
+  right: 0;
+}
+body.side-collapsed .pl-side-toggle i {
+  transform: translateX(-1px) rotate(-45deg);
+} /* points right = expand */
+body.rpanel-collapsed .pl-rpanel-toggle i {
+  transform: translateX(1px) rotate(135deg);
+} /* points left = expand */
 
 /* Bright-basemap legibility, the planner's counterpart to chrome.css's
    :root[data-maplayer='light'] #side / #rpanel rule. Both panels are
@@ -282,10 +379,15 @@
 :root[data-maplayer='terrain'] .pl-rpanel {
   background: var(--chrome);
 }
+/* The tile takes the DARKER opaque and the rows/inputs inside it the lighter
+   one -- the same darker-outward/lighter-inward direction the console nests in
+   (.panel is --panel at 3.5% white, .dock-row inside it is --panel2 at 6%).
+   This pair used to be assigned the other way round, back when .pl-panel and
+   .pl-row were themselves inverted relative to the console. */
 :root[data-maplayer='light'] .pl-panel,
 :root[data-maplayer='sat'] .pl-panel,
 :root[data-maplayer='terrain'] .pl-panel {
-  background: var(--panel-opaque);
+  background: var(--panel-opaque2);
   border-color: rgba(255, 255, 255, 0.12);
 }
 :root[data-maplayer='light'] .pl-row,
@@ -294,7 +396,7 @@
 :root[data-maplayer='light'] .pl-input,
 :root[data-maplayer='sat'] .pl-input,
 :root[data-maplayer='terrain'] .pl-input {
-  background: var(--panel-opaque2);
+  background: var(--panel-opaque);
 }
 /* The strip spans the map between the two panels, so it is glass over the
    raster with nothing behind it at all. */
@@ -304,8 +406,13 @@
   background: var(--panel-opaque);
 }
 
+/* var(--panel), not var(--panel2): the console's `.panel` tile is the dimmer
+   of the pair and the rows nested inside it are the brighter one
+   (hud.css:22-27 + chrome.css:374-385). The planner had those two swapped, so
+   its tiles read brighter than the console's and its rows read recessed
+   instead of raised -- the whole hierarchy inverted. */
 .pl-panel {
-  background: var(--panel2);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px;
@@ -330,7 +437,7 @@
 }
 .pl-input {
   width: 100%;
-  background: var(--panel);
+  background: var(--panel2);
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 8px 10px;
@@ -407,10 +514,10 @@
 .pl-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
   text-align: left;
-  background: var(--panel);
+  background: var(--panel2);
   border: 1px solid transparent;
   border-radius: 9px;
   padding: 8px 10px;
@@ -551,6 +658,11 @@
 }
 
 /* ---------- summary strip (bottom, brief-prescribed class names) ---------- */
+/* Metrics matched to the console's #ticker (hud.css:72-98), which occupies
+   exactly this slot: the 12px gap and 0 14px padding, `overflow: hidden` so a
+   long line clips at the strip edge instead of pushing the bar wider, and the
+   left/right transition + collapse reflow so the strip grows into whatever
+   space a collapsed panel frees up. */
 .planner-summary {
   position: fixed;
   left: 318px;
@@ -560,12 +672,29 @@
   z-index: 800;
   display: flex;
   align-items: center;
-  gap: 22px;
-  padding: 0 16px;
+  gap: 12px;
+  padding: 0 14px;
   background: var(--chrome);
   backdrop-filter: var(--chrome-blur);
   -webkit-backdrop-filter: var(--chrome-blur);
   border-top: 1px solid var(--line);
+  overflow: hidden;
+  transition:
+    left 0.28s ease,
+    right 0.28s ease;
+}
+body.side-collapsed .planner-summary {
+  left: 0;
+}
+body.rpanel-collapsed .planner-summary {
+  right: 0;
+}
+/* #ticker's overflow discipline (hud.css:99-101, chrome.css:565-567): nothing
+   in the bar may squeeze or clip mid-glyph -- every item keeps its natural
+   width and the bar clips as a whole. */
+.planner-summary > .lbl,
+.ps-stat {
+  flex: none;
 }
 .ps-stat {
   display: flex;

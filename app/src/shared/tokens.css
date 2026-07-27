@@ -27,9 +27,11 @@
      white overlays meant to let the dark map read through, which is exactly
      what makes them illegible over a light/sat/terrain basemap in the first
      place. These carry no alpha channel, and --panel-opaque2 is deliberately
-     the darker of the pair so a row/input still reads as recessed inside its
-     parent panel, the same two-level hierarchy --panel/--panel2 express when
-     translucent. */
+     the darker of the pair: it backs the outer .pl-panel tile while the
+     lighter --panel-opaque backs the .pl-row/.pl-input nested inside it, so
+     the stack still gets lighter as it nests -- the same direction
+     --panel/--panel2 express when translucent (--panel is the dimmer tile,
+     --panel2 the brighter row on top of it). */
   --panel-opaque: #12151c;
   --panel-opaque2: #0d1015;
 }

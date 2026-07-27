@@ -36,7 +36,9 @@ import { serializePlan, parsePlan } from '@/modules/planner/domain/planIo'
 import { isValidAoiGeometry } from '@/modules/planner/domain/geometry'
 import { importAoiFile } from '@/modules/planner/io/kml'
 import type { Aoi, DeploymentPlan } from '@/modules/planner/domain/types'
+import { useAppStore } from '@/shared/store'
 import PlannerTopbar from './PlannerTopbar'
+import PlannerPanelToggle from './PlannerPanelToggle'
 import PlanTree from './PlanTree'
 import Inspector from './Inspector'
 import SummaryStrip from './SummaryStrip'
@@ -99,6 +101,8 @@ export function PlannerShell() {
   const [importMessage, setImportMessage] = useState<ImportMessage>(null)
   const [layoutStatus, setLayoutStatus] = useState<LayoutStatus | null>(null)
   const [suggestBusy, setSuggestBusy] = useState(false)
+  const sideCollapsed = useAppStore((s) => s.sideCollapsed)
+  const rpanelCollapsed = useAppStore((s) => s.rpanelCollapsed)
   // The frame currently pending for handleSuggestLayout's yield (see its
   // comment). One ref, not two: the outer frame's callback overwrites this
   // with the inner frame's handle, so there is only ever one handle
@@ -116,6 +120,22 @@ export function PlannerShell() {
       }
     }
   }, [])
+
+  // Mirrors the shared collapse flags onto <body> so planner.css's
+  // `body.side-collapsed .pl-side` / `.pl-side-toggle` / `.planner-summary`
+  // selectors resolve -- the same body-class contract ConsoleChrome.tsx keeps
+  // for chrome.css, reusing the same two class names because the two modules
+  // are separate routes that never mount together. Cleanup removes the class
+  // on unmount so navigating away never leaves the console's own chrome
+  // collapsed by a class this route set.
+  useEffect(() => {
+    document.body.classList.toggle('side-collapsed', sideCollapsed)
+    return () => document.body.classList.remove('side-collapsed')
+  }, [sideCollapsed])
+  useEffect(() => {
+    document.body.classList.toggle('rpanel-collapsed', rpanelCollapsed)
+    return () => document.body.classList.remove('rpanel-collapsed')
+  }, [rpanelCollapsed])
 
   useCoverageDriver()
   usePlannerLayers(mapRef, ready, plan, coverage, selection)
@@ -354,8 +374,12 @@ export function PlannerShell() {
         <PlanTree />
       </aside>
       <aside className="pl-rpanel">
-        <Inspector />
+        <div className="pl-rpanel-body">
+          <Inspector />
+        </div>
       </aside>
+      <PlannerPanelToggle side="left" />
+      <PlannerPanelToggle side="right" />
       <SummaryStrip
         coverage={coverage}
         dockCount={plan.docks.length}

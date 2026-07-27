@@ -44,8 +44,13 @@ export default function PlanTree() {
     commitPlan(setParams(plan, { ...plan.params, requiredCoveragePct: Number(e.target.value) }))
   }
 
+  // A fragment, not a wrapper <div>: `.pl-side` is the flex column that spaces
+  // these tiles 12px apart, and an intermediate element made that gap apply to
+  // one single child instead of to the tiles -- they stacked flush, borders
+  // touching. The console's Sidebar.tsx returns a fragment into `#side` for
+  // exactly this reason.
   return (
-    <div className="pl-tree">
+    <>
       <div className="pl-panel">
         <h4 className="lbl">Plan</h4>
         <label className="pl-field">
@@ -174,6 +179,6 @@ export default function PlanTree() {
           />
         </label>
       </div>
-    </div>
+    </>
   )
 }
